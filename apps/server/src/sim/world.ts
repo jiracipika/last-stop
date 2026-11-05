@@ -118,6 +118,8 @@ export class World {
   /** test-only overrides (set by GameRoom under LS_TEST_MODE=1) */
   testQuota = -1;
   testSeconds = 0;
+  testEnemyAt: { x: number; z: number } | null = null;
+  testFreezeEnemyAfterDown = false;
 
   constructor() {
     this.state = new RoomState();
@@ -321,6 +323,10 @@ export class World {
     this.endsAt = this.t + 5 + (this.testSeconds > 0 ? this.testSeconds : missionSeconds(this.modifiers));
 
     this.enemy.reset(rng);
+    if (this.testEnemyAt) {
+      this.enemy.x = this.testEnemyAt.x;
+      this.enemy.z = this.testEnemyAt.z;
+    }
     this.syncAll();
     const mods = this.state.modifiers as unknown as string[];
     mods.length = 0;
@@ -813,7 +819,9 @@ export class World {
     this.stepCarried(dt);
     this.stepFree(dt, colliders);
     this.stepVanSim(dt);
-    if ((this.phase === "scavenge" || this.phase === "escape") && process.env.LS_DISABLE_ENEMY !== "1") {
+    const enemyPaused =
+      this.testFreezeEnemyAfterDown && [...this.players.values()].some((p) => p.connected && p.downed);
+    if ((this.phase === "scavenge" || this.phase === "escape") && process.env.LS_DISABLE_ENEMY !== "1" && !enemyPaused) {
       this.enemy.step(dt);
     }
     this.checkMissionEnd();
