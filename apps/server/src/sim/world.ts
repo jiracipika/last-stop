@@ -169,6 +169,13 @@ export class World {
     return hasLineOfSight(x0, z0, x1, z1, LOS_BLOCKERS.concat(closed, [this.vanAabb()]));
   }
 
+  /** LOS ignoring the van — used for grab reachability at the loading zone. */
+  losWallsOnly(x0: number, z0: number, x1: number, z1: number): boolean {
+    const closed: AABB[] = [];
+    for (const d of this.doors.values()) if (!d.open) closed.push(doorAabb(d.def));
+    return hasLineOfSight(x0, z0, x1, z1, LOS_BLOCKERS.concat(closed));
+  }
+
   gateCollider(): AABB | null {
     if (this.gateOpen || this.phase === "results") return null;
     return { x0: GATE.x - 0.2, x1: GATE.x + 0.2, z0: GATE.z0, z1: GATE.z1 };
@@ -412,8 +419,9 @@ export class World {
     }
     const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
     if (d > PLAYER.GRAB_RANGE + def.radius) return false;
-    // must not reach through walls
-    if (d > 0.8 && !this.hasLineOfSight(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
+    // must not reach through walls (the van itself does NOT block grabs:
+    // loading happens at its open rear)
+    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
     if (it.defId === "distributor" && this.partInstalled) return false;
     it.state = 1;
     it.sleeping = false;
