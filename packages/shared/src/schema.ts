@@ -3,6 +3,8 @@
 
 import { schema, t, type SchemaType } from "@colyseus/schema";
 
+export { ArraySchema, MapSchema } from "@colyseus/schema";
+
 export const PlayerState = schema(
   {
     nick: t.string(),

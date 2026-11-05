@@ -83,7 +83,7 @@ export const ENEMY = {
   NODE_PAUSE_JITTER: 1.2,
 } as const;
 
-// ---- Van ----
+// ---- Van (local frame: +z is FORWARD, -z is the rear doors) ----
 export const VAN = {
   HALF_W: 1.05,
   HALF_L: 2.4,
@@ -95,16 +95,18 @@ export const VAN = {
   BRAKE: 11,
   DRAG: 0.55,
   STEER_RATE: 1.35,
-  CARGO: { X0: -0.95, X1: 0.95, Z0: 0.1, Z1: 1.9 }, // local space
+  CARGO: { X0: -0.95, X1: 0.95, Z0: -1.9, Z1: -0.1 }, // interior cargo bay
+  // delivery zone: cargo bay + the strip behind the open rear doors
+  LOAD_ZONE: { X0: -1.15, X1: 1.15, Z0: -3.3, Z1: -0.1 },
   SEATS: [
-    { x: -0.42, z: -1.15 },
-    { x: 0.42, z: -1.15 },
-    { x: -0.42, z: -0.45 },
-    { x: 0.42, z: -0.45 },
+    { x: -0.42, z: 0.95 },
+    { x: 0.42, z: 0.95 },
+    { x: -0.42, z: 0.45 },
+    { x: 0.42, z: 0.45 },
   ],
-  ENGINE_POINT: { x: 0, z: -2.55 }, // local; install interaction
-  DOOR_POINT: { x: 0, z: 2.45 }, // local; rear doors interaction
-  STRAP_POINT: { x: 0.9, z: 2.1 },
+  ENGINE_POINT: { x: 0, z: 2.55 }, // local; install interaction (front)
+  DOOR_POINT: { x: 0, z: -2.45 }, // local; rear doors interaction
+  STRAP_POINT: { x: 1.15, z: -2.2 },
   BUMP_CARGO_DAMAGE: 14, // damage to unsecured cargo per significant bump
 } as const;
 

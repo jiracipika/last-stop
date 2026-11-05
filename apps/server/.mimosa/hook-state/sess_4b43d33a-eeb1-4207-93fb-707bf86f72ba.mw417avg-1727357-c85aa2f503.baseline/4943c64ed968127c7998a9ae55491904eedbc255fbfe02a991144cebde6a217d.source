@@ -1,0 +1,258 @@
+// GameRoom: Colyseus lifecycle + message validation around the authoritative
+// World simulation. Runs a fixed 30 Hz tick, patches state at 20 Hz.
+
+import { Room, Client, defineRoom } from "@colyseus/core";
+import { TICK_DT, PATCH_MS, MISSION, QUICK_MESSAGES, TICK_HZ } from "@last-stop/shared";
+import { World, type RPlayer } from "../sim/world.js";
+
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+interface Limiter {
+  last: number;
+  minGap: number; // seconds
+}
+
+export class GameRoom extends Room {
+  override maxClients = MISSION.MAX_PLAYERS;
+  world!: World;
+  limitters = new Map<string, Map<string, Limiter>>();
+
+  override onCreate(_options: Record<string, unknown>): void {
+    this.world = new World();
+    // Test-only knobs (CI speed). Gated by server env so a hostile client
+    // cannot shorten timers or lower quotas on a production server.
+    if (process.env.LS_TEST_MODE === "1") {
+      const q = Number(_options.testQuota);
+      const s = Number(_options.testSeconds);
+      if (Number.isFinite(q) && q >= 0) this.world.testQuota = q;
+      if (Number.isFinite(s) && s > 0) this.world.testSeconds = s;
+    }
+    this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
+    this.setPatchRate(PATCH_MS);
+    this.autoDispose = true;
+
+    this.onMessage("in", (client, data) => {
+      const p = this.world.players.get(client.sessionId);
+      if (!p || !p.connected) return;
+      if (!this.rateOk(client, "in", 1 / 45)) return;
+      if (typeof data !== "object" || data === null) return;
+      this.world.setMoveInput(p, data as Record<string, unknown>);
+    });
+
+    this.onMessage("act", (client, data) => {
+      const p = this.world.players.get(client.sessionId);
+      if (!p || !p.connected || typeof data !== "object" || data === null) return;
+      this.handleAct(client, p, data as Record<string, unknown>);
+    });
+
+    this.onMessage("ping", (client, data) => {
+      client.send("ev", { t: "pong", c: typeof data === "number" ? data : 0 });
+    });
+  }
+
+  private rateOk(client: Client, kind: string, minGap: number): boolean {
+    let m = this.limitters.get(client.sessionId);
+    if (!m) {
+      m = new Map();
+      this.limitters.set(client.sessionId, m);
+    }
+    const now = this.clock.elapsedTime / 1000;
+    const l = m.get(kind);
+    if (!l) {
+      m.set(kind, { last: now, minGap });
+      return true;
+    }
+    if (now - l.last < l.minGap) return false;
+    l.last = now;
+    return true;
+  }
+
+  private handleAct(client: Client, p: RPlayer, data: Record<string, unknown>): void {
+    const w = this.world;
+    const kind = String(data.k ?? "");
+    switch (kind) {
+      case "profile": {
+        if (w.phase !== "lobby" && w.phase !== "results") return;
+        if (!this.rateOk(client, "profile", 0.5)) return;
+        const nick = typeof data.nick === "string" ? data.nick.slice(0, 16).trim() : p.nick;
+        if (nick) p.nick = nick;
+        if (typeof data.color === "number" && data.color >= 0 && data.color < 8) {
+          const used = new Set([...w.players.values()].filter((o) => o.sid !== p.sid).map((o) => o.color));
+          if (!used.has(data.color)) p.color = data.color;
+        }
+        w.syncPlayerSchema(p, true);
+        this.broadcast("ev", { t: "profile", sid: p.sid, nick: p.nick, color: p.color });
+        return;
+      }
+      case "ready": {
+        if (w.phase !== "lobby") return;
+        p.ready = !p.ready;
+        return;
+      }
+      case "start": {
+        if (w.phase !== "lobby" || !p.host) return;
+        const all = [...w.players.values()];
+        if (!all.every((o) => o.ready)) return;
+        w.startMission();
+        return;
+      }
+      case "replay": {
+        if (w.phase !== "results") return;
+        if (!this.rateOk(client, "replay", 3)) return;
+        for (const o of w.players.values()) o.ready = false;
+        w.startMission();
+        return;
+      }
+      case "grab": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "grab", 0.1)) return;
+        const id = typeof data.id === "string" ? data.id : "";
+        w.tryGrab(p, id);
+        return;
+      }
+      case "release": {
+        if (!this.rateOk(client, "release", 0.1)) return;
+        w.tryRelease(p, data.thrown === true);
+        return;
+      }
+      case "door": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "door", 0.3)) return;
+        const id = typeof data.id === "string" ? data.id : "";
+        w.toggleDoor(p, id);
+        return;
+      }
+      case "flashlight": {
+        if (!this.rateOk(client, "flashlight", 0.2)) return;
+        w.toggleFlashlight(p);
+        return;
+      }
+      case "vanDoors": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "vanDoors", 0.4)) return;
+        w.toggleVanDoors(p);
+        return;
+      }
+      case "vanLights": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "vanLights", 0.4)) return;
+        w.toggleVanLights(p);
+        return;
+      }
+      case "horn": {
+        if (!this.rateOk(client, "horn", 1.2)) return;
+        w.horn(p);
+        return;
+      }
+      case "enterVan": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "enterVan", 0.5)) return;
+        w.tryEnterVan(p, data.driver === true);
+        return;
+      }
+      case "exitVan": {
+        if (!this.rateOk(client, "exitVan", 0.5)) return;
+        if (p.seat > 0 && Math.abs(w.van.speed) < 1.5) w.leaveSeat(p);
+        return;
+      }
+      case "straps": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "straps", 0.5)) return;
+        w.toggleStraps(p);
+        return;
+      }
+      case "ping3d": {
+        if (!this.rateOk(client, "ping3d", 1.2)) return;
+        if (typeof data.x !== "number" || typeof data.z !== "number") return;
+        const k = typeof data.kind === "string" ? data.kind : "ping";
+        const x = Math.max(-70, Math.min(34, data.x));
+        const z = Math.max(-26, Math.min(26, data.z));
+        w.pushMarker("ping", k, x, 1.2, z, p.sid);
+        this.broadcast("ev", { t: "ping3d", x, z, kind: k, by: p.sid });
+        return;
+      }
+      case "quick": {
+        if (!this.rateOk(client, "quick", 1.5)) return;
+        const idx = typeof data.i === "number" ? Math.round(data.i) : -1;
+        const msg = QUICK_MESSAGES[idx];
+        if (!msg) return;
+        w.pushMarker("quick", msg.label, p.body.x, 1.6, p.body.z, p.sid);
+        this.broadcast("ev", { t: "quick", msg: msg.label, sid: p.sid, x: p.body.x, z: p.body.z });
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  override async onJoin(client: Client, options: Record<string, unknown> | undefined): Promise<void> {
+    const w = this.world;
+    // seats: connected players + players inside the reconnect grace window
+    const seated = [...w.players.values()].length;
+    if (seated >= MISSION.MAX_PLAYERS) {
+      throw new Error("Room is full");
+    }
+    if (w.phase === "briefing" || w.phase === "scavenge" || w.phase === "escape") {
+      throw new Error("Mission in progress — try again after the shift");
+    }
+    const nick = typeof options?.nick === "string" && options.nick.trim()
+      ? options.nick.trim().slice(0, 16)
+      : `Rookie${Math.floor(Math.random() * 90 + 10)}`;
+    const color = typeof options?.color === "number" ? Math.max(0, Math.min(7, Math.round(options.color))) : w.players.size % 8;
+    const host = w.players.size === 0;
+    const p = w.addPlayer(client.sessionId, nick, color, host);
+    this.broadcast("ev", { t: "join", sid: client.sessionId, nick: p.nick });
+  }
+
+  override async onDrop(client: Client, _code?: number): Promise<void> {
+    const w = this.world;
+    const p = w.players.get(client.sessionId);
+    if (!p) return;
+    if (w.phase === "lobby" || w.phase === "results") {
+      return; // onLeave finalizes immediately
+    }
+    // unexpected drop mid-mission: free their hands immediately, hold the seat
+    p.connected = false;
+    w.releaseCarries(client.sessionId, "leave");
+    this.broadcast("ev", { t: "dropConn", sid: client.sessionId });
+    try {
+      const re = await this.allowReconnection(client, MISSION.RECONNECT_GRACE_S);
+      if (re) {
+        p.connected = true;
+        this.broadcast("ev", { t: "rejoin", sid: client.sessionId });
+      }
+    } catch {
+      /* grace expired; onLeave finalizes */
+    }
+  }
+
+  override onReconnect?(client: Client): void {
+    const p = this.world.players.get(client.sessionId);
+    if (p) {
+      p.connected = true;
+      this.broadcast("ev", { t: "rejoin", sid: client.sessionId });
+    }
+  }
+
+  override async onLeave(client: Client, _code?: number): Promise<void> {
+    this.world.removePlayer(client.sessionId);
+    this.limitters.delete(client.sessionId);
+    this.broadcast("ev", { t: "leave", sid: client.sessionId });
+  }
+
+  override onDispose(): void {
+    // intervals are cleaned up by the framework
+  }
+
+  private tick(): void {
+    const w = this.world;
+    w.step(TICK_DT);
+    if (w.events.length) {
+      const evs = w.events.slice();
+      w.events.length = 0;
+      for (const e of evs) this.broadcast("ev", e);
+    }
+  }
+}
+
+export default defineRoom(GameRoom);

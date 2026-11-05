@@ -194,7 +194,7 @@ export const PROPS: PropDef[] = [
   { kind: "vending", x: -8, z: -7.4, w: 1.3, d: 0.9 },
   { kind: "vending", x: 4.5, z: -7.4, w: 1.3, d: 0.9 },
   { kind: "car", x: -9, z: 0, w: 4.4, d: 1.9, rot: 0.2 },
-  { kind: "car", x: 32, z: -10.2, w: 4.4, d: 1.9, rot: -0.35 },
+  { kind: "car", x: 24, z: 22, w: 4.4, d: 1.9, rot: -0.35 },
   { kind: "dumpster", x: 13, z: -20, w: 2.2, d: 1.3 },
   { kind: "dumpster", x: 32.4, z: -2.6, w: 2.2, d: 1.3 },
   { kind: "boilerTank", x: -3, z: -22.6, w: 2.4, d: 2.4 },
@@ -345,10 +345,10 @@ export const PATROL_ROUTES: string[][] = [
 // Spawns
 // ---------------------------------------------------------------------------
 export const PLAYER_SPAWNS = [
-  { x: -0.6, z: 10, yaw: Math.PI },
-  { x: 2.6, z: 10.4, yaw: Math.PI },
+  { x: -0.6, z: 9.6, yaw: Math.PI },
+  { x: 4.2, z: 10.2, yaw: Math.PI },
   { x: -3, z: 11.5, yaw: Math.PI },
-  { x: 1.2, z: 14.5, yaw: Math.PI },
+  { x: 4.2, z: 14.5, yaw: Math.PI },
 ];
 
 export const VAN_START = { x: 2, z: 13.5, yaw: Math.PI }; // facing north (-Z)
