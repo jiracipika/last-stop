@@ -44,16 +44,32 @@ One complete, replayable mission first; then expand. This file is the resume poi
 
 ### Verified by tests
 
-- Server: 26/26 (`pnpm test`) — map, lobby, carry, mission arcs (win/timeout/wipe/replay),
-  enemy FSM, anti-cheat (teleport/tamper/flood), **reconnection** (token reconnect restores
-  session/position/stats; grace expiry removes the seat), **enemy over sockets** (chase → down →
-  revive, cross-client enemy sync), **4-crew cooperative WIN** (two-handle heavy delivery, part
-  install, all four board and escape, all four clients agree on results).
-- Browsers: 2/2 Playwright (`pnpm e2e`) — two contexts, one room, join by code, start, HUD.
+- Server: 28/28 (`pnpm test`) — map, lobby (+ duplicate code rejection), carry, mission arcs
+  (win/timeout/wipe/replay), enemy FSM, anti-cheat (teleport/tamper/flood), **reconnection**
+  (token reconnect restores session/position/stats; grace expiry removes the seat; solo-grace
+  keeps the run alive), **enemy over sockets** (chase → down → revive, cross-client enemy sync),
+  **4-crew cooperative WIN** (two-handle heavy delivery, part install, all four board and
+  escape, all four clients agree on results).
+- Browsers: 4/4 Playwright (`pnpm e2e`) — two contexts, one room, join by code, start, HUD;
+  keyboard-driven movement + flashlight + ping through the real client pipeline; forced socket
+  drop healed by SDK auto-reconnect with the session intact.
 - Build/typecheck clean; bundled server boots + `/health` responds.
 - FPS probe (`e2e/tests/probe-fps.ts`): ~15–20 fps in headless Chromium **software GL**
   (SwiftShader) — a worst-case floor/regression check, not a hardware benchmark. No GPU-frame
   target is claimed from it; measure on real hardware before making one.
+
+### Session 3 fixes (2026-11-05, "/continue" batch)
+
+- Duplicate room codes are rejected server-side (two rooms sharing LS<CODE> made joins a coin
+  flip); client's retry-with-new-code path now has a matching test.
+- Solo disconnect no longer instantly wipes the mission: players inside their reconnect grace
+  count as active. Found by the browser reconnect e2e (solo drop → "results" within seconds).
+- Browser e2e now covers the real client input pipeline (WASD → prediction → server → replicated
+  position, flashlight, ping markers) and SDK auto-reconnect healing a forced socket drop.
+- Remote players, the van, and The Caretaker render through a 120 ms two-snapshot interpolation
+  buffer (teleport-safe) instead of exponential smoothing; FPS floor unchanged.
+- Item yaw blends when a two-handle carrier drops; spectate HUD names who you're watching;
+  WebGL context loss is caught with a recovery toast.
 
 ### Session 2 fixes (2026-11-05, "queue" continuation)
 

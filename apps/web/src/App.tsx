@@ -142,6 +142,19 @@ export function App(): React.ReactElement {
 
   const mobile = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && innerWidth < 1024;
 
+  // Debug/test hook (dev builds only): lets Playwright reach the live Net and
+  // Engine instances without exposing anything in production bundles.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    Object.assign(window, {
+      __laststop: {
+        net,
+        engine: () => engineRef.current,
+        store,
+      },
+    });
+  }, [net, store]);
+
   return (
     <div className="app">
       {screen === "game" && <canvas ref={canvasRef} className="game-canvas" onClick={onCanvasClick} />}

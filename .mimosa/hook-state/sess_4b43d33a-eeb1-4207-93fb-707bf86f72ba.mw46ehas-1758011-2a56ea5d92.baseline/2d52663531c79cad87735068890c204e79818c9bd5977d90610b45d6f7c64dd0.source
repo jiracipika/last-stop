@@ -28,6 +28,11 @@ export class GameRoom extends Room {
       const s = Number(_options.testSeconds);
       if (Number.isFinite(q) && q >= 0) this.world.testQuota = q;
       if (Number.isFinite(s) && s > 0) this.world.testSeconds = s;
+      // deterministic enemy placement for integration tests
+      const ex = Number(_options.testEnemyX);
+      const ez = Number(_options.testEnemyZ);
+      if (Number.isFinite(ex) && Number.isFinite(ez)) this.world.testEnemyAt = { x: ex, z: ez };
+      if (_options.testFreezeEnemyAfterDown === true) this.world.testFreezeEnemyAfterDown = true;
     }
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);

@@ -1,7 +1,7 @@
 // GameRoom: Colyseus lifecycle + message validation around the authoritative
 // World simulation. Runs a fixed 30 Hz tick, patches state at 20 Hz.
 
-import { Room, Client, defineRoom } from "@colyseus/core";
+import { Room, Client, defineRoom, matchMaker } from "@colyseus/core";
 import { TICK_DT, PATCH_MS, MISSION, QUICK_MESSAGES, TICK_HZ } from "@last-stop/shared";
 import { World, type RPlayer } from "../sim/world.js";
 
@@ -18,7 +18,7 @@ export class GameRoom extends Room {
   limitters = new Map<string, Map<string, Limiter>>();
   inputFlood = new Map<string, { windowStart: number; count: number }>();
 
-  override onCreate(_options: Record<string, unknown>): void {
+  override async onCreate(_options: Record<string, unknown>): Promise<void> {
     this.world = new World();
     this.state = this.world.state as never;
     // Test-only knobs (CI speed). Gated by server env so a hostile client
@@ -37,10 +37,16 @@ export class GameRoom extends Room {
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);
     this.autoDispose = true;
-    // join-by-code: host picks a short code, the room id becomes LS<CODE>
+    // join-by-code: host picks a short code, the room id becomes LS<CODE>.
+    // A taken code rejects the create; the client retries with a fresh code.
     const code = _options?.code;
     if (typeof code === "string" && /^[A-Z0-9]{5}$/.test(code)) {
-      this.roomId = `LS${code}`;
+      const roomId = `LS${code}`;
+      const taken = await matchMaker.driver.findByIds([roomId]);
+      if (taken && taken.size > 0) {
+        throw new Error(`Room code ${code} already exists`);
+      }
+      this.roomId = roomId;
     }
 
     this.onMessage("in", (client, data) => {
@@ -241,12 +247,14 @@ export class GameRoom extends Room {
     }
     // unexpected drop mid-mission: free their hands immediately, hold the seat
     p.connected = false;
+    p.graceUntil = w.t + MISSION.RECONNECT_GRACE_S;
     w.releaseCarries(client.sessionId, "leave");
     this.broadcast("ev", { t: "dropConn", sid: client.sessionId });
     try {
       const re = await this.allowReconnection(client, MISSION.RECONNECT_GRACE_S);
       if (re) {
         p.connected = true;
+        p.graceUntil = 0;
         this.broadcast("ev", { t: "rejoin", sid: client.sessionId });
       }
     } catch {
@@ -258,6 +266,7 @@ export class GameRoom extends Room {
     const p = this.world.players.get(client.sessionId);
     if (p) {
       p.connected = true;
+      p.graceUntil = 0;
       this.broadcast("ev", { t: "rejoin", sid: client.sessionId });
     }
   }

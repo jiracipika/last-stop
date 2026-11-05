@@ -102,7 +102,8 @@ export function Hud({
         )}
         {hud.dead && (
           <div className="dead-note">
-            You're done for the night. <button className="btn small" onClick={onSpectateNext}>Next coworker</button>
+            You're done for the night{hud.spectating ? ` — watching ${hud.spectating}` : ""}.{" "}
+            <button className="btn small" onClick={onSpectateNext}>Next coworker</button>
           </div>
         )}
       </div>

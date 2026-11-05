@@ -54,6 +54,8 @@ export interface RPlayer {
   downedCount: number;
   grabCd: number;
   spawn: number;
+  /** server time until which a disconnected player's seat is held */
+  graceUntil: number;
 }
 
 export interface RItem {
@@ -216,6 +218,7 @@ export class World {
       interactKind: "", interactTarget: "", interactT: 0,
       stepAcc: 0, noiseScore: 0, deliveredValue: 0, deliveredCount: 0,
       rescues: 0, biggestLoss: 0, lossItem: "", downedCount: 0, grabCd: 0, spawn: 0,
+      graceUntil: 0,
     };
     this.players.set(sid, p);
     this.placeAtSpawn(p);
@@ -1054,7 +1057,11 @@ export class World {
       this.finish("timeout");
       return;
     }
-    const actives = [...this.players.values()].filter((p) => p.connected && !p.dead);
+    // players inside their reconnect grace still count as active — a solo
+    // player's brief disconnect must not instantly wipe the run
+    const actives = [...this.players.values()].filter(
+      (p) => !p.dead && (p.connected || this.t < p.graceUntil),
+    );
     if (actives.length === 0 || actives.every((p) => p.downed)) {
       this.finish("wipe");
     }

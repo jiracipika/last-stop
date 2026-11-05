@@ -4,7 +4,7 @@
 
 import {
   ENEMY, NAV_NODES, NAV_INDEX, NAV_ADJ, navPath, nearestNavNode, PATROL_ROUTES,
-  doorAabb, moveToward, segHitsAabb, dist2d, mulberry32,
+  doorAabb, moveToward, segHitsAabb, dist2d, angleDiff, mulberry32,
 } from "@last-stop/shared";
 import type { World } from "./world.js";
 
@@ -321,6 +321,13 @@ export class CaretakerAI {
   private stepWindup(dt: number): void {
     const w = this.world;
     this.windupT += dt;
+    // telegraph: it pivots toward its target while winding up (leaves a slim
+    // last-instant dodge window; also prevents striking forever the wrong way)
+    const target = w.players.get(this.chaseSid);
+    if (target && !target.dead && !target.downed) {
+      const targetYaw = Math.atan2(target.body.x - this.x, target.body.z - this.z);
+      this.yaw += angleDiff(this.yaw, targetYaw) * Math.min(1, 3.2 * dt);
+    }
     if (this.windupT >= ENEMY.WINDUP_TIME && !this.struck) {
       this.struck = true;
       w.emit({ t: "strike", x: this.x, z: this.z });

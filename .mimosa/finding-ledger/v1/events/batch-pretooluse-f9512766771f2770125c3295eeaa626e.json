@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "pretooluse-f9512766771f2770125c3295eeaa626e",
+  "runId": null,
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "PreToolUse"
+  },
+  "revision": null,
+  "diffHash": null,
+  "rulesVersion": null,
+  "sessionHash": "e5149391ff3c5ae02e4f9e67e932887baeb76ebb103a9b478702f89372b75884",
+  "reportRef": null,
+  "events": [
+    {
+      "eventId": "hook-37fbd974d4a7418231b8463e1332e53c",
+      "findingId": "mimosa-a86fcf4f3b44b199654b0325",
+      "type": "finding_blocked",
+      "at": "2026-11-05T23:29:03.477Z",
+      "identity": {
+        "projectRelativeFile": "apps/server/src/rooms/GameRoom.ts",
+        "ruleId": "security",
+        "codeEvidenceHash": "d8c07fb7a2385f1a483b85e7a70abc7a553490f6330c131ebcb9ef078f8b2e36",
+        "confidence": "stable"
+      },
+      "scope": "direct",
+      "line": 45,
+      "endLine": 45,
+      "reasonCode": "deny",
+      "reportedToAgent": true,
+      "evidence": {
+        "kind": "source",
+        "boundary": "candidate",
+        "producer": "deterministic",
+        "evidenceHash": "d8c07fb7a2385f1a483b85e7a70abc7a553490f6330c131ebcb9ef078f8b2e36"
+      },
+      "sequence": 0
+    }
+  ],
+  "observedFindingIds": [],
+  "verifiedFiles": [],
+  "recordedAt": "2026-11-05T23:29:03.979Z"
+}

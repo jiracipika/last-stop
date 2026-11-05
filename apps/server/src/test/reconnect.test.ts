@@ -114,4 +114,27 @@ describe("reconnection", () => {
     expect(failed).toBe(true);
     watcher.room.leave();
   }, 90000);
+
+  it("a solo player's brief disconnect does not wipe the mission during grace", async () => {
+    const bot = await joinBot(h, "Loner", { testQuota: 60, testSeconds: 900 });
+    // solo start (no witness: the room must survive the drop on grace alone)
+    await waitFor("synced", () => stateOf(bot).players.get(bot.sid) !== undefined);
+    bot.room.send("act", { k: "ready" });
+    await waitFor("ready", () => stateOf(bot).players.get(bot.sid)!.ready);
+    bot.room.send("act", { k: "start" });
+    await waitFor("scavenge", () => stateOf(bot).phase === "scavenge", 12000);
+    const token = bot.room.reconnectionToken;
+    bot.room.reconnection.enabled = false;
+    bot.room.connection.close(4006);
+    // inside the grace window the mission must still be running
+    await sleep(4000);
+    // (no state socket; verify via reconnecting)
+    const client = new Client(h.url);
+    const room2 = (await client.reconnect(token, RoomState)) as unknown as Bot["room"];
+    await sleep(700);
+    expect(room2.state.phase).toBe("scavenge");
+    expect(room2.state.outcome).toBe("");
+    room2.leave(true);
+    await sleep(300);
+  }, 60000);
 });

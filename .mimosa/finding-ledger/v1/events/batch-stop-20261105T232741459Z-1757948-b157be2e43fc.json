@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261105T232741459Z-1757948-b157be2e43fc",
+  "runId": "20261105T232741459Z-1757948-b157be2e43fc",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "35c0d4477480e0d0faa2df53c188e90f518b50af",
+  "diffHash": "e19a457d9f8492cdeab1a43defe68773240e121706cd5e835f27dc4849d13d76",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e5149391ff3c5ae02e4f9e67e932887baeb76ebb103a9b478702f89372b75884",
+  "reportRef": ".mimosa/reports/task-review-sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba-20261105T232741459Z-1757948-b157be2e43fc.json",
+  "events": [],
+  "observedFindingIds": [
+    "mimosa-bcafa9921f1781a0995df482",
+    "mimosa-63314657dce67fb5d3cd2265",
+    "mimosa-d8f92269e7311a42929dcd63"
+  ],
+  "verifiedFiles": [
+    {
+      "file": "apps/server/src/test/reconnect.test.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "packages/shared/src/sim.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/test/helpers.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/rooms/GameRoom.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/sim/world.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/test/enemy.test.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/test/debug-enemy.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/sim/enemy.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/server/src/test/coop.test.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "apps/web/src/game/engine.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "e2e/tests/probe-fps.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-11-05T23:27:41.869Z"
+}

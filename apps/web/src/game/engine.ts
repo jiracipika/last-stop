@@ -2,7 +2,7 @@
 // React only reads the HudStore.
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, dist2d, clamp,
+  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, dist2d, clamp, angleLerp,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -36,6 +36,44 @@ interface TargetInfo {
 
 const clamp01 = (v: number) => clamp(v, 0, 1);
 
+/** Two-snapshot interpolation buffer for remote entities (~120 ms delay). */
+class SnapBuf {
+  private snaps: { at: number; x: number; z: number; yaw: number }[] = [];
+  private lastX = NaN;
+  private lastZ = NaN;
+
+  push(at: number, x: number, z: number, yaw: number): void {
+    // hard teleport: reset history so we don't smear across the map
+    if (Number.isFinite(this.lastX) && Math.hypot(x - this.lastX, z - this.lastZ) > 2.5) {
+      this.snaps = [];
+    }
+    this.lastX = x;
+    this.lastZ = z;
+    const prev = this.snaps[this.snaps.length - 1];
+    if (prev && Math.hypot(x - prev.x, z - prev.z) < 0.005 && Math.abs(x - prev.x) < 0.005) {
+      return; // unchanged; heartbeat below keeps the buffer fresh enough
+    }
+    this.snaps.push({ at, x, z, yaw });
+    if (this.snaps.length > 20) this.snaps.shift();
+  }
+
+  sample(renderAt: number): { x: number; z: number; yaw: number } | null {
+    const n = this.snaps.length;
+    if (n === 0) return null;
+    if (n === 1) return this.snaps[0]!;
+    for (let i = n - 1; i > 0; i--) {
+      const b = this.snaps[i]!;
+      const a = this.snaps[i - 1]!;
+      if (a.at <= renderAt && renderAt <= b.at) {
+        const span = b.at - a.at || 1;
+        const t = (renderAt - a.at) / span;
+        return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, yaw: angleLerp(a.yaw, b.yaw, t) };
+      }
+    }
+    return this.snaps[n - 1]!; // render time ahead of the newest snapshot
+  }
+}
+
 export class Engine {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
@@ -64,6 +102,10 @@ export class Engine {
   private fpsAcc = 0;
   private fpsN = 0;
   private bangToastCd = 0;
+  private remoteBufs = new Map<string, SnapBuf>();
+  private vanBuf = new SnapBuf();
+  private enemyBuf = new SnapBuf();
+  private lastPatchAt = 0;
   private hudTimer = 0;
   private lastPhase = "lobby";
   private wasSeated = 0;
@@ -98,6 +140,9 @@ export class Engine {
     this.input.onAction = (a) => this.onAction(a);
 
     net.onEvent((e) => this.handleEvent(e));
+    net.room?.onStateChange(() => {
+      this.lastPatchAt = performance.now();
+    });
     net.onStatus(() => {
       store.set({ connStatus: net.status, connDetail: net.statusDetail });
     });
@@ -107,6 +152,22 @@ export class Engine {
     const onResize = () => this.resize();
     window.addEventListener("resize", onResize);
     this.disposers.push(() => window.removeEventListener("resize", onResize));
+
+    // WebGL context loss: keep the page alive and recover when it returns
+    const onCtxLost = (e: Event) => {
+      e.preventDefault();
+      store.toast("Graphics context lost — recovering…", "warn");
+    };
+    const onCtxRestored = () => {
+      store.toast("Graphics recovered", "good");
+      this.resize();
+    };
+    canvas.addEventListener("webglcontextlost", onCtxLost);
+    canvas.addEventListener("webglcontextrestored", onCtxRestored);
+    this.disposers.push(() => {
+      canvas.removeEventListener("webglcontextlost", onCtxLost);
+      canvas.removeEventListener("webglcontextrestored", onCtxRestored);
+    });
   }
 
   private dynamicColliders(): AABB[] {
@@ -534,7 +595,7 @@ export class Engine {
         this.stepSelf(dt, st, me);
         this.scanTarget(st, me);
       }
-      this.syncEntities(dt, st, t);
+      this.syncEntities(dt, st, t, now);
       this.world3d.update(dt, t);
       this.world3d.applyGate(dt);
       this.updateEnemyAudio(st, dt);
@@ -605,8 +666,9 @@ export class Engine {
   private stepAcc = 0;
   private sendAcc = 0;
 
-  private syncEntities(dt: number, st: RoomState, t: number): void {
+  private syncEntities(dt: number, st: RoomState, t: number, nowMs: number): void {
     const k = Math.min(1, 12 * dt); // smoothing toward authoritative state
+    const renderAt = nowMs - 120; // interpolation delay for remote entities
     // players
     const seen = new Set<string>();
     for (const [sid, p] of st.players) {
@@ -627,15 +689,22 @@ export class Engine {
         if (p.seat > 0 || p.downed) av.group.visible = true;
         av.update(0.0001, { ...p, x: px, z: pz } as PlayerState, t);
       } else {
-        const gx = av.group.position.x + (p.x - av.group.position.x) * k;
-        const gz = av.group.position.z + (p.z - av.group.position.z) * k;
-        av.update(dt, { ...p, x: gx, z: gz } as PlayerState, t);
+        // buffered interpolation: render the remote player ~120 ms in the past
+        let buf = this.remoteBufs.get(sid);
+        if (!buf) {
+          buf = new SnapBuf();
+          this.remoteBufs.set(sid, buf);
+        }
+        buf.push(this.lastPatchAt || nowMs, p.x, p.z, p.yaw);
+        const s = buf.sample(renderAt) ?? { x: p.x, z: p.z, yaw: p.yaw };
+        av.update(dt, { ...p, x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
       }
     }
     for (const [sid, av] of this.avatars) {
       if (!seen.has(sid)) {
         this.scene.remove(av.group);
         this.avatars.delete(sid);
+        this.remoteBufs.delete(sid);
       }
     }
     // items
@@ -679,11 +748,15 @@ export class Engine {
     }
     // van + enemy
     const v = st.van;
-    this.vanView.update(v.x, v.z, v.yaw, v.speed, v.doorsOpen, v.lightsOn, t);
+    this.vanBuf.push(this.lastPatchAt || nowMs, v.x, v.z, v.yaw);
+    const vs = this.vanBuf.sample(renderAt) ?? { x: v.x, z: v.z, yaw: v.yaw };
+    this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t);
     this.vanView.syncCargo(v.cargo.length, v.strapped, t);
     const e = st.enemy;
     this.enemyView.group.visible = st.phase === "scavenge" || st.phase === "escape";
-    this.enemyView.update(dt, e, t);
+    this.enemyBuf.push(this.lastPatchAt || nowMs, e.x, e.z, e.yaw);
+    const es = this.enemyBuf.sample(renderAt) ?? { x: e.x, z: e.z, yaw: e.yaw };
+    this.enemyView.update(dt, { ...e, x: es.x, z: es.z, yaw: es.yaw }, t);
     // gate
     this.world3d.setGateOpen(st.gateOpen);
     // doors
@@ -730,15 +803,18 @@ export class Engine {
     if (me.dead) {
       // spectate: follow a living teammate
       const living = [...st.players.entries()].filter(([sid2, p]) => !p.dead && sid2 !== this.net.sid).map(([, p]) => p);
+      let spectating = "";
       if (living.length) {
         this.spectateIdx %= living.length;
         const p = living[this.spectateIdx]!;
+        spectating = p.nick;
         cx = p.x;
         cz = p.z;
         cy = PLAYER.EYE + 1.2;
       } else {
         cy = 18;
       }
+      if (spectating !== this.store.state.spectating) this.store.set({ spectating });
       this.camera.position.set(cx, cy, cz);
       this.camera.rotation.set(0, 0, 0);
       this.camera.lookAt(cx + Math.sin(yaw) * 3, cy - 0.5, cz + Math.cos(yaw) * 3);

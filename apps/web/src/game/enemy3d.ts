@@ -1,6 +1,5 @@
 // The Caretaker: tall silhouette, swinging lantern, readable telegraphs.
 import * as THREE from "three";
-import type { EnemyState } from "@last-stop/shared";
 
 export class EnemyView {
   group = new THREE.Group();
@@ -63,7 +62,7 @@ export class EnemyView {
     this.group.add(this.lantern);
   }
 
-  update(dt: number, e: EnemyState, t: number): void {
+  update(dt: number, e: { x: number; z: number; yaw: number; ai: number }, t: number): void {
     this.group.position.set(e.x, 0, e.z);
     this.group.rotation.y = e.yaw;
 

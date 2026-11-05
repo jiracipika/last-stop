@@ -146,7 +146,11 @@ export class ItemView {
     this.group.visible = true;
     // stored items are shown stacked in the van cargo bay instead
     this.group.position.set(it.x, it.y, it.z);
-    this.group.rotation.y = it.yaw;
+    // blend yaw so a carrier dropping a handle doesn't snap the item around
+    let yawDelta = it.yaw - this.group.rotation.y;
+    while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+    while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    this.group.rotation.y += yawDelta * 0.25;
 
     // damage darkens the mesh
     const dmg = Math.min(1, it.damage / WRECKED_AT);
