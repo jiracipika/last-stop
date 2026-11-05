@@ -189,10 +189,10 @@ describe("mission arcs", () => {
     expect(w.enemy.ai).toBe("investigate");
     // let it see the player
     let guard = 0;
-    while (w.enemy.ai !== "chase" && guard++ < 60) {
+    while ((w.enemy.ai as string) !== "chase" && guard++ < 60) {
       w.step(1 / 30);
     }
-    expect(w.enemy.ai).toBe("chase");
+    expect(w.enemy.ai as string).toBe("chase");
     // close the distance -> windup -> strike
     guard = 0;
     let gotHit = false;

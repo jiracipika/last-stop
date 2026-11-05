@@ -40,7 +40,8 @@ export function validateMap(): string[] {
   return problems;
 }
 
-if (process.argv[1]?.endsWith("mapcheck.ts")) {
+// CLI entry only in Node (this module is also imported by the browser client)
+if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("mapcheck.ts")) {
   const problems = validateMap();
   if (problems.length === 0) console.log("MAP OK");
   else {

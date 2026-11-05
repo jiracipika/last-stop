@@ -5,3 +5,4 @@ export * from "./items.js";
 export * from "./mission.js";
 export * from "./sim.js";
 export * from "./schema.js";
+export { validateMap } from "./mapcheck.js";

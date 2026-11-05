@@ -9,7 +9,8 @@
     "test": "pnpm --filter @last-stop/server test",
     "dev:server": "pnpm --filter @last-stop/server dev",
     "dev:web": "pnpm --filter @last-stop/web dev",
-    "e2e": "playwright test -c e2e/playwright.config.ts"
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm e2e"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

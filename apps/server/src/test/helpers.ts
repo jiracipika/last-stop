@@ -53,7 +53,7 @@ export interface Bot {
 
 export async function joinBot(h: Harness, nick: string, opts: Record<string, unknown> = {}): Promise<Bot> {
   const client = new SDKClient(h.url);
-  const room = await client.create("game", { nick, ...opts }, RoomState);
+  const room = (await client.create("game", { nick, ...opts }, RoomState)) as unknown as Room<RoomState>;
   const events: { t: string; [k: string]: unknown }[] = [];
   room.onMessage("ev", (msg) => events.push(msg as { t: string }));
   return { client, room, sid: room.sessionId, stop: () => void 0, events };
@@ -61,7 +61,7 @@ export async function joinBot(h: Harness, nick: string, opts: Record<string, unk
 
 export async function joinExisting(h: Harness, roomId: string, nick: string): Promise<Bot> {
   const client = new SDKClient(h.url);
-  const room = await client.joinById(roomId, { nick }, RoomState);
+  const room = (await client.joinById(roomId, { nick }, RoomState)) as unknown as Room<RoomState>;
   const events: { t: string; [k: string]: unknown }[] = [];
   room.onMessage("ev", (msg) => events.push(msg as { t: string }));
   return { client, room, sid: room.sessionId, stop: () => void 0, events };
