@@ -32,6 +32,11 @@ export class GameRoom extends Room {
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);
     this.autoDispose = true;
+    // join-by-code: host picks a short code, the room id becomes LS<CODE>
+    const code = _options?.code;
+    if (typeof code === "string" && /^[A-Z0-9]{5}$/.test(code)) {
+      this.roomId = `LS${code}`;
+    }
 
     this.onMessage("in", (client, data) => {
       const p = this.world.players.get(client.sessionId);

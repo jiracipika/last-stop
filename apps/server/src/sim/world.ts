@@ -406,6 +406,8 @@ export class World {
     }
     const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
     if (d > PLAYER.GRAB_RANGE + def.radius) return false;
+    // must not reach through walls
+    if (d > 0.8 && !this.hasLineOfSight(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
     if (it.defId === "distributor" && this.partInstalled) return false;
     it.state = 1;
     it.sleeping = false;

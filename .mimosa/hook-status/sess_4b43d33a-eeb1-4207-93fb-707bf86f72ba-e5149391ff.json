@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-11-05T21:28:15.199Z",
+  "recordedAt": "2026-11-05T21:54:20.171Z",
   "sessionId": "sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba",
   "event": "PostToolUse",
-  "toolName": "Edit",
-  "file": "apps/server/src/test/mission.test.ts",
+  "toolName": "Write",
+  "file": "PROGRESS.md",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 5,
+  "durationMs": 3,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }
