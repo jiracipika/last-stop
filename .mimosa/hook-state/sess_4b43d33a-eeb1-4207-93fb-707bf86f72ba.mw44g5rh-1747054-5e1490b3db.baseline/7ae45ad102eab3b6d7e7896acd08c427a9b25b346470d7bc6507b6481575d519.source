@@ -1,0 +1,19 @@
+{
+  "name": "last-stop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LAST STOP — 1-4 player online co-op horror-comedy scavenging game",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @last-stop/server test",
+    "dev:server": "pnpm --filter @last-stop/server dev",
+    "dev:web": "pnpm --filter @last-stop/web dev",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "typescript": "^5.9.3"
+  }
+}

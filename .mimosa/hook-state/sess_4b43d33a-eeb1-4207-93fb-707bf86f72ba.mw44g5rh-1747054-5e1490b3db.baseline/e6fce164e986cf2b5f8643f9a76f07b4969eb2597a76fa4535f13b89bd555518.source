@@ -1,0 +1,82 @@
+// Lobby + room-capacity + phase-transition tests over real WebSocket clients.
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { bootServer, joinBot, joinExisting, sleep, waitFor, me, type Harness } from "./helpers.js";
+
+let h: Harness;
+
+beforeAll(async () => {
+  h = await bootServer();
+});
+
+afterAll(async () => {
+  await h.close();
+});
+
+describe("lobby", () => {
+  it("creates a room, syncs roster, transfers nothing weird", async () => {
+    const a = await joinBot(h, "Ada");
+    await waitFor("player a in state", () => a.room.state.players.get(a.sid) !== undefined);
+    expect(me(a).nick).toBe("Ada");
+    expect(me(a).host).toBe(true);
+    a.room.leave();
+  }, 20000);
+
+  it("four players join one room; a fifth is rejected cleanly", async () => {
+    const host = await joinBot(h, "P1");
+    await waitFor("host in", () => host.room.state.players.size >= 1);
+    const roomId = host.room.roomId;
+    const others = [await joinExisting(h, roomId, "P2"), await joinExisting(h, roomId, "P3"), await joinExisting(h, roomId, "P4")];
+    await waitFor("4 players", () => host.room.state.players.size === 4);
+    expect(host.room.state.players.size).toBe(4);
+    let fifthError = "";
+    try {
+      await joinExisting(h, roomId, "P5");
+    } catch (e) {
+      fifthError = String(e);
+    }
+    expect(fifthError).toMatch(/full|maximum|locked|4/i);
+    for (const b of others) b.room.leave();
+    host.room.leave();
+    await sleep(300);
+  }, 30000);
+
+  it("mission start requires everyone ready; phases move briefing -> scavenge", async () => {
+    const a = await joinBot(h, "Solo");
+    const b = await joinExisting(h, a.room.roomId, "Mate");
+    await waitFor("2 players", () => a.room.state.players.size === 2);
+    // host tries to start while b not ready
+    a.room.send("act", { k: "start" });
+    await sleep(600);
+    expect(a.room.state.phase).toBe("lobby");
+    a.room.send("act", { k: "ready" });
+    b.room.send("act", { k: "ready" });
+    await waitFor("both ready", () => [...a.room.state.players.values()].every((p) => p.ready));
+    a.room.send("act", { k: "start" });
+    await waitFor("briefing", () => a.room.state.phase === "briefing");
+    await waitFor("scavenge", () => a.room.state.phase === "scavenge", 12000);
+    expect(a.room.state.quota).toBeGreaterThan(0);
+    expect(a.room.state.items.size).toBeGreaterThan(10);
+    b.room.leave();
+    a.room.leave();
+  }, 30000);
+
+  it("rejects joins mid-mission", async () => {
+    const a = await joinBot(h, "Host2", {});
+    const f = await joinExisting(h, a.room.roomId, "Friend");
+    await waitFor("2 players", () => a.room.state.players.size === 2);
+    a.room.send("act", { k: "ready" });
+    f.room.send("act", { k: "ready" });
+    await waitFor("both ready", () => [...a.room.state.players.values()].every((p) => p.ready));
+    a.room.send("act", { k: "start" });
+    await waitFor("briefing", () => a.room.state.phase === "briefing");
+    let err = "";
+    try {
+      await joinExisting(h, a.room.roomId, "Latecomer");
+    } catch (e) {
+      err = String(e);
+    }
+    expect(err).toMatch(/progress/i);
+    a.room.leave();
+    f.room.leave();
+  }, 30000);
+});

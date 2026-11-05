@@ -141,15 +141,16 @@ export async function walkTo(bot: Bot, tx: number, tz: number, tolerance = 1.0, 
       }
     }
     doorCd -= 0.1;
-    // steer toward the waypoint (invert the server's local->world rotation)
+    // steer toward the waypoint (invert the server's local->world rotation:
+    // wx = mz·sin − mx·cos, wz = mz·cos + mx·sin)
     const yaw = Math.atan2(wp.x - p.x, wp.z - p.z);
     const dx = wp.x - p.x;
     const dz = wp.z - p.z;
     const len = Math.hypot(dx, dz) || 1;
     const wx = dx / len;
     const wz = dz / len;
-    const mx = wx * Math.cos(yaw) + wz * Math.sin(yaw);
-    const mz = -wx * Math.sin(yaw) + wz * Math.cos(yaw);
+    const mx = -wx * Math.cos(yaw) + wz * Math.sin(yaw);
+    const mz = wx * Math.sin(yaw) + wz * Math.cos(yaw);
     if (Date.now() - lastSend > 50) {
       room.send("in", { mx, mz, yaw, sprint: false, seq: (Date.now() & 0xffffff) });
       lastSend = Date.now();

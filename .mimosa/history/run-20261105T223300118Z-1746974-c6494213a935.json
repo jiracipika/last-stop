@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20261105T223300118Z-1746974-c6494213a935",
+  "runStatus": "inconclusive",
+  "errors": [
+    "candidate-select:apps/server/src/test/debug-join.ts: changed_file_unreadable: observed changed file no longer exists or cannot be read",
+    "candidate-select:apps/server/vitest.config.ts: candidate_limit_exceeded: 27 changed reviewable file(s) were not scanned because the limit is 20",
+    "baseline:.: baseline_partial: baseline capture had enumeration or snapshot errors"
+  ],
+  "target": ".",
+  "revision": "596283b63f6c3d1028b64d32bdaf95e9f539ffad",
+  "diffHash": "cd58532b3a541be1fc92aeade2654f33055f7528ac1cd403dd27ef1a962c5a80",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-11-05T22:33:00.118Z",
+  "timing": {
+    "startedAt": "2026-11-05T22:32:58.534Z",
+    "completedAt": "2026-11-05T22:33:00.118Z",
+    "durationMs": 1584
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 38,
+    "bySeverity": {
+      "high": 9,
+      "low": 29
+    },
+    "byStatus": {
+      "candidate": 38
+    }
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "changed_file_unreadable": 1,
+      "candidate_limit_exceeded": 1,
+      "baseline_partial": 1,
+      "project_check_failed": 3
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba-20261105T223300118Z-1746974-c6494213a935.json"
+}

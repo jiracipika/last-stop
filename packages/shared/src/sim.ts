@@ -34,11 +34,12 @@ export function stepPlayer(
   radius = PLAYER.RADIUS,
 ): { jumped: boolean } {
   let jumped = false;
-  // Local -> world move direction
+  // Local -> world: forward (0,1) maps to (sin yaw, cos yaw), strafe (1,0)
+  // maps to the player's right (-cos yaw, sin yaw)
   const sin = Math.sin(input.yaw);
   const cos = Math.cos(input.yaw);
-  let wx = input.mx * cos - input.mz * sin;
-  let wz = input.mx * sin + input.mz * cos;
+  let wx = input.mz * sin - input.mx * cos;
+  let wz = input.mz * cos + input.mx * sin;
   const wl = Math.hypot(wx, wz);
   if (wl > 1e-4) {
     wx /= wl;
