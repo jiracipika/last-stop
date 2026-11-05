@@ -2,7 +2,7 @@
 // React only reads the HudStore.
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, dist2d, clamp,
+  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, dist2d, clamp,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -63,6 +63,7 @@ export class Engine {
   private spectateIdx = 0;
   private fpsAcc = 0;
   private fpsN = 0;
+  private bangToastCd = 0;
   private hudTimer = 0;
   private lastPhase = "lobby";
   private wasSeated = 0;
@@ -239,7 +240,14 @@ export class Engine {
     const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
     switch (e.t) {
       case "grab":
-        if (e.by === this.net.sid) audio.grab();
+        if (e.by === this.net.sid) {
+          audio.grab();
+          const grabbed = st?.items.get(String(e.item));
+          // picked up the second handle of a heavy? tell them they're teamed up
+          if (grabbed?.h1 === this.net.sid) {
+            this.store.toast("You've got the other end — walk together", "good");
+          }
+        }
         break;
       case "drop":
         audio.playEventAt("drop", Number(e.x ?? this.camera.position.x), Number(e.z ?? this.camera.position.z), cam);
@@ -265,10 +273,18 @@ export class Engine {
         audio.click();
         this.store.toast(e.on ? "Cargo strapped down" : "Straps released", "info");
         break;
-      case "bang":
+      case "bang": {
         audio.playEventAt("bang", Number(e.x ?? 0), Number(e.z ?? 0), cam);
         this.shake(0.25);
+        const bx = Number(e.x ?? 0);
+        const bz = Number(e.z ?? 0);
+        const near = dist2d(this.predictor.body.x, this.predictor.body.z, bx, bz);
+        if (near < 7 && this.bangToastCd <= 0) {
+          this.bangToastCd = 4;
+          this.store.toast("IT'S FORCING A DOOR — hold it or run!", "warn");
+        }
         break;
+      }
       case "hurt":
         if (e.sid === this.net.sid) {
           audio.hurt();
@@ -438,7 +454,7 @@ export class Engine {
         continue;
       }
       if (it.state === 0) {
-        consider({ kind: "item", id, label: `Grab ${def.name}` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        consider({ kind: "item", id, label: `Grab ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
       }
     }
 
@@ -509,6 +525,7 @@ export class Engine {
 
     this.fpsAcc += dt;
     this.fpsN++;
+    if (this.bangToastCd > 0) this.bangToastCd -= dt;
     this.store.pruneToasts();
 
     if (st) {
@@ -622,6 +639,7 @@ export class Engine {
       }
     }
     // items
+    const me = st.players.get(this.net.sid);
     const seenItems = new Set<string>();
     for (const [id, it] of st.items) {
       seenItems.add(id);
@@ -632,16 +650,26 @@ export class Engine {
         this.scene.add(view.group);
       }
       const highlighted = this.target?.kind === "item" && this.target.id === id;
-      const smoothX = view.group.position.x + (it.x - view.group.position.x) * k;
-      const smoothZ = view.group.position.z + (it.z - view.group.position.z) * k;
-      const shown = it.state === 2
-        ? { ...it, x: view.group.position.x, z: view.group.position.z, y: -5 } // stored: hidden below world
-        : { ...it, x: id === this.net.sid ? it.x : smoothX, z: smoothZ };
+      let showX: number;
+      let showZ: number;
+      let showY: number;
       if (it.state === 2) {
         view.group.visible = false;
-      } else {
-        view.update(shown as typeof it, highlighted, t);
+        continue;
       }
+      if (me && me.carrying === id) {
+        // render the item I'm carrying at MY predicted hold point (no lag)
+        const fx = Math.sin(this.input.yaw);
+        const fz = Math.cos(this.input.yaw);
+        showX = this.predictor.body.x + fx * CARRY.HOLD_DIST;
+        showZ = this.predictor.body.z + fz * CARRY.HOLD_DIST;
+        showY = CARRY.HOLD_Y;
+      } else {
+        showX = view.group.position.x + (it.x - view.group.position.x) * k;
+        showZ = view.group.position.z + (it.z - view.group.position.z) * k;
+        showY = it.y;
+      }
+      view.update({ ...it, x: showX, y: showY, z: showZ } as typeof it, highlighted, t);
     }
     for (const [id, view] of this.itemViews) {
       if (!seenItems.has(id)) {

@@ -44,10 +44,26 @@ One complete, replayable mission first; then expand. This file is the resume poi
 
 ### Verified by tests
 
-- Server: 21/21 (`pnpm test`) — map, lobby, carry, mission arcs (win/timeout/wipe/replay),
-  enemy FSM, anti-cheat (teleport/tamper/flood).
+- Server: 26/26 (`pnpm test`) — map, lobby, carry, mission arcs (win/timeout/wipe/replay),
+  enemy FSM, anti-cheat (teleport/tamper/flood), **reconnection** (token reconnect restores
+  session/position/stats; grace expiry removes the seat), **enemy over sockets** (chase → down →
+  revive, cross-client enemy sync), **4-crew cooperative WIN** (two-handle heavy delivery, part
+  install, all four board and escape, all four clients agree on results).
 - Browsers: 2/2 Playwright (`pnpm e2e`) — two contexts, one room, join by code, start, HUD.
 - Build/typecheck clean; bundled server boots + `/health` responds.
+- FPS probe (`e2e/tests/probe-fps.ts`): ~15–20 fps in headless Chromium **software GL**
+  (SwiftShader) — a worst-case floor/regression check, not a hardware benchmark. No GPU-frame
+  target is claimed from it; measure on real hardware before making one.
+
+### Session 2 fixes (2026-11-05, "queue" continuation)
+
+- Fixed mirrored strafing in the shared local→world transform (east/west walking was inverted;
+  invisible in north/south tests until the reconnect test walked west).
+- Caretaker windup now pivots toward its target — previously it could wind up facing away and
+  miss forever at point-blank (found by the socket enemy test, reproduced world-level).
+- Grabs no longer treat the van body as an occluder (loading-zone grabs were rejected).
+- Feel: your own carried item renders at your predicted hold point (no server lag), grab prompts
+  show $value, "IT'S FORCING A DOOR" warning when banging nearby, second-handle pickup toast.
 
 ### Commands
 

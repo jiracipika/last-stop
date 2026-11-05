@@ -180,18 +180,24 @@ the frontend — the only env var the client takes is the public server URL.
 
 ## What's tested (actually run, not claimed)
 
-- `pnpm test` — **21/21 passing**: map integrity (every nav edge clear of walls, spawns outside
+- `pnpm test` — **26/26 passing**: map integrity (every nav edge clear of walls, spawns outside
   colliders, gate lanes drivable); lobby (create/join, 5th player rejected, ready-gating,
   mid-mission joins rejected); carrying (simultaneous grab → exactly one holder, two-handle
   heavy with independent release, delivery credited exactly once, leave-while-carrying drops the
   item safely, out-of-range and far van interactions rejected); mission arcs (**full WIN:
   deliver → install → gate → drive → results → replay resets all state**, timeout loss, wipe,
   revive, Caretaker FSM: noise → investigate, sight → chase → windup → downed);
-  anti-cheat (no teleporting via input, no score tampering via messages, flood → disconnect).
+  anti-cheat (no teleporting via input, no score tampering via messages, flood → disconnect);
+  **reconnection** (drop → token reconnect restores session/position/stats; 20 s grace expiry
+  removes the seat and invalidates the token); **enemy over real sockets** (chase → down →
+  teammate revive, replicated to both clients); **4-crew cooperative WIN** (two bots carry a
+  heavy on two handles, a third installs the part, all four board and drive out, and all four
+  clients report the same results).
 - `pnpm e2e` — **2/2 passing** (headless Chromium): two real browser contexts join one room by
   code, ready, start, both reach the mission HUD with cross-referenced teammate panels; bogus
   join code fails with feedback. Screenshot probes confirmed a lit, populated 3D scene
-  (analysis in `shots/`).
+  (analysis in `shots/`). An FPS probe (`e2e/tests/probe-fps.ts`) samples ~15–20 fps under
+  SwiftShader software rendering — a regression floor, not a hardware claim.
 - `pnpm build` + `pnpm typecheck` — clean across all three packages; the bundled server
   (`dist/index.mjs`) boots and serves `/health`.
 

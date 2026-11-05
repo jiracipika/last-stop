@@ -34,7 +34,7 @@ describe("four-crew cooperative mission", () => {
       bots.push(await joinExisting(h, host.room.roomId, nick));
     }
     await waitFor("4 players", () => stateOf(host).players.size === 4);
-    const [ari, bo, cyd, dee] = bots;
+    const [ari, bo, cyd, dee] = bots as [Bot, Bot, Bot, Bot];
     for (const b of bots) b.room.send("act", { k: "ready" });
     await waitFor("all ready", () => [...stateOf(host).players.values()].every((p) => p.ready));
     host.room.send("act", { k: "start" });
