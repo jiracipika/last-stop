@@ -95,12 +95,32 @@ export async function walkTo(bot: Bot, tx: number, tz: number, tolerance = 1.0, 
   let wpI = 0;
   let lastSend = 0;
   let doorCd = 0;
+  let stuckCheck = { x: 0, z: 0, at: Date.now(), side: 1 };
+  let sidestepUntil = 0;
+  let sidestepDir = { x: 0, z: 0 };
   while (wpI < waypoints.length) {
     if (Date.now() - start > maxMs) throw new Error(`walkTo timeout to (${tx},${tz}) stuck at wp ${wpI}`);
     const p = me(bot);
-    const wp = waypoints[wpI]!;
+    let wp = waypoints[wpI]!;
+    // unstick: if we haven't moved for a while, sidestep perpendicular
+    if (Date.now() - stuckCheck.at > 1200) {
+      const moved = dist2d(p.x, p.z, stuckCheck.x, stuckCheck.z);
+      if (moved < 0.25 && wpI > 0) {
+        const dx = wp.x - p.x;
+        const dz = wp.z - p.z;
+        const len = Math.hypot(dx, dz) || 1;
+        stuckCheck.side *= -1;
+        sidestepDir = { x: (-dz / len) * stuckCheck.side * 2.2, z: (dx / len) * stuckCheck.side * 2.2 };
+        sidestepUntil = Date.now() + 1200;
+      }
+      stuckCheck = { x: p.x, z: p.z, at: Date.now(), side: stuckCheck.side };
+    }
+    const sidestepping = Date.now() < sidestepUntil;
+    if (sidestepping) {
+      wp = { x: p.x + sidestepDir.x, z: p.z + sidestepDir.z };
+    }
     const d = dist2d(p.x, p.z, wp.x, wp.z);
-    if (d < (wpI === waypoints.length - 1 ? tolerance : 0.9)) {
+    if (!sidestepping && d < (wpI === waypoints.length - 1 ? tolerance : 0.9)) {
       wpI++;
       continue;
     }

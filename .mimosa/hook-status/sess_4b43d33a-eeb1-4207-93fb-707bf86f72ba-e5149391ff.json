@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-11-05T21:01:54.579Z",
+  "recordedAt": "2026-11-05T21:28:15.199Z",
   "sessionId": "sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba",
   "event": "PostToolUse",
-  "toolName": "Write",
-  "file": "apps/server/src/test/debug-join.ts",
+  "toolName": "Edit",
+  "file": "apps/server/src/test/mission.test.ts",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 4,
+  "durationMs": 5,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }

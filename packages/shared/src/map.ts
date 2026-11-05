@@ -40,7 +40,7 @@ export interface NavNode {
 // Perimeter fence + gate + escape road
 // ---------------------------------------------------------------------------
 export const MAP_BOUNDS = { x0: -34, z0: -26, x1: 34, z1: 26 };
-export const GATE = { x: -34, z0: 8, z1: 14, w: 6, h: 3.4 };
+export const GATE = { x: -34, z0: 6.4, z1: 15.6, w: 9.2, h: 3.4 };
 export const ROAD = { x0: -70, x1: -34, z0: 6, z1: 16 };
 export const FINISH_X = -56;
 

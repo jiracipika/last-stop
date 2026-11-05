@@ -16,6 +16,7 @@ export class GameRoom extends Room {
   override maxClients = MISSION.MAX_PLAYERS;
   world!: World;
   limitters = new Map<string, Map<string, Limiter>>();
+  inputFlood = new Map<string, { windowStart: number; count: number }>();
 
   override onCreate(_options: Record<string, unknown>): void {
     this.world = new World();
@@ -35,8 +36,24 @@ export class GameRoom extends Room {
     this.onMessage("in", (client, data) => {
       const p = this.world.players.get(client.sessionId);
       if (!p || !p.connected) return;
-      if (!this.rateOk(client, "in", 1 / 45)) return;
       if (typeof data !== "object" || data === null) return;
+      // Input frames are idempotent state snapshots: always apply, but flood
+      // far beyond a normal 20-30 Hz sender and the client gets kicked.
+      const now = this.clock.elapsedTime / 1000;
+      let f = this.inputFlood.get(client.sessionId);
+      if (!f) {
+        f = { windowStart: now, count: 0 };
+        this.inputFlood.set(client.sessionId, f);
+      }
+      if (now - f.windowStart > 2) {
+        f.windowStart = now;
+        f.count = 0;
+      }
+      f.count++;
+      if (f.count > 180) {
+        client.leave(4000);
+        return;
+      }
       this.world.setMoveInput(p, data as Record<string, unknown>);
     });
 
