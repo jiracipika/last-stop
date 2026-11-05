@@ -66,6 +66,10 @@ room server on Vercel is quoted in README.md (their WebSocket + duration docs).
 
 ### Known problems / TODO (next session picks up here)
 
+- **Test flakiness note (2026-11-05)**: the full server suite passes 21/21 across consecutive
+  runs, but one run in five-ish had 2 failures — the walk-bot tests (real-time nav walking over
+  30–140 s) can time out under CPU load. If that bites, raise the `walkTo` maxMs or slow the bots'
+  expectations rather than retrying blindly.
 - **Feel pass needed with real humans** — carrying speed curve, Caretaker chase-speed vs player
   sprint, noise radii, quota strictness. All are constants in `packages/shared/src/constants.ts`.
 - **4-player over WAN untested** — local sockets + browsers only. Consider a playtest deploy
