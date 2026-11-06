@@ -152,17 +152,20 @@ e2e/           Playwright browser tests
 
 ### Live links (as of 2026-11-06)
 
-- **Frontend (Vercel):** <https://last-stop-beta.vercel.app> — deployed and serving the game
-  shell. **Multiplayer is not wired yet**: `VITE_GAME_SERVER_URL` is unset because the
+- **Frontend (Vercel, canonical):** <https://laststopgame.vercel.app> — deployed and serving the
+  game shell. **Multiplayer is not wired yet**: `VITE_GAME_SERVER_URL` is unset because the
   authoritative server has no public host. Once a game-server URL exists, set the env var on the
-  Vercel project (`last-stop`) and redeploy — that is the only remaining step.
+  Vercel project and redeploy — that is the only remaining step.
+  (A duplicate project `last-stop` → <https://last-stop-beta.vercel.app> also exists from an
+  earlier CLI deploy; feel free to delete it in the Vercel dashboard.)
 - **Source (GitHub, private):** <https://github.com/jiracipika/last-stop>
 
 ### Frontend → Vercel (done)
 
 The web app is a static Vite bundle. The repo-root `vercel.json` configures the monorepo build
-(`pnpm --filter @last-stop/web build` → `apps/web/dist`). To point the client at a game server,
-set the env var on the Vercel project and redeploy:
+(`pnpm --filter @last-stop/web build` → `apps/web/dist`). Deploys are CLI-based
+(`vercel deploy --project laststopgame --prod`); pushing to GitHub does **not** auto-deploy. To
+point the client at a game server, set the env var on the Vercel project and redeploy:
 
 ```
 VITE_GAME_SERVER_URL=wss://<your-game-server-host>
