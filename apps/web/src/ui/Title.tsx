@@ -1,7 +1,15 @@
-// Title screen: neon sign vibes, nickname + color, create/join.
+// Title screen: neon sign vibes, nickname + color + headgear, create/join.
 import React, { useState } from "react";
 import { COLORS } from "@last-stop/shared";
 import type { Prefs } from "../App.js";
+
+const HATS = [
+  { label: "Hi-vis cap", glyph: "🧢" },
+  { label: "Hard hat", glyph: "⛑" },
+  { label: "Beanie", glyph: "🎩" },
+  { label: "Headphones", glyph: "🎧" },
+  { label: "Bare head", glyph: "🚫" },
+];
 
 export function TitleScreen({
   prefs,
@@ -60,6 +68,22 @@ export function TitleScreen({
                 style={{ background: c }}
                 onClick={() => savePrefs({ ...prefs, color: i })}
               />
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <span>Headgear</span>
+          <div className="hats">
+            {HATS.map((h, i) => (
+              <button
+                key={h.label}
+                className={`hat-btn ${prefs.hat === i ? "sel" : ""}`}
+                onClick={() => savePrefs({ ...prefs, hat: i })}
+                title={h.label}
+              >
+                {h.glyph}
+              </button>
             ))}
           </div>
         </div>

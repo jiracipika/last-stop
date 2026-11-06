@@ -62,13 +62,13 @@ export class Net {
     return code;
   }
 
-  async createRoom(nick: string, color: number): Promise<string> {
+  async createRoom(nick: string, color: number, hat = 0): Promise<string> {
     this.setStatus("connecting");
     // retry with a fresh code on a collision
     for (let attempt = 0; attempt < 3; attempt++) {
       const code = Net.code();
       try {
-        this.room = (await this.client.create("game", { nick, color, code }, RoomState)) as unknown as Room<RoomState>;
+        this.room = (await this.client.create("game", { nick, color, hat, code }, RoomState)) as unknown as Room<RoomState>;
         this.afterConnect();
         return code;
       } catch (e) {
@@ -81,10 +81,10 @@ export class Net {
     throw new Error("could not create room");
   }
 
-  async joinRoom(code: string, nick: string, color: number): Promise<void> {
+  async joinRoom(code: string, nick: string, color: number, hat = 0): Promise<void> {
     this.setStatus("connecting");
     try {
-      this.room = (await this.client.joinById(`LS${code.toUpperCase()}`, { nick, color }, RoomState)) as unknown as Room<RoomState>;
+      this.room = (await this.client.joinById(`LS${code.toUpperCase()}`, { nick, color, hat }, RoomState)) as unknown as Room<RoomState>;
       this.afterConnect();
     } catch (e) {
       this.setStatus("error", String(e));
@@ -96,6 +96,15 @@ export class Net {
     const room = this.room!;
     this.reconnectionToken = room.reconnectionToken ?? "";
     this.reconnectTries = 0;
+    // We own reconnection (tryReconnect below). If the SDK's built-in
+    // auto-reconnect also fires, the two flows race to consume the
+    // reconnection token and this.room can end up pointing at a fresh room
+    // whose state hasn't synced yet — visible as a brief empty players map.
+    try {
+      room.reconnection.enabled = false;
+    } catch {
+      /* older SDK: no toggle, our flow still works */
+    }
     this.setStatus("connected");
     room.onMessage("ev", (msg: unknown) => this.emit(msg as Ev));
     room.onError((code, message) => {

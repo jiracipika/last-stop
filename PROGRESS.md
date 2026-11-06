@@ -2,7 +2,34 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art direction slice 1 landed (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization landed (2026-11-06)
+
+### Gameplay slice (2026-11-06): hiding in the junkers + crew customization — done
+
+Server-authoritative stealth + identity, both replicated to every client:
+
+- **Hide in the cars** (`HIDE_SPOTS` in shared map: sedan cabin by the yard, trunk by the south
+  fence). Climb in near the stand point (E); the door/trunk-lid opens (client mirrors
+  `player.hidden`), your avatar + nametag vanish, movement locks. Walk or E climbs out at the
+  stand point. Fairness rules (all server-side): hidden players are invisible to The Caretaker's
+  vision — **unless it watched you get in** (chasing you with a fresh sighting = busted: it walks
+  over, winds up next to the car, and DRAGS you out with damage). The car door makes noise
+  (NOISE.CAR_DOOR) so it may still come sniffing. Can't hide while carrying; flashlight goes
+  dark inside. Hidden players still count for mission-end checks.
+- **Crew customization**: headgear picker on the title screen (hi-vis cap / hard hat / beanie /
+  headphones / bare) — `prefs.hat` → join option → `PlayerState.hat` → per-avatar 3D headgear,
+  plus hi-vis reflective vest strips on every crew member. Changeable in-lobby via the
+  `profile` act.
+- Schema additions: `PlayerState.hat`, `PlayerState.hidden`. New `hide` act (rate-limited).
+- Tests: `hide.test.ts` — hidden ≠ seen (world-level), busted chase → dragged out, over-the-wire
+  hide/unhide replication + distance rejection.
+- Verification (2026-11-06): server vitest 32/32 (11 files), full Playwright e2e 5/5. The new
+  reconnect e2e exposed a real product bug — the SDK's auto-reconnect raced our manual
+  `tryReconnect` for the same reconnection token — fixed by disabling SDK auto-reconnect in
+  `net.ts` (Net owns the flow); test then passes 3/3 consecutive runs.
+
+
+
 
 ### Art slice 1 (2026-11-06): textures, lighting, landmarks — done
 

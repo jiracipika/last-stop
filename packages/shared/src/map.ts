@@ -387,3 +387,22 @@ export const PART_SPAWNS = [
 export const LAMPS = [
   { x: -10, z: 8 }, { x: 14, z: 8 }, { x: -10, z: 20 }, { x: 14, z: 20 },
 ];
+
+/** Junker hiding spots: stand point to climb in, snap point while hidden. */
+export interface HideSpot {
+  id: string;
+  kind: "car" | "trunk";
+  standX: number;
+  standZ: number;
+  x: number; // authoritative position while hidden (inside the collider)
+  z: number;
+  doorX: number; // client door hinge
+  doorZ: number;
+  doorYaw: number;
+}
+export const HIDE_SPOTS: HideSpot[] = [
+  // dead sedan in the front yard — climb into the cabin
+  { id: "carA", kind: "car", standX: -8.1, standZ: 1.9, x: -9, z: 0.15, doorX: -8.15, doorZ: 0.95, doorYaw: 0.2 },
+  // sedan by the south fence — fold yourself into the trunk
+  { id: "carB", kind: "trunk", standX: 21.6, standZ: 23.4, x: 22.3, z: 22.5, doorX: 21.95, doorZ: 22.85, doorYaw: -0.35 },
+];

@@ -115,6 +115,12 @@ export class CaretakerAI {
     for (const p of w.players.values()) {
       if (!p.connected || p.dead || p.downed) continue;
       if (p.seat > 0 && !w.vanDoorsOpen) continue; // hidden inside the van
+      if (p.hidden) {
+        // tucked in a junker — invisible, UNLESS it watched you climb in
+        // (chasing you with a fresh sighting: the bust window)
+        const busted = this.ai === "chase" && this.chaseSid === p.sid && w.t - this.lastSeenT < ENEMY.LOSE_SIGHT_GRACE;
+        if (!busted) continue;
+      }
       const d = dist2d(this.x, this.z, p.body.x, p.body.z);
       if (d > range || d >= bestD) continue;
       // FOV check
@@ -267,7 +273,12 @@ export class CaretakerAI {
   private stepChase(dt: number): void {
     const w = this.world;
     const target = w.players.get(this.chaseSid);
-    if (!target || !target.connected || target.dead || target.downed || (target.seat > 0 && !w.vanDoorsOpen)) {
+    const targetBusted = target?.hidden && w.t - this.lastSeenT < ENEMY.LOSE_SIGHT_GRACE;
+    if (
+      !target || !target.connected || target.dead || target.downed ||
+      (target.seat > 0 && !w.vanDoorsOpen) ||
+      (target.hidden && !targetBusted) // vanished into a car it didn't see you enter
+    ) {
       // target invalid: investigate last known position
       this.ai = "investigate";
       this.investX = this.lastSeenX;
@@ -277,8 +288,8 @@ export class CaretakerAI {
     }
     const d = dist2d(this.x, this.z, target.body.x, target.body.z);
 
-    // strike?
-    if (d < ENEMY.ATTACK_RANGE) {
+    // strike? (a busted hider gets reached INTO the car — no infinite standoff)
+    if (d < (target.hidden ? 2.4 : ENEMY.ATTACK_RANGE)) {
       this.ai = "windup";
       this.windupT = 0;
       this.struck = false;
@@ -338,7 +349,7 @@ export class CaretakerAI {
         const dx = p.body.x - this.x;
         const dz = p.body.z - this.z;
         const d = Math.hypot(dx, dz);
-        if (d > ENEMY.STRIKE_RANGE) continue;
+        if (d > (p.hidden ? 2.9 : ENEMY.STRIKE_RANGE)) continue;
         const dot = (dx * fx + dz * fz) / (d || 1);
         if (dot > ENEMY.STRIKE_ARC_COS || d < 1.2) {
           w.damagePlayer(p, ENEMY.HIT_DAMAGE, "caretaker");

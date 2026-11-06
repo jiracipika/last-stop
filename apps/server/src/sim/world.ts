@@ -8,6 +8,7 @@ import {
   PLAYER, CARRY, NOISE, VAN, MISSION, FRAGILE_IMPACT_V, FRAGILE_DPS, WRECKED_AT, WRECKED_VALUE_FACTOR,
   ITEM_DEFS, planSpawns, planValue, quotaFactor, missionSeconds, pickModifiers,
   STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE,
+  HIDE_SPOTS, HIDE,
   mulberry32, clamp, dist2d, hasLineOfSight,
   PlayerState, ItemState, EnemyState, VanState, MarkerState, DoorState, RoomState,
   ArraySchema, computeAwards, type ItemDef, type MissionAwardRow,
@@ -40,6 +41,9 @@ export interface RPlayer {
   bleedAt: number;
   carrying: string;
   seat: number;
+  hidden: boolean;
+  hideSpot: string;
+  hat: number;
   stabilize: boolean;
   interactKind: "" | "revive" | "install";
   interactTarget: string;
@@ -197,7 +201,7 @@ export class World {
   }
 
   // ---------------------------------------------------------------- lobby
-  addPlayer(sid: string, nick: string, color: number, host: boolean): RPlayer {
+  addPlayer(sid: string, nick: string, color: number, host: boolean, hat = 0): RPlayer {
     const used = new Set([...this.players.values()].map((p) => p.color));
     if (used.has(color)) {
       for (let i = 0; i < 8; i++) {
@@ -208,13 +212,13 @@ export class World {
       }
     }
     const p: RPlayer = {
-      sid, nick, color, ready: false, host, connected: true,
+      sid, nick, color, hat, ready: false, host, connected: true,
       body: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true },
       yaw: Math.PI, pitch: 0,
       input: { mx: 0, mz: 0, yaw: Math.PI, sprint: false, jump: false, interact: false },
       lastSeq: 0, stamina: PLAYER.STAMINA_MAX, sprinting: false, flashlight: false,
       hp: 100, downed: false, dead: false, bleedAt: 0,
-      carrying: "", seat: 0, stabilize: false,
+      carrying: "", seat: 0, hidden: false, hideSpot: "", stabilize: false,
       interactKind: "", interactTarget: "", interactT: 0,
       stepAcc: 0, noiseScore: 0, deliveredValue: 0, deliveredCount: 0,
       rescues: 0, biggestLoss: 0, lossItem: "", downedCount: 0, grabCd: 0, spawn: 0,
@@ -256,6 +260,8 @@ export class World {
     p.body.vy = 0;
     p.yaw = s.yaw;
     p.input.yaw = s.yaw;
+    p.hidden = false;
+    p.hideSpot = "";
   }
 
   // ---------------------------------------------------------------- mission
@@ -767,6 +773,42 @@ export class World {
     return true;
   }
 
+  // ---------------------------------------------------------------- hiding
+  /** Climb into a junker. The Caretaker can't see hidden players unless it
+   *  watched them get in (enemy.ts keeps the bust window via lastSeenT). */
+  tryHide(p: RPlayer, spotId: string): boolean {
+    if (this.phase !== "scavenge" && this.phase !== "escape") return false;
+    if (p.downed || p.dead || p.seat > 0 || p.hidden) return false;
+    if (p.carrying) return false; // hands full — stow the cargo first
+    const s = HIDE_SPOTS.find((h) => h.id === spotId);
+    if (!s) return false;
+    if (dist2d(p.body.x, p.body.z, s.standX, s.standZ) > HIDE.STAND_RANGE) return false;
+    p.hidden = true;
+    p.hideSpot = spotId;
+    p.body.x = s.x;
+    p.body.z = s.z;
+    p.body.vx = 0;
+    p.body.vz = 0;
+    p.flashlight = false; // no glowing beams out of the grille
+    this.noise(s.x, s.z, NOISE.CAR_DOOR, "door", p.sid);
+    this.emit({ t: "hide", sid: p.sid, spot: spotId, on: true });
+    return true;
+  }
+
+  exitHide(p: RPlayer, dragged = false): void {
+    if (!p.hidden) return;
+    const s = HIDE_SPOTS.find((h) => h.id === p.hideSpot);
+    p.hidden = false;
+    p.hideSpot = "";
+    if (s) {
+      p.body.x = s.standX;
+      p.body.z = s.standZ;
+    }
+    p.body.vx = 0;
+    p.body.vz = 0;
+    this.emit({ t: "hide", sid: p.sid, on: false, dragged });
+  }
+
   // ---------------------------------------------------------------- noise
   noise(x: number, z: number, radius: number, kind: string, by?: string): void {
     let r = radius;
@@ -794,6 +836,7 @@ export class World {
     p.hp -= dmg;
     p.interactKind = "";
     p.interactT = 0;
+    if (p.hidden) this.exitHide(p, true); // it found you — dragged out of the car
     this.emit({ t: "hurt", sid: p.sid, hp: Math.max(0, Math.round(p.hp)), cause: source });
     if (p.hp <= 0) {
       p.hp = 0;
@@ -860,6 +903,21 @@ export class World {
         p.body.y = 0;
         p.body.vx = 0;
         p.body.vz = 0;
+        continue;
+      }
+      if (p.hidden) {
+        // tucked in a junker: no movement; trying to walk (or jump) climbs out
+        if (Math.hypot(p.input.mx, p.input.mz) > 0.4 || p.input.jump) {
+          this.exitHide(p);
+        } else {
+          const s = HIDE_SPOTS.find((h) => h.id === p.hideSpot);
+          if (s) {
+            p.body.x = s.x;
+            p.body.z = s.z;
+          }
+          p.body.vx = 0;
+          p.body.vz = 0;
+        }
         continue;
       }
       if (p.downed) {
@@ -1136,6 +1194,8 @@ export class World {
     sp.sprinting = p.sprinting;
     sp.carrying = p.carrying;
     sp.seat = p.seat;
+    sp.hidden = p.hidden;
+    sp.hat = p.hat;
     sp.driving = p.seat === 1;
     sp.noiseScore = p.noiseScore;
     sp.deliveredValue = p.deliveredValue;

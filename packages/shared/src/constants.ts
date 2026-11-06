@@ -58,6 +58,13 @@ export const NOISE = {
   HEADLIGHTS: 16, // pulses every few seconds while on
   VAN_BUMP: 16,
   FORCE_DOOR: 20,
+  CAR_DOOR: 5.5,
+} as const;
+
+// ---- hiding in the junkers ----
+export const HIDE = {
+  /** how close to the stand point you must be to climb in */
+  STAND_RANGE: 2.0,
 } as const;
 
 // ---- The Caretaker ----

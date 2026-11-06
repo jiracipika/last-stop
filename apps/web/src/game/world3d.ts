@@ -5,7 +5,7 @@
 // red = hazard.
 import * as THREE from "three";
 import {
-  WALL_BOXES, DOORS, doorAabb, PROPS, ROOMS, LAMPS, ROAD, GATE, MAP_BOUNDS, mulberry32, type DoorDef,
+  WALL_BOXES, DOORS, doorAabb, PROPS, ROOMS, LAMPS, ROAD, GATE, MAP_BOUNDS, HIDE_SPOTS, mulberry32, type DoorDef,
 } from "@last-stop/shared";
 import { buildTextures, PAL, type Tex } from "./textures.js";
 
@@ -58,6 +58,7 @@ export class World3D {
     this.buildDoors();
     this.buildGate();
     this.buildProps();
+    this.buildHideSpotDoors();
     this.buildLamps(blackout);
     this.buildInteriorLights(blackout);
     this.buildRoomDressing();
@@ -393,6 +394,48 @@ export class World3D {
     }
   }
 
+  // -------------------------------------------------------- hide-spot doors
+  private hideDoors = new Map<string, { group: THREE.Group; open: boolean; kind: string; baseYaw: number }>();
+
+  private buildHideSpotDoors(): void {
+    for (const s of HIDE_SPOTS) {
+      const g = new THREE.Group();
+      const paint = this.mat(this.tex.metalWorn, 0x6a7078);
+      if (s.kind === "car") {
+        // driver door, hinged at its front edge, swings out
+        g.add(this.box(0.95, 0.8, 0.06, paint, 0.48, 0, 0));
+        g.add(this.box(0.05, 0.05, 0.1, this.solid(0x14161a), 0.8, 0, 0.05));
+        g.position.set(s.doorX, 0.85, s.doorZ);
+      } else {
+        // trunk lid, hinged at the body edge, tips up
+        g.add(this.box(1.5, 0.05, 0.75, paint, 0, 0, 0.38));
+        g.position.set(s.doorX, 0.95, s.doorZ);
+      }
+      g.rotation.y = s.doorYaw;
+      this.group.add(g);
+      this.hideDoors.set(s.id, { group: g, open: false, kind: s.kind, baseYaw: s.doorYaw });
+    }
+  }
+
+  /** engine syncs this from replicated player.hidden flags */
+  setHideOpen(spotId: string, open: boolean): void {
+    const d = this.hideDoors.get(spotId);
+    if (d) d.open = open;
+  }
+
+  private animateHideDoors(dt: number): void {
+    const k = Math.min(1, 8 * dt);
+    for (const d of this.hideDoors.values()) {
+      if (d.kind === "car") {
+        const target = d.baseYaw + (d.open ? -1.35 : 0);
+        d.group.rotation.y += (target - d.group.rotation.y) * k;
+      } else {
+        const target = d.open ? -1.25 : 0; // lid tips up around the hinge
+        d.group.rotation.x += (target - d.group.rotation.x) * k;
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ lamps
   private groundPool(color: string, radius: number, x: number, z: number, alpha = 0.5): void {
     // additive pool decal — guarantees a readable pool on the asphalt no
@@ -716,6 +759,7 @@ export class World3D {
       const target = dv.group.userData.targetRot as number ?? dv.group.rotation.y;
       dv.group.rotation.y += (target - dv.group.rotation.y) * Math.min(1, 10 * dt);
     }
+    this.animateHideDoors(dt);
     // flicker styles: 0 steady, 1 buzz, 2 failing, 3 pulse
     for (const f of this.flickers) {
       let k = 1;

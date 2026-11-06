@@ -2,7 +2,7 @@
 // React only reads the HudStore.
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, dist2d, clamp, angleLerp,
+  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, HIDE_SPOTS, dist2d, clamp, angleLerp,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -288,6 +288,8 @@ export class Engine {
           else if (t.kind === "straps") this.net.act("straps");
           else if (t.kind === "seatDriver") this.net.act("enterVan", { driver: true });
           else if (t.kind === "seat") this.net.act("enterVan", { driver: false });
+          else if (t.kind === "hide") this.net.act("hide", { spot: t.id });
+          else if (t.kind === "hidden") this.net.act("hide", { out: true });
           // revive/install are hold-interactions via input.interact
         }
         break;
@@ -415,6 +417,13 @@ export class Engine {
         break;
       case "seat":
         break;
+      case "hide":
+        if (e.sid === this.net.sid) {
+          audio.vanDoor();
+          if (e.on) this.store.toast("Tucked in. Stay quiet and it'll pass you by", "info");
+          else if (e.dragged) this.store.toast("It DRAGGED you out of there!", "warn");
+        }
+        break;
       case "prog":
         if (e.sid === this.net.sid) {
           this.store.set({ progress: clamp01(Number(e.v)), progressKind: String(e.k) });
@@ -510,6 +519,11 @@ export class Engine {
       return;
     }
 
+    if (me.hidden) {
+      this.target = { kind: "hidden", id: "self", label: "Hidden — move or press E to climb out" };
+      return;
+    }
+
     for (const [id, it] of st.items) {
       if (it.state === 2 || it.state === 3) continue;
       const def = ITEM_DEFS[it.defId];
@@ -524,6 +538,16 @@ export class Engine {
       }
       if (it.state === 0) {
         consider({ kind: "item", id, label: `Grab ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+      }
+    }
+
+    // junker hiding spots
+    if (!me.carrying) {
+      for (const s of HIDE_SPOTS) {
+        consider(
+          { kind: "hide", id: s.id, label: s.kind === "trunk" ? "Fold yourself into the trunk" : "Hide in the sedan" },
+          s.standX, s.standZ, PLAYER.INTERACT_RANGE + 0.8, 0.8,
+        );
       }
     }
 
@@ -632,7 +656,7 @@ export class Engine {
   private stepSelf(dt: number, st: RoomState, me: PlayerState): void {
     const fi = this.input.frame();
     const drivable = st.phase === "escape" && me.seat === 1;
-    if (me.seat > 0 || me.downed || me.dead) {
+    if (me.seat > 0 || me.downed || me.dead || me.hidden) {
       // no local walking sim; follow authoritative position
       this.predictor.reset(me.x, me.z, me.yaw);
       this.input.jumpQueued = false;
@@ -684,7 +708,7 @@ export class Engine {
       seen.add(sid);
       let av = this.avatars.get(sid);
       if (!av) {
-        av = new AvatarView(sid, p.color, p.nick);
+        av = new AvatarView(sid, p.color, p.nick, p.hat);
         this.avatars.set(sid, av);
         this.scene.add(av.group);
       }
@@ -766,6 +790,14 @@ export class Engine {
     this.enemyBuf.push(this.lastPatchAt || nowMs, e.x, e.z, e.yaw);
     const es = this.enemyBuf.sample(renderAt) ?? { x: e.x, z: e.z, yaw: e.yaw };
     this.enemyView.update(dt, { ...e, x: es.x, z: es.z, yaw: es.yaw }, t);
+    // junker hide doors mirror who's tucked in
+    for (const s of HIDE_SPOTS) {
+      let occupied = false;
+      for (const p of st.players.values()) {
+        if (p.hidden && Math.hypot(p.x - s.x, p.z - s.z) < 1) occupied = true;
+      }
+      this.world3d.setHideOpen(s.id, occupied);
+    }
     // gate
     this.world3d.setGateOpen(st.gateOpen);
     // doors
@@ -851,6 +883,7 @@ export class Engine {
         cy += Math.sin(this.bobPhase) * 0.045;
       }
       if (me.downed) cy = 0.5;
+      if (me.hidden) cy = 1.05; // hunched behind the windshield
     }
 
     this.camera.position.set(cx, cy, cz);

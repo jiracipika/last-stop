@@ -9,6 +9,8 @@ export const PlayerState = schema(
   {
     nick: t.string(),
     color: t.uint8(),
+    hat: t.uint8(), // 0 cap, 1 hard hat, 2 beanie, 3 headphones, 4 none
+    hidden: t.boolean(), // tucked inside a car/trunk — unseen by The Caretaker
     ready: t.boolean(),
     host: t.boolean(),
     connected: t.boolean(),

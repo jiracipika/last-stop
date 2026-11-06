@@ -123,6 +123,7 @@ export class GameRoom extends Room {
           const used = new Set([...w.players.values()].filter((o) => o.sid !== p.sid).map((o) => o.color));
           if (!used.has(data.color)) p.color = data.color;
         }
+        if (typeof data.hat === "number" && data.hat >= 0 && data.hat <= 4) p.hat = data.hat;
         w.syncPlayerSchema(p, true);
         this.broadcast("ev", { t: "profile", sid: p.sid, nick: p.nick, color: p.color });
         return;
@@ -163,6 +164,16 @@ export class GameRoom extends Room {
         if (!this.rateOk(client, "door", 0.3)) return;
         const id = typeof data.id === "string" ? data.id : "";
         w.toggleDoor(p, id);
+        return;
+      }
+      case "hide": {
+        if (data.out === true) {
+          if (!this.rateOk(client, "hideOut", 0.3)) return;
+          w.exitHide(p);
+        } else {
+          if (!this.rateOk(client, "hideIn", 0.6)) return;
+          if (typeof data.spot === "string") w.tryHide(p, data.spot);
+        }
         return;
       }
       case "flashlight": {
@@ -242,8 +253,9 @@ export class GameRoom extends Room {
       ? options.nick.trim().slice(0, 16)
       : `Rookie${Math.floor(Math.random() * 90 + 10)}`;
     const color = typeof options?.color === "number" ? Math.max(0, Math.min(7, Math.round(options.color))) : w.players.size % 8;
+    const hat = typeof options?.hat === "number" ? Math.max(0, Math.min(4, Math.round(options.hat))) : 0;
     const host = w.players.size === 0;
-    const p = w.addPlayer(client.sessionId, nick, color, host);
+    const p = w.addPlayer(client.sessionId, nick, color, host, hat);
     this.broadcast("ev", { t: "join", sid: client.sessionId, nick: p.nick });
   }
 

@@ -64,7 +64,7 @@ pnpm e2e           # Playwright: two real browsers, one room, join-by-code, full
 | WASD | move | throttle / steer |
 | Mouse | look | look |
 | Shift | sprint (stamina) | — |
-| E | interact: doors, van doors, straps, seats; **hold** to revive teammate / install part | exit (when stopped) |
+| E | interact: doors, van doors, straps, seats, **hide in the junkers**; **hold** to revive teammate / install part | exit (when stopped) |
 | Left mouse | grab / release carried item | — |
 | Right mouse (hold) | stabilize carried item (halves impact damage) | — |
 | F | flashlight | — |

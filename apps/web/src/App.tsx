@@ -16,6 +16,7 @@ import { COLORS } from "@last-stop/shared";
 export interface Prefs {
   nick: string;
   color: number;
+  hat: number;
   quality: "low" | "medium" | "high";
   headBob: boolean;
   shake: boolean;
@@ -26,6 +27,7 @@ export interface Prefs {
 const DEFAULT_PREFS: Prefs = {
   nick: "",
   color: 0,
+  hat: 0,
   quality: "medium",
   headBob: true,
   shake: true,
@@ -113,11 +115,11 @@ export function App(): React.ReactElement {
       audio.unlock();
       try {
         if (mode === "create") {
-          const roomCode = await net.createRoom(prefs.nick || "Rookie", prefs.color);
+          const roomCode = await net.createRoom(prefs.nick || "Rookie", prefs.color, prefs.hat);
           store.set({ roomCode });
           store.toast(`Room ${roomCode} created — share the code`, "good");
         } else {
-          await net.joinRoom(code, prefs.nick || "Rookie", prefs.color);
+          await net.joinRoom(code, prefs.nick || "Rookie", prefs.color, prefs.hat);
           store.set({ roomCode: code.toUpperCase() });
         }
         setScreen("game");
