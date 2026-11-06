@@ -10,6 +10,9 @@ export class GameAudio {
   private chaseGain: GainNode | null = null;
   private chaseTimer = 0;
   private lastWindupAt = -10;
+  private rainSrc: AudioBufferSourceNode | null = null;
+  private rainGain: GainNode | null = null;
+  private rainOn = false;
   /** Listener is tucked in a junker: world events arrive muffled. */
   hiddenMuffle = 1;
   volume = 0.8;
@@ -30,6 +33,8 @@ export class GameAudio {
     const data = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
     this.startAmbient();
+    // setRain() may have been called before the first user gesture; catch up
+    if (this.rainOn) this.setRain(true);
   }
 
   setVolume(v: number): void {
@@ -78,6 +83,51 @@ export class GameAudio {
 
   setChaseIntensity(v: number): void {
     if (this.chaseGain) this.chaseGain.gain.value = Math.min(0.14, v * 0.14);
+  }
+
+  /** Listener tucked state, pushed by the engine every frame. Rain is ambient
+   *  (no position), so it follows the muffle here instead of via playEventAt. */
+  setHidden(hidden: boolean): void {
+    const m = hidden ? 0.45 : 1;
+    if (m === this.hiddenMuffle) return;
+    this.hiddenMuffle = m;
+    this.applyRainGain();
+  }
+
+  /** STORM CELL rain: quiet filtered hiss off the shared noise buffer.
+   *  Ambient, unpositioned; the loop nodes live for the session like the wind
+   *  and simply fade to silence when the phase leaves the mission. */
+  setRain(on: boolean): void {
+    this.rainOn = on;
+    if (!this.ctx) return; // remembered; built on unlock
+    if (on && !this.rainSrc) {
+      const ctx = this.ctx;
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 1400;
+      this.rainGain = ctx.createGain();
+      this.rainGain.gain.value = 0;
+      // slow swell so the hiss breathes like gusts across a roof
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.09;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.008;
+      lfo.connect(lfoGain).connect(this.rainGain.gain);
+      src.connect(filter).connect(this.rainGain).connect(this.master!);
+      src.start();
+      lfo.start();
+      this.rainSrc = src;
+    }
+    this.applyRainGain();
+  }
+
+  private applyRainGain(): void {
+    if (!this.rainGain || !this.ctx) return;
+    const target = this.rainOn ? 0.035 * this.hiddenMuffle : 0;
+    this.rainGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.8);
   }
 
   private now(): number {
@@ -231,6 +281,28 @@ export class GameAudio {
   escalate(): void {
     this.tone(110, 0.22, 1.2, "sawtooth", 0.5);
     this.tone(116, 0.22, 1.2, "sawtooth", 0.5);
+  }
+
+  /** Distant thunder: low non-positional rumble, scheduled 0.6-2.5 s after
+   *  the flash so the storm reads far away. Peak stays under the chase
+   *  drone's 0.14 ceiling so it can never cover the hunt. */
+  thunder(): void {
+    if (!this.ctx) return;
+    const t = this.now() + 0.6 + Math.random() * 1.9;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true; // 1.2 s buffer; the envelope fades it out before it repeats
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(130, t);
+    filter.frequency.exponentialRampToValueAtTime(45, t + 2.4);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.09 * this.hiddenMuffle, t + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    src.connect(filter).connect(gain).connect(this.master!);
+    src.start(t);
+    src.stop(t + 3);
   }
 
   sting(): void {
@@ -404,6 +476,11 @@ export class GameAudio {
       case "drag": this.drag(pan, atten); break;
       case "spotted": this.spotted(pan, atten * this.hiddenMuffle); break;
       case "lost": this.lost(pan, atten * this.hiddenMuffle); break;
+      case "lostYou":
+        // the exhale lands on its ex-target: attenuation is floored so it
+        // reads personal, yet stays well under the spotted sting's peak
+        this.lost(pan, Math.max(atten, 0.65) * this.hiddenMuffle);
+        break;
       case "itick": this.itick(pan, atten * this.hiddenMuffle); break;
       case "windup": this.windup(pan, atten * this.hiddenMuffle); break;
       default: break;

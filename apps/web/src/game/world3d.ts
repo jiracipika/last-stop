@@ -37,6 +37,13 @@ interface BakeBucket {
   mat: THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
 }
 
+// STORM CELL: distant lightning. The flash is a cold sky-wide hemisphere
+// spike, additive to the existing night grade; spikes are counted in frames,
+// not timed, so a flash is literally 2-4 rendered frames of jittered light.
+const STORM_FLASH_PEAK = 2.2;
+const STORM_FLASH_GAP_MIN = 8; // seconds between flashes
+const STORM_FLASH_GAP_MAX = 25;
+
 export class World3D {
   group = new THREE.Group();
   doorViews: DoorView[] = [];
@@ -55,6 +62,13 @@ export class World3D {
   private dust: THREE.Points[] = [];
   private blackout: boolean;
   private lowQuality = false;
+  // storm atmosphere (STORM CELL modifier)
+  private stormLight: THREE.HemisphereLight | null = null;
+  private stormOn = false;
+  private stormFlashAt = 0; // update-clock seconds; < 0 = needs scheduling
+  private stormFramesLeft = 0;
+  /** Wired by the engine to the thunder cue; fired when a flash begins. */
+  onFlash: (() => void) | null = null;
   private disposables: { geo?: THREE.BufferGeometry; mat?: THREE.Material; tex?: THREE.Texture }[] = [];
   /** static scenery tagged during the build; bakeStatic() merges it per material family */
   private staticParts: THREE.Mesh[] = [];
@@ -75,6 +89,7 @@ export class World3D {
     this.buildSign();
     this.buildAtmosphere();
     this.buildSky();
+    this.buildStorm();
     // fold every tagged static mesh into one draw call per material family
     this.bakeStatic();
   }
@@ -1034,6 +1049,28 @@ export class World3D {
     void MAP_BOUNDS;
   }
 
+  // ------------------------------------------------------------------ storm
+  private buildStorm(): void {
+    // The flash light joins the scene up-front (intensity 0) so the first
+    // storm mission never pays a shader recompile mid-mission.
+    this.stormLight = new THREE.HemisphereLight(0xe8f1ff, 0x10141b, 0);
+    this.group.add(this.stormLight);
+  }
+
+  /** STORM CELL switch. Storm + blackout coexist on purpose: the blackout
+   *  kills the lot's man-made lights, while the sky stays allowed to flash —
+   *  distant lightning is the one thing out there nobody can switch off. */
+  setStorm(on: boolean): void {
+    if (on === this.stormOn) return;
+    this.stormOn = on;
+    if (on) {
+      this.stormFlashAt = -1; // schedule the first flash on the next update
+    } else {
+      if (this.stormLight) this.stormLight.intensity = 0;
+      this.stormFramesLeft = 0;
+    }
+  }
+
   // ------------------------------------------------------------------ update
   update(dt: number, t: number): void {
     // door swing
@@ -1067,6 +1104,20 @@ export class World3D {
     for (const pts of this.dust) {
       pts.rotation.y = t * 0.02;
       (pts.material as THREE.PointsMaterial).opacity = 0.35 + 0.2 * Math.sin(t * 0.8 + Number(pts.userData.seed));
+    }
+    // storm lightning: cold sky flash, 8-25 s apart, 2-4 frame spike
+    if (this.stormOn && this.stormLight) {
+      if (this.stormFlashAt < 0) {
+        this.stormFlashAt = t + STORM_FLASH_GAP_MIN + Math.random() * (STORM_FLASH_GAP_MAX - STORM_FLASH_GAP_MIN);
+      } else if (this.stormFramesLeft > 0) {
+        // each spike frame re-jitters so the flash stutters like real sky light
+        this.stormFramesLeft--;
+        this.stormLight.intensity = this.stormFramesLeft > 0 ? STORM_FLASH_PEAK * (0.55 + Math.random() * 0.45) : 0;
+      } else if (t >= this.stormFlashAt) {
+        this.stormFramesLeft = 2 + Math.floor(Math.random() * 3);
+        this.stormLight.intensity = STORM_FLASH_PEAK * (0.55 + Math.random() * 0.45);
+        this.onFlash?.(); // the audio layer schedules the delayed thunder from here
+      }
     }
   }
 

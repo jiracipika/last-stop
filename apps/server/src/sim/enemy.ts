@@ -280,7 +280,10 @@ export class CaretakerAI {
       (target.seat > 0 && !w.vanDoorsOpen) ||
       (target.hidden && !targetBusted) // vanished into a car it didn't see you enter
     ) {
-      // target invalid: investigate last known position
+      // target invalid: investigate last known position. The chase is over —
+      // drop the focus so the wire stops claiming a target and the ex-target
+      // can hear the hunt end.
+      this.chaseSid = "";
       this.ai = "investigate";
       this.investX = this.lastSeenX;
       this.investZ = this.lastSeenZ;
@@ -297,8 +300,9 @@ export class CaretakerAI {
       return;
     }
 
-    // lost sight?
+    // lost sight? the chase on this target is over: release the focus
     if (w.t - this.lastSeenT > ENEMY.LOSE_SIGHT_GRACE) {
+      this.chaseSid = "";
       this.ai = "investigate";
       this.investX = this.lastSeenX;
       this.investZ = this.lastSeenZ;

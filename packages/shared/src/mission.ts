@@ -45,9 +45,14 @@ export const MODIFIERS: Record<string, ModifierDef> = {
     name: "RAISED TARGETS",
     desc: "Corporate raised the quota 15%. Corporate gets a bonus.",
   },
+  storm: {
+    id: "storm",
+    name: "STORM CELL",
+    desc: "Rain on the roof. The sky flashes. Nobody is coming either way.",
+  },
 };
 
-export const MODIFIER_POOL = ["blackout", "fragile", "sensitive", "shortclock", "bells", "wired", "fatquota"];
+export const MODIFIER_POOL = ["blackout", "fragile", "sensitive", "shortclock", "bells", "wired", "fatquota", "storm"];
 
 export function pickModifiers(rng: () => number): string[] {
   const pool = [...MODIFIER_POOL];

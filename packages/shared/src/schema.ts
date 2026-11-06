@@ -74,6 +74,7 @@ export const EnemyState = schema(
     // 0 patrol, 1 investigate, 2 chase, 3 windup, 4 recover, 5 force-door
     ai: t.uint8(),
     forcing: t.string(), // door id being forced
+    chaseSid: t.string(), // session id it is chasing ("" = hunting nobody)
     phase: t.uint8(), // escalation 1..3
   },
   "EnemyState",

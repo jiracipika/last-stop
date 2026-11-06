@@ -41,17 +41,25 @@ renderer** (motel sign canvas + one name sprite). Vision-model audit + code read
 
 ## Backlog (priority order; each item = one reviewable slice)
 
+SHIPPED (2026-11-05 → 2026-11-06): texture pipeline + lighting + landmarks (slice 1);
+van presentation; hiding in junkers + dumpster + hats; junker geometry; Caretaker lantern
+pool + footsteps/clinks/drag; debrief shift-report + real survival data + first e2e
+screenshot of results; static-geometry merge (380 → 184 draw calls); stop-slide + sprint
+FOV + view-bob + bump thuds (carrying dead-stops: leash); spotted/lost/investigate/windup
+cues; chaseSid over the wire (targeted-you sting + toast); RAISED TARGETS / AMPED UP /
+STORM CELL modifiers (rain, lightning, delayed thunder).
+
 | # | Slice | Severity | Player impact | Effort | Acceptance |
 |---|---|---|---|---|---|
-| 1 | Texture/material pipeline + palette + interior lighting + landmarks + room identity + motion | critical | game stops looking like a graybox; interiors playable without flashlight 24/7 | L | after-shots at the 9 poses visibly textured & lit; draw calls < 300; fps not worse |
-| 2 | Van presentation (paint, branding decals, beacon, headlight pools) | high | hero object reads as "our van" from across the lot | M | van identifiable in silhouette from lot overview shot |
-| 3 | Movement/carrying feel pass (accel curve, doorway forgiveness, grab feedback) | high | moment-to-moment comfort | M | e2e still green + human feel test notes |
-| 4 | Caretaker presentation + audio vocabulary | high | memorable, fair enemy | M | distinct audio per FSM state; silhouette readable at 15 m |
-| 5 | Menus/onboarding/HUD polish (in-engine title, control help, debrief flair) | medium | first-impression + retention | M | title screen shows the world |
-| 6 | Multiplayer presentation + perf presets | medium | smooth remotes, quality tiers | M | benchmark route numbers per preset |
+| 1 | Human playtest pass: feel constants (bob amp, FOV kick, coast, bump threshold, storm flash peak, lostYou floor) + hide/fairness feel | high | everything tuned by math gets ears/eyes | S (review) | playtest notes → constant tweaks → one regression gate |
+| 2 | Second enemy or second map | high | replay variety | L | mission-flow tests + e2e for the new content |
+| 3 | Progression/economy (shift streaks, van upgrades) | medium | retention | L | server tests + results-screen surfacing |
+| 4 | In-engine title (3D backdrop behind the clipboard) + quality presets UI | medium | first impression, device reach | M | title shows the lot; preset toggles measurable |
+| 5 | Balance pass on the expanded modifier pool (8, pick 3 — seeds may now be brutal) | medium | fairness | M | seed sweep script: no modifier combo exceeds ~1.6× base difficulty |
+| 6 | Remotes smoothing + perf presets benchmarking | medium | smooth others | M | route benchmark numbers per preset |
 | 7 | Full regression + balance pass | — | ship quality | M | all suites green |
 
-Deferred (per direction): more maps, second enemy, progression economy, voice chat.
+Deferred (per direction): voice chat, progression economy details.
 
 ## Asset provenance
 

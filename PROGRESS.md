@@ -2,7 +2,28 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm slices (2026-11-06)
+
+### chaseSid over the wire + STORM CELL (2026-11-06) — done
+
+- **The Caretaker's focus is replicated**: `EnemyState.chaseSid` (cleared at both chase-exit
+  transitions: target-invalid and lose-sight; synced every tick). Client split: targeting YOU =
+  full-volume sting + "IT'S SEEN YOU. RUN." toast (3 s own cooldown so forced-door pauses don't
+  machine-gun); targeting someone else = the existing positional cue; the ex-target gets a
+  boosted lost-you exhale (atten floored 0.65). enemy-focus.test.ts pins the wire behavior incl.
+  grace-window clearing (window is grace+6 s — the lost-check only runs from chase, so a
+  door-force can hold the focus a few seconds past grace; the cue fires at the state flip).
+- **STORM CELL modifier** (pool now 8, pick 3): client-driven rain loop (shared noise buffer,
+  lowpass, swell LFO), cold-white hemisphere lightning flashes (8–25 s random, 2–4-frame spike,
+  peak 2.2 vs ~1.75 ambient — tuned by math, single constant `STORM_FLASH_PEAK`), thunder rumble
+  delayed 0.6–2.5 s per flash. Storm + blackout coexist by design (man-made lights die; the sky
+  still flashes). Rain/thunder muffle while hidden; lobby/briefing/results silent; pre-unlock
+  rain is remembered and applied on unlock; all disposed.
+- Verification (2026-11-06): tsc ×3 clean; vitest **41/41** (14 files); e2e **6/6** with a
+  suite-level `retries: 1` (Playwright twin of the vitest retry budget — movement-precision
+  assertions flake under this box's ambient load; real regressions fail every attempt).
+- ART.md backlog rewritten: shipped list recorded; next priorities are a human playtest pass
+  (all the math-tuned feel constants), second enemy/map, progression, modifier balance sweep.
 
 ### Debrief data, Caretaker vocabulary, modifier variety (2026-11-06) — done
 

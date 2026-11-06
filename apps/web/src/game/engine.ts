@@ -106,11 +106,13 @@ export class Engine {
   private shakeAmount = 0;
   private bobPhase = 0;
   private lastEnemyAi = 0;
+  private lastEnemyChaseSid = ""; // previous frame's chase target, for the lost-you cue
   private lastEnemyX = 0;
   private lastEnemyZ = 0;
   private estepDist = 0;
   private clinkTimer = 3;
-  private spottedCd = 0; // chase-entry sting cooldown
+  private spottedCd = 0; // chase-entry sting cooldown (someone else's chase)
+  private youSpottedCd = 0; // targeted-you sting cooldown (short: re-sightings re-warn)
   private lostCd = 0; // lost-the-trail cooldown
   private itickTimer = 1.8; // investigate cloth-tick cadence
   private spectateIdx = 0;
@@ -123,6 +125,7 @@ export class Engine {
   private lastPatchAt = 0;
   private hudTimer = 0;
   private lastPhase = "lobby";
+  private stormOn = false;
   private wasSeated = 0;
   private disposers: (() => void)[] = [];
   /** Dev photo mode: when set, the camera holds this pose (world -> lookAt). */
@@ -245,6 +248,8 @@ export class Engine {
     this.stop();
     this.input.dispose();
     this.disposers.forEach((d) => d());
+    audio.setRain(false); // ambient loops outlive the engine; drop the storm with it
+    this.world3d.setStorm(false);
     this.world3d.dispose();
     this.vanView.dispose();
     this.enemyView.dispose();
@@ -856,19 +861,36 @@ export class Engine {
     const ex = this.enemyView.group.position.x; // interpolated render position
     const ez = this.enemyView.group.position.z;
     if (this.spottedCd > 0) this.spottedCd -= dt;
+    if (this.youSpottedCd > 0) this.youSpottedCd -= dt;
     if (this.lostCd > 0) this.lostCd -= dt;
     if (st.phase === "scavenge" || st.phase === "escape") {
-      // State-vocabulary transition cues. NOTE: the schema does not replicate
-      // WHO it is chasing (chaseSid stays server-side), so each cue is a single
-      // positional one-shot for the transition itself — no targeted-at-you vs
-      // targeting-someone-else variation is possible client-side.
-      if (e.ai === 2 && this.lastEnemyAi !== 2 && this.spottedCd <= 0) {
-        this.spottedCd = 6;
-        audio.playEventAt("spotted", ex, ez, cam);
+      // State-vocabulary transition cues, split by victim now that chaseSid is
+      // on the wire: locked onto ME = full-volume sting + toast (it is coming
+      // for me specifically); locked onto someone else = the softer positional
+      // cue as before. The targeted-you sting keeps its own short cooldown so
+      // forced-door chase pauses do not machine-gun the toast, while a genuine
+      // lose-then-re-find (>= LOSE_SIGHT_GRACE apart) still re-warns.
+      if (e.ai === 2 && this.lastEnemyAi !== 2) {
+        if (e.chaseSid === this.net.sid && this.youSpottedCd <= 0) {
+          this.youSpottedCd = 3;
+          audio.sting();
+          this.store.toast("IT'S SEEN YOU. RUN.", "warn");
+        } else if (e.chaseSid !== this.net.sid && this.spottedCd <= 0) {
+          this.spottedCd = 6;
+          audio.playEventAt("spotted", ex, ez, cam);
+        }
       }
+      // Lost the trail: the exhale lands differently on its ex-target —
+      // floored attenuation ("lostYou") reads as personal without ever
+      // approaching the sting's volume. The strike path (2/3 -> recover)
+      // stays cue-less on purpose: the windup/strike cues already dominate it.
       if ((this.lastEnemyAi === 2 || this.lastEnemyAi === 3) && (e.ai === 0 || e.ai === 1) && this.lostCd <= 0) {
         this.lostCd = 8;
-        audio.playEventAt("lost", ex, ez, cam);
+        if (this.lastEnemyChaseSid === this.net.sid) {
+          audio.playEventAt("lostYou", ex, ez, cam);
+        } else {
+          audio.playEventAt("lost", ex, ez, cam);
+        }
       }
       if (e.ai === 3 && this.lastEnemyAi !== 3) {
         audio.playEventAt("windup", ex, ez, cam);
@@ -885,6 +907,7 @@ export class Engine {
       }
     }
     this.lastEnemyAi = e.ai;
+    this.lastEnemyChaseSid = e.chaseSid;
     const intensity = chasing ? clamp01(1.4 - d / 22) : e.ai === 1 ? clamp01(0.6 - d / 30) : 0;
     audio.setChaseIntensity(intensity);
     audio.heartbeat(dt, intensity);
@@ -892,7 +915,7 @@ export class Engine {
     else audio.engine(0, false);
 
     // tucked in a junker? everything the Caretaker does arrives muffled
-    audio.hiddenMuffle = me.hidden ? 0.45 : 1;
+    audio.setHidden(me.hidden);
 
     const moved = Math.hypot(ex - this.lastEnemyX, ez - this.lastEnemyZ);
     this.lastEnemyX = ex;
@@ -1097,6 +1120,17 @@ export class Engine {
       if (st.phase === "scavenge") this.store.toast("Shift started. Find valuables, find the distributor, don't die.", "info");
       if (st.phase === "escape") this.store.toast("Everyone in the van! DRIVE.", "good");
       this.lastPhase = st.phase;
+    }
+    // STORM CELL: atmosphere exists only mid-mission — rain and lightning are
+    // silent in the lobby and die at results. Modifiers only change at mission
+    // start, so the phase gate is enough; read fresh every push anyway so a
+    // reconnect into a running storm wires up too.
+    const stormOn = (st.phase === "scavenge" || st.phase === "escape") && [...st.modifiers].includes("storm");
+    if (stormOn !== this.stormOn) {
+      this.stormOn = stormOn;
+      this.world3d.setStorm(stormOn);
+      audio.setRain(stormOn);
+      this.world3d.onFlash = stormOn ? () => audio.thunder() : null;
     }
     if (me.seat !== this.wasSeated) {
       this.wasSeated = me.seat;

@@ -1290,6 +1290,7 @@ export class World {
     st.enemy.yaw = this.enemy.yaw;
     st.enemy.ai = this.enemy.aiCode;
     st.enemy.forcing = this.enemy.forcingDoor;
+    st.enemy.chaseSid = this.enemy.chaseSid; // who it is chasing ("" = nobody)
     st.enemy.phase = this.escalation;
   }
 
