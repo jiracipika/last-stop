@@ -1,10 +1,10 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-11-06T19:39:07.078Z",
+  "recordedAt": "2026-11-06T20:24:28.019Z",
   "sessionId": "sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba",
   "event": "PostToolUse",
   "toolName": "Edit",
-  "file": "src/test/stopslide.test.ts",
+  "file": "src/test/carry.test.ts",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,

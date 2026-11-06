@@ -2,7 +2,32 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers slices (2026-11-06)
+
+### Debrief data, Caretaker vocabulary, modifier variety (2026-11-06) — done
+
+- **Real debrief data** (mission/world/Results): MissionResults grew `shiftSeconds` (actual
+  elapsed, from `briefUntil` — stays correct under the testSeconds knob) and per-row
+  `status: escaped | left | down` read at the outcome moment (seat occupancy at the van
+  crossing is the truth for escapes; timeouts map buckle-ins to "left"). Results.tsx prefers
+  the server value with the old derivation as fallback, shows SHIFT LENGTH in the meta line.
+  **First visual verification of the results screen**: new `results.spec.ts` e2e drives a
+  solo 20 s mission to the OVERRUN AT DAWN report and screenshots it
+  (`screenshots/results-e2e.png`); the e2e server now runs LS_TEST_MODE (test-only 2667).
+- **Caretaker state vocabulary** (audio/engine): spotted sting on chase-entry (positional,
+  6 s cooldown), lost-you exhale on chase-drop, faint investigate cloth ticks, rising windup
+  rattle peaking at the strike. All routed through the existing spatial/muffle math — muffled
+  ×0.45 while you're hidden. Honest fallback: `chaseSid` is server-only, so "spotted YOU vs
+  someone" isn't distinguishable client-side yet (needs a schema addition; noted).
+- **Modifier variety** (mission/world/enemy + modifiers.test.ts): RAISED TARGETS (quota +15%
+  via pure `quotaFor`, world applies through `modifiersOverride` for deterministic tests) and
+  AMPED UP (Caretaker speed ×1.2, stacking with escalation). Pool now 7, pick 3.
+- Verification (2026-11-06): tsc ×3 clean; server vitest **40/40** (13 files) — with a
+  suite-level `retry: 2` in vitest.config.ts: this box has ambient load, full-mission
+  integration tests fail on timer starvation, and the failures rotate between long-walk
+  tests run to run (a real logic bug fails 3× consistently — the leash-slip did); full
+  Playwright e2e **6/6** incl. the new results spec; results screenshot visually verified
+  (letterhead, real shift length, ledger status, stamp, notes).
 
 ### Feel / perf / debrief slice (2026-11-06) — done
 

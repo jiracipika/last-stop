@@ -24,7 +24,10 @@ export default defineConfig({
       stdout: "ignore",
       stderr: "pipe",
       cwd: root,
-      env: { LS_DISABLE_ENEMY: "1", PORT: "2667" },
+      // LS_TEST_MODE unlocks GameRoom's test knobs (testSeconds/testQuota) so
+      // specs can shorten the shift timer; this env only exists on this
+      // test-only 2667 server, never on the public 2567 one.
+      env: { LS_DISABLE_ENEMY: "1", LS_TEST_MODE: "1", PORT: "2667" },
     },
     {
       command: "pnpm --filter @last-stop/web exec vite --port 5173 --strictPort",

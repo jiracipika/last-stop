@@ -7,6 +7,9 @@ import type { Net } from "../net.js";
 
 const money = (n: number): string => `$${Math.round(n)}`;
 
+// Shift clock for the report meta line: 754s -> "12:34".
+const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s) % 60).padStart(2, "0")}`;
+
 // Management notes for the report footer, keyed to outcome. Picked at random
 // on mount; nothing here needs to be reproducible. 10 lines total, 2-4 shown.
 const MGMT_NOTES: Record<string, string[]> = {
@@ -38,6 +41,8 @@ function pickNotes(outcome: string, count: number): string[] {
 }
 
 // Crew status derived from outcome + per-row stats (all client-visible data).
+// Legacy fallback only: the server now stamps each row with what the player
+// actually was at the outcome moment (row.status).
 function crewStatus(outcome: string, r: MissionAwardRow): { label: string; left: boolean } {
   if (outcome === "escaped") {
     if (r.downed >= 3) return { label: "barely clocked out", left: false };
@@ -46,6 +51,21 @@ function crewStatus(outcome: string, r: MissionAwardRow): { label: string; left:
   }
   if (outcome === "timeout" && r.downed > 0) return { label: "left on site (limping)", left: true };
   return { label: "left on site", left: true };
+}
+
+// Server-provided status wins (it knows who was in the van and who bled out);
+// fall back to the outcome-only guess for payloads missing the field.
+function rowStatus(outcome: string, r: MissionAwardRow): { label: string; left: boolean } {
+  if (r.status === "escaped") {
+    if (r.downed >= 3) return { label: "barely clocked out", left: false };
+    if (r.delivered <= 0) return { label: "clocked out (empty-handed)", left: false };
+    return { label: "clocked out", left: false };
+  }
+  if (r.status === "down") return { label: "did not clock out", left: true };
+  if (r.status === "left") {
+    return { label: r.downed > 0 ? "left on site (limping)" : "left on site", left: true };
+  }
+  return crewStatus(outcome, r);
 }
 
 export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React.ReactElement {
@@ -81,6 +101,10 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
   const conditions = hud.modifiers.map((m) => MODIFIERS[m]?.name ?? m.toUpperCase()).join(" · ") || "STANDARD DREAD";
   const awardsCount = results ? Object.values(results.awards).filter(Boolean).length : 0;
   const crewSize = results ? results.rows.length : 0;
+  // Actual server-measured shift length; omitted from the line if a payload
+  // predates the field.
+  const shiftLen =
+    typeof results?.shiftSeconds === "number" ? clock(Math.max(0, Math.round(results.shiftSeconds))) : "";
 
   return (
     <div className="results">
@@ -91,7 +115,8 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
         </div>
         <div className="report-doc">SHIFT REPORT — PALE LANTERN SITE</div>
         <div className="report-meta">
-          FORM 2AM-B · ROOM {hud.roomCode || "-----"} · CREW OF {crewSize} · SITE CONDITIONS: {conditions}
+          FORM 2AM-B · ROOM {hud.roomCode || "-----"} · CREW OF {crewSize}
+          {shiftLen && <> · SHIFT LENGTH {shiftLen}</>} · SITE CONDITIONS: {conditions}
         </div>
 
         <span className={`report-stamp ${outcomeClass}`}>{stamp}</span>
@@ -131,7 +156,7 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
               </thead>
               <tbody>
                 {results.rows.map((r, i) => {
-                  const st = crewStatus(outcome, r);
+                  const st = rowStatus(outcome, r);
                   return (
                     <tr key={i}>
                       <td className="row-nick">

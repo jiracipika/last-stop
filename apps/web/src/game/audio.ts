@@ -9,6 +9,7 @@ export class GameAudio {
   private windGain: GainNode | null = null;
   private chaseGain: GainNode | null = null;
   private chaseTimer = 0;
+  private lastWindupAt = -10;
   /** Listener is tucked in a junker: world events arrive muffled. */
   hiddenMuffle = 1;
   volume = 0.8;
@@ -257,6 +258,96 @@ export class GameAudio {
     this.noise(0.2 * vol, 0.85, 380, "lowpass", pan);
   }
 
+  /** Chase entry: sharp rising sting — it locked onto someone nearby. */
+  private spotted(pan: number, vol: number): void {
+    if (!this.ctx) return;
+    const t = this.now();
+    const voice = (f0: number, f1: number, peak: number, attack: number, decay: number): void => {
+      const osc = this.ctx!.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(f0, t);
+      osc.frequency.exponentialRampToValueAtTime(f1, t + attack);
+      const gain = this.ctx!.createGain();
+      const panner = this.ctx!.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      osc.connect(gain).connect(panner).connect(this.master!);
+      this.env(gain, peak, attack, decay);
+      osc.start();
+      osc.stop(t + attack + decay + 0.1);
+    };
+    voice(300, 920, 0.13 * vol, 0.2, 0.35);
+    voice(150, 460, 0.1 * vol, 0.18, 0.42);
+  }
+
+  /** Lost the trail: a low deflating groan plus a breathy exhale. */
+  private lost(pan: number, vol: number): void {
+    if (!this.ctx) return;
+    const t = this.now();
+    // groan sagging downward
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(68, t + 0.55);
+    const gain = this.ctx.createGain();
+    const panner = this.ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    osc.connect(gain).connect(panner).connect(this.master!);
+    this.env(gain, 0.07 * vol, 0.05, 0.7);
+    osc.start();
+    osc.stop(t + 0.9);
+    // breathy exhale: noise through a filter that sags shut
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(900, t);
+    filter.frequency.exponentialRampToValueAtTime(280, t + 0.5);
+    const ng = this.ctx.createGain();
+    const npan = this.ctx.createStereoPanner();
+    npan.pan.value = Math.max(-1, Math.min(1, pan));
+    src.connect(filter).connect(ng).connect(npan).connect(this.master!);
+    this.env(ng, 0.05 * vol, 0.06, 0.55);
+    src.start();
+    src.stop(t + 0.75);
+  }
+
+  /** Investigate texture: one faint dry cloth tick (randomized per call). */
+  private itick(pan: number, vol: number): void {
+    const f = 1600 + Math.random() * 800;
+    this.noise(0.022 * vol, 0.05 + Math.random() * 0.04, f, "bandpass", pan);
+  }
+
+  /** Windup telegraph: rising tremolo rattle that peaks at the strike. */
+  private windup(pan: number, vol: number): void {
+    if (!this.ctx) return;
+    const t = this.now();
+    if (t - this.lastWindupAt < 1.2) return; // cadence-safe: never overlaps a previous windup
+    this.lastWindupAt = t;
+    const dur = 0.85; // matches the server's WINDUP_TIME
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(105, t);
+    osc.frequency.linearRampToValueAtTime(185, t + dur);
+    // tremolo tightens (9 -> 17 Hz) and deepens as the strike approaches
+    const trem = this.ctx.createOscillator();
+    trem.frequency.setValueAtTime(9, t);
+    trem.frequency.linearRampToValueAtTime(17, t + dur);
+    const tremDepth = this.ctx.createGain();
+    tremDepth.gain.setValueAtTime(0, t);
+    tremDepth.gain.linearRampToValueAtTime(0.05 * vol, t + dur);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.07 * vol, t + dur);
+    const panner = this.ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    osc.connect(gain).connect(panner).connect(this.master!);
+    trem.connect(tremDepth).connect(gain.gain);
+    osc.start(t);
+    trem.start(t);
+    osc.stop(t + dur + 0.05);
+    trem.stop(t + dur + 0.05);
+  }
+
   click(): void {
     this.tone(700, 0.04, 0.05, "triangle");
   }
@@ -311,6 +402,10 @@ export class GameAudio {
       case "estep": this.estep(pan, atten * this.hiddenMuffle); break;
       case "clink": this.clink(pan, atten * this.hiddenMuffle); break;
       case "drag": this.drag(pan, atten); break;
+      case "spotted": this.spotted(pan, atten * this.hiddenMuffle); break;
+      case "lost": this.lost(pan, atten * this.hiddenMuffle); break;
+      case "itick": this.itick(pan, atten * this.hiddenMuffle); break;
+      case "windup": this.windup(pan, atten * this.hiddenMuffle); break;
       default: break;
     }
   }

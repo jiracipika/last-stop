@@ -6,7 +6,7 @@ import { randomInt } from "node:crypto";
 import {
   AABB, Body, MoveInput, stepPlayer, stepFreeItem, stepVan, carrySpeedFactor, vanLocalToWorld, vanWorldToLocal,
   PLAYER, CARRY, NOISE, VAN, MISSION, FRAGILE_IMPACT_V, FRAGILE_DPS, WRECKED_AT, WRECKED_VALUE_FACTOR,
-  ITEM_DEFS, planSpawns, planValue, quotaFactor, missionSeconds, pickModifiers,
+  ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers,
   STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE,
   HIDE_SPOTS, HIDE,
   mulberry32, clamp, dist2d, hasLineOfSight,
@@ -123,6 +123,9 @@ export class World {
   rng: () => number = mulberry32(1);
   /** test-only overrides (set by GameRoom under LS_TEST_MODE=1) */
   testQuota = -1;
+  /** When set, startMission uses these modifiers instead of a random pick
+   *  (tests pin specific modifier behaviors deterministically). */
+  modifiersOverride: string[] | null = null;
   testSeconds = 0;
   testEnemyAt: { x: number; z: number } | null = null;
   testFreezeEnemyAfterDown = false;
@@ -271,7 +274,7 @@ export class World {
     this.seed = randomInt(0, 0xffffffff);
     const rng = mulberry32(this.seed);
     this.rng = rng;
-    this.modifiers = pickModifiers(rng);
+    this.modifiers = this.modifiersOverride ?? pickModifiers(rng);
     const plan = planSpawns(rng, count);
 
     let i = 0;
@@ -322,7 +325,7 @@ export class World {
     this.resetVan();
     this.vanCargo = [];
     (this.state.van.cargo as unknown as string[]).length = 0;
-    this.quota = this.testQuota >= 0 ? this.testQuota : Math.round(planValue(plan.items) * quotaFactor(count));
+    this.quota = this.testQuota >= 0 ? this.testQuota : quotaFor(planValue(plan.items), count, this.modifiers);
     this.lootTotal = planValue(plan.items);
     this.salvage = 0;
     this.cargoDamage = 0;
@@ -1151,6 +1154,10 @@ export class World {
     }
     this.setPhase("results");
     this.state.outcome = outcome;
+    // Row status = who each player physically was at the outcome moment. In
+    // the escaped branch above, anyone alive but not seated was just marked
+    // dead (left behind), so seat > 0 is exactly "made it into the van". A
+    // timeout means the van never left, so even someone buckled in is "left".
     const rows: MissionAwardRow[] = [...this.players.values()].map((p) => ({
       nick: p.nick,
       color: p.color,
@@ -1161,6 +1168,16 @@ export class World {
       biggestLoss: Math.round(p.biggestLoss),
       lossItem: p.lossItem,
       downed: p.downedCount,
+      status:
+        outcome === "escaped"
+          ? p.seat > 0
+            ? "escaped"
+            : "down"
+          : outcome === "timeout"
+            ? p.dead || p.downed
+              ? "down"
+              : "left"
+            : "down",
     }));
     const results = {
       outcome,
@@ -1168,6 +1185,10 @@ export class World {
       salvage: Math.round(this.salvage),
       quota: this.quota,
       cargoDamage: Math.round(this.cargoDamage),
+      // Actual experienced shift: scavenge start (briefUntil — the one stored
+      // timestamp that stays correct when testSeconds shortens endsAt) to the
+      // outcome moment. Timeout lands at ~the full shift, escape is shorter.
+      shiftSeconds: Math.max(0, Math.round(this.t - this.briefUntil)),
       awards: computeAwards(rows),
       rows,
     };

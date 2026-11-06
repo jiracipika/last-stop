@@ -110,6 +110,9 @@ export class Engine {
   private lastEnemyZ = 0;
   private estepDist = 0;
   private clinkTimer = 3;
+  private spottedCd = 0; // chase-entry sting cooldown
+  private lostCd = 0; // lost-the-trail cooldown
+  private itickTimer = 1.8; // investigate cloth-tick cadence
   private spectateIdx = 0;
   private fpsAcc = 0;
   private fpsN = 0;
@@ -848,7 +851,39 @@ export class Engine {
     if (!me) return;
     const d = dist2d(this.predictor.body.x, this.predictor.body.z, e.x, e.z);
     const chasing = e.ai === 2 || e.ai === 3;
-    if (e.ai === 2 && this.lastEnemyAi !== 2) audio.sting();
+    // Caretaker sounds, positioned through playEventAt
+    const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
+    const ex = this.enemyView.group.position.x; // interpolated render position
+    const ez = this.enemyView.group.position.z;
+    if (this.spottedCd > 0) this.spottedCd -= dt;
+    if (this.lostCd > 0) this.lostCd -= dt;
+    if (st.phase === "scavenge" || st.phase === "escape") {
+      // State-vocabulary transition cues. NOTE: the schema does not replicate
+      // WHO it is chasing (chaseSid stays server-side), so each cue is a single
+      // positional one-shot for the transition itself — no targeted-at-you vs
+      // targeting-someone-else variation is possible client-side.
+      if (e.ai === 2 && this.lastEnemyAi !== 2 && this.spottedCd <= 0) {
+        this.spottedCd = 6;
+        audio.playEventAt("spotted", ex, ez, cam);
+      }
+      if ((this.lastEnemyAi === 2 || this.lastEnemyAi === 3) && (e.ai === 0 || e.ai === 1) && this.lostCd <= 0) {
+        this.lostCd = 8;
+        audio.playEventAt("lost", ex, ez, cam);
+      }
+      if (e.ai === 3 && this.lastEnemyAi !== 3) {
+        audio.playEventAt("windup", ex, ez, cam);
+      }
+      // investigating: faint dry cloth ticks so searching has its own texture
+      if (e.ai === 1) {
+        this.itickTimer -= dt;
+        if (this.itickTimer <= 0) {
+          this.itickTimer = 1.5 + Math.random() * 0.5;
+          audio.playEventAt("itick", ex, ez, cam);
+        }
+      } else {
+        this.itickTimer = 1.8; // stop instantly on any state change
+      }
+    }
     this.lastEnemyAi = e.ai;
     const intensity = chasing ? clamp01(1.4 - d / 22) : e.ai === 1 ? clamp01(0.6 - d / 30) : 0;
     audio.setChaseIntensity(intensity);
@@ -859,10 +894,6 @@ export class Engine {
     // tucked in a junker? everything the Caretaker does arrives muffled
     audio.hiddenMuffle = me.hidden ? 0.45 : 1;
 
-    // Caretaker footsteps and lantern clinks, positioned through playEventAt
-    const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
-    const ex = this.enemyView.group.position.x; // interpolated render position
-    const ez = this.enemyView.group.position.z;
     const moved = Math.hypot(ex - this.lastEnemyX, ez - this.lastEnemyZ);
     this.lastEnemyX = ex;
     this.lastEnemyZ = ez;

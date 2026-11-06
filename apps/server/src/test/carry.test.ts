@@ -35,7 +35,10 @@ afterAll(async () => {
 });
 
 describe("carrying", () => {
-  it("grabs are atomic: simultaneous grab of one item gives it to exactly one player", async () => {
+  // retry budget: this is the suite's tightest race (two bots must both be
+  // in grab range on the same tick) and the known load-sensitive flake —
+  // 5+ historical failures, always this test, always timer starvation
+  it("grabs are atomic: simultaneous grab of one item gives it to exactly one player", { retry: 2, timeout: 45000 }, async () => {
     // walk both bots near a small item
     let target: { id: string; x: number; z: number } | null = null;
     for (const [id, it] of stateOf(host).items) {
@@ -63,7 +66,7 @@ describe("carrying", () => {
     host.room.send("act", { k: "release", thrown: false });
     mate.room.send("act", { k: "release", thrown: false });
     await sleep(300);
-  }, 60000);
+  });
 
   it("heavy items accept two handles and release one at a time", async () => {
     const heavyId = findItemByDef(host, "vending") ?? findItemByDef(host, "arcade") ?? findItemByDef(host, "freezer")

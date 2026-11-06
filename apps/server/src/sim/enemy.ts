@@ -76,7 +76,8 @@ export class CaretakerAI {
   }
 
   speedMul(): number {
-    return this.world.escalation === 3 ? 1.3 : this.world.escalation === 2 ? 1.15 : 1;
+    const esc = this.world.escalation === 3 ? 1.3 : this.world.escalation === 2 ? 1.15 : 1;
+    return esc * (this.world.modifiers.includes("wired") ? 1.2 : 1);
   }
 
   hearingMul(): number {

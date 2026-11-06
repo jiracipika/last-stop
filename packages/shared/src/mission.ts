@@ -35,9 +35,19 @@ export const MODIFIERS: Record<string, ModifierDef> = {
     name: "CURSED BELLS",
     desc: "All cargo rattles while carried.",
   },
+  wired: {
+    id: "wired",
+    name: "AMPED UP",
+    desc: "The Caretaker moves 20% faster. Do not let it see you run.",
+  },
+  fatquota: {
+    id: "fatquota",
+    name: "RAISED TARGETS",
+    desc: "Corporate raised the quota 15%. Corporate gets a bonus.",
+  },
 };
 
-export const MODIFIER_POOL = ["blackout", "fragile", "sensitive", "shortclock", "bells"];
+export const MODIFIER_POOL = ["blackout", "fragile", "sensitive", "shortclock", "bells", "wired", "fatquota"];
 
 export function pickModifiers(rng: () => number): string[] {
   const pool = [...MODIFIER_POOL];
@@ -59,6 +69,18 @@ export function missionSeconds(modifiers: string[]): number {
   return 720 - (modifiers.includes("shortclock") ? 90 : 0);
 }
 
+/** Quota for a mission: the player-scaled fraction of spawned value, pushed
+ * 15% higher by the RAISED TARGETS modifier. Pure so tests can pin it. */
+export function quotaFor(baseValue: number, playerCount: number, modifiers: string[]): number {
+  const base = Math.round(baseValue * quotaFactor(playerCount));
+  return modifiers.includes("fatquota") ? Math.round(base * 1.15) : base;
+}
+
+/** Where a crew member physically was when the shift ended, as read by the
+ * server at the outcome moment: buckled in the van (escaped), standing on the
+ * lot (left), or downed/dead (down). */
+export type CrewStatus = "escaped" | "left" | "down";
+
 export interface MissionAwardRow {
   nick: string;
   color: number;
@@ -69,6 +91,7 @@ export interface MissionAwardRow {
   biggestLoss: number;
   lossItem: string;
   downed: number;
+  status: CrewStatus;
 }
 
 export interface MissionResults {
@@ -77,6 +100,9 @@ export interface MissionResults {
   salvage: number;
   quota: number;
   cargoDamage: number; // total value destroyed by damage
+  /** Actual shift length in seconds, measured from the scavenge start (end of
+   * briefing) to the outcome moment. */
+  shiftSeconds: number;
   awards: {
     loudest?: { nick: string; noise: number };
     biggestMistake?: { nick: string; loss: number; item: string };
