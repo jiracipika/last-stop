@@ -14,12 +14,11 @@ RUN pnpm install --frozen-lockfile --filter @last-stop/server... --filter @last-
 COPY packages/shared packages/shared
 COPY apps/server apps/server
 
-# Bundle the server (esbuild, banner baked into the npm build script)
-RUN pnpm --filter @last-stop/server run build
-
+# NOTE: run via tsx — the esbuild bundle currently breaks colyseus 0.18's
+# HTTP router registration (/matchmake 404s in dist/index.mjs).
 ENV NODE_ENV=production
 ENV PORT=2567
 EXPOSE 2567
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||2567)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "dist/index.mjs"]
+CMD ["pnpm", "--filter", "@last-stop/server", "exec", "tsx", "src/index.ts"]

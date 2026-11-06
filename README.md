@@ -157,15 +157,33 @@ e2e/           Playwright browser tests
 
 ## Hosting
 
-### Live links (as of 2026-11-06)
+### Live links (as of 2026-11-06 — **fully playable online**)
 
-- **Frontend (Vercel, canonical):** <https://laststopgame.vercel.app> — deployed and serving the
-  game shell. **Multiplayer is not wired yet**: `VITE_GAME_SERVER_URL` is unset because the
-  authoritative server has no public host. Once a game-server URL exists, set the env var on the
-  Vercel project and redeploy — that is the only remaining step.
-  (A duplicate project `last-stop` → <https://last-stop-beta.vercel.app> also exists from an
-  earlier CLI deploy; feel free to delete it in the Vercel dashboard.)
+- **Play:** <https://laststopgame.vercel.app> — frontend on Vercel, authoritative game server
+  running on the home box (`rs-server`) behind **Tailscale Funnel**
+  (`wss://rs-server.tail617f4d.ts.net`, loopback-only bind, no open router ports). Verified
+  end-to-end from an off-network vantage: two browsers created/joined a room by code and started
+  a mission through the public path (`e2e/tests/prod-check.ts`).
 - **Source (GitHub, private):** <https://github.com/jiracipika/last-stop>
+- A duplicate Vercel project `last-stop` (<https://last-stop-beta.vercel.app>) exists from an
+  earlier CLI mishap; safe to delete in the dashboard.
+
+### Operating the public server (on `rs-server`)
+
+```bash
+scripts/serve.sh start    # tsx + restart loop on 127.0.0.1:2567
+scripts/serve.sh status   # supervisor + /health
+scripts/serve.sh stop
+tailscale funnel status   # public path check
+# capacity: LS_MAX_ROOMS (default 4 rooms x 4 players); ~8 players ~= 1.3 Mbps
+```
+
+Ops notes: the supervisor survives crashes but not reboots (boot persistence needs systemd/sudo);
+the game server is unaudited code behind mitigations (loopback bind, room cap, rate limits,
+flood kicks); Funnel adds modest latency — fine for co-op. Two host-level gotchas are baked into
+the runbook: the esbuild bundle breaks Colyseus's matchmake routes (run via tsx), and an express
+`cors()` middleware duplicates Colyseus's CORS headers (removed — Colyseus reflects Origin
+itself).
 
 ### Frontend → Vercel (done)
 
