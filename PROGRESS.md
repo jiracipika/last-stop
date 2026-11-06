@@ -2,7 +2,51 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05)
+## Status: first release playable end-to-end (2026-11-05) — art direction slice 1 landed (2026-11-06)
+
+### Art slice 1 (2026-11-06): textures, lighting, landmarks — done
+
+Audited the live game first with deterministic screenshots (9 fixed camera poses via a dev-only
+`engine.frozenCam` photo mode + `e2e/shots.ts`); vision-model critique + code read agreed the
+game looked like a graybox: **zero textures** (2 CanvasTextures total), **no interior lights at
+all** (corridor/garage/reception were black voids), no landmark hierarchy. Full audit + backlog:
+`docs/ART.md`. Before/after evidence: `screenshots/baseline/` vs `screenshots/after/`.
+
+Landed (all client-side, `apps/web/src/game/`):
+
+- **Procedural texture set** (`textures.ts`): 11 seeded 512 px materials (asphalt, gravel,
+  plaster w/ baked teal wainscot, garage cinderblock, concrete, vinyl tile, carpet, wood,
+  corrugated, worn metal, van livery) + decals (oil stains, room numbers 1–4, corridor plates,
+  NO VACANCY sign, DUSTPAN RECOVERY CO. livery, light pools). All original canvas-drawn with
+  `mulberry32` — no external assets, nothing to license. Manifest in `docs/ART.md`.
+- **Wall tiling**: plaster/block textures tile every ~4 m (per-wall repeat clones) so detail
+  survives at gameplay distance; mid-frequency weathering (0.5–1.5 m blotches) because
+  grain-scale speckle is sub-pixel on screen at 8 m.
+- **Interior lighting**: fluorescent fixtures + cool point lights in reception/corridor/garage
+  (corridor-east and one garage tube deliberately failing), red maintenance emergency light,
+  laundry bulb, R3 bedside lamp, boiler ember, warm porch bulbs over walkway doors (R2's dead).
+  Guaranteed ground pools via additive decals under lamps/porches/entry. Lights distance-culled
+  per frame; low quality kills flicker + dust.
+- **Landmarks**: redesigned 6.5 m PALE LANTERN pole sign (tungsten letters, dead A + T, NO
+  VACANCY strip, storm lean + sway), hazard-red gate lamps, room numbers/plates on doors.
+- **Room dressing** (visual-only, kept off loot spawns + doorways): beds/nightstands/TV per
+  front room, reception desk + key rack + clock + ceiling fan (spins), corridor ice machine,
+  maintenance pipes, boiler gauge, storage boxes, garage tool board + rust drums + rolled bay
+  door slats, knocked-over cones, oil stains.
+- **Van**: livery paint texture, DUSTPAN RECOVERY CO. decals ("WE TOW REGRETS"), amber beacon,
+  additive headlight pools on the asphalt.
+- **Grade**: ACES filmic tonemapping (exposure 1.12), asphalt-blue fog `0x0a0f16`, stronger
+  moon/hemi so silhouettes separate from the sky. WebGL resources disposed on teardown
+  (`World3D.dispose`/`VanView.dispose`).
+
+Verified: typecheck clean; **29/29 vitest, 5/5 Playwright e2e** (incl. screen-direction
+regression) after the changes. Vision-model re-audit of after-shots: corridor
+"properly art-directed", garage "lit workshop", sign reads PALE/LANTERN with intentional dead
+letters, porch/lamp pools visible. Honest residuals: exterior facade texture still reads
+mostly flat beyond ~15 m (night grade + fog — by mood design, noted in docs/ART.md); SwiftShader
+fps 25→20 with ACES + textures (draw calls 72→~330 idle at the wide overview pose, ~100–160 in
+normal play; merging static geometry is backlog item 6); title screen still DOM-only (item 5).
+
 
 ### Milestones
 

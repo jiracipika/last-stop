@@ -79,7 +79,7 @@ export class Engine {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   world3d: World3D;
-  vanView = new VanView();
+  vanView: VanView;
   enemyView = new EnemyView();
   avatars = new Map<string, AvatarView>();
   itemViews = new Map<string, ItemView>();
@@ -110,27 +110,32 @@ export class Engine {
   private lastPhase = "lobby";
   private wasSeated = 0;
   private disposers: (() => void)[] = [];
+  /** Dev photo mode: when set, the camera holds this pose (world -> lookAt). */
+  frozenCam: { x: number; y: number; z: number; tx: number; ty: number; tz: number } | null = null;
 
   constructor(canvas: HTMLCanvasElement, net: Net, store: HudStore, settings: QualitySettings) {
     this.store = store;
     this.net = net;
     this.settings = settings;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== "low", powerPreference: "high-performance" });
-    this.renderer.setClearColor(0x0a0e14);
+    this.renderer.setClearColor(0x0a0f16);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
     this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 240);
-    this.scene.fog = new THREE.FogExp2(0x0a0e14, 0.021);
+    this.scene.fog = new THREE.FogExp2(0x0a0f16, 0.021);
 
-    this.scene.add(new THREE.AmbientLight(0x25344e, 0.5));
-    const moon = new THREE.DirectionalLight(0x8fa8d0, 0.35);
+    this.scene.add(new THREE.AmbientLight(0x22304a, 0.75));
+    const moon = new THREE.DirectionalLight(0x8fa8d0, 0.5);
     moon.position.set(40, 60, -50);
     this.scene.add(moon);
-    const hemi = new THREE.HemisphereLight(0x2a3648, 0x14161a, 0.35);
+    const hemi = new THREE.HemisphereLight(0x2a3648, 0x14161a, 0.5);
     this.scene.add(hemi);
 
     const mods: string[] = net.state ? [...net.state.modifiers] : [];
     const blackout = mods.includes("blackout");
     this.world3d = new World3D(blackout);
     this.scene.add(this.world3d.group);
+    this.vanView = new VanView(this.world3d.textureKit);
     this.scene.add(this.vanView.group);
     this.scene.add(this.enemyView.group);
 
@@ -191,6 +196,7 @@ export class Engine {
     this.renderer.setPixelRatio(q === "low" ? Math.min(1, dpr * 0.75) : q === "medium" ? Math.min(1.25, dpr) : dpr);
     const fog = this.scene.fog as THREE.FogExp2;
     fog.density = q === "low" ? 0.03 : 0.021;
+    this.world3d.setQuality(q);
     this.resize();
   }
 
@@ -224,6 +230,8 @@ export class Engine {
     this.stop();
     this.input.dispose();
     this.disposers.forEach((d) => d());
+    this.world3d.dispose();
+    this.vanView.dispose();
     this.renderer.dispose();
   }
 
@@ -598,6 +606,7 @@ export class Engine {
       this.syncEntities(dt, st, t, now);
       this.world3d.update(dt, t);
       this.world3d.applyGate(dt);
+      this.world3d.cullLights(this.camera.position);
       this.updateEnemyAudio(st, dt);
     }
 
@@ -784,6 +793,12 @@ export class Engine {
   }
 
   private updateCamera(dt: number, t: number, st: RoomState | null): void {
+    if (this.frozenCam) {
+      const f = this.frozenCam;
+      this.camera.position.set(f.x, f.y, f.z);
+      this.camera.lookAt(f.tx, f.ty, f.tz);
+      return;
+    }
     const me = st?.players.get(this.net.sid);
     let cx = this.predictor.body.x;
     let cz = this.predictor.body.z;

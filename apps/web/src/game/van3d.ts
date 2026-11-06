@@ -1,6 +1,8 @@
-// The Magpie — the crew's barely-legal recovery van.
+// The Magpie — the crew's barely-legal recovery van. Warm anchor of the lot:
+// cream-and-teal livery, amber beacon, tungsten interior glow.
 import * as THREE from "three";
 import { VAN } from "@last-stop/shared";
+import { PAL, type Tex } from "./textures.js";
 
 export class VanView {
   group = new THREE.Group();
@@ -10,12 +12,14 @@ export class VanView {
   private headR: THREE.SpotLight;
   private headMat: THREE.MeshBasicMaterial;
   private tailMat: THREE.MeshBasicMaterial;
+  private beaconMat: THREE.MeshBasicMaterial;
   private interiorLight: THREE.PointLight;
+  private pools: THREE.Mesh[] = [];
   private wheels: THREE.Mesh[] = [];
   private cargoGroup = new THREE.Group();
 
-  constructor() {
-    const body = new THREE.MeshLambertMaterial({ color: 0x7a6a4d });
+  constructor(tex: Tex) {
+    const paint = new THREE.MeshLambertMaterial({ map: tex.vanPaint });
     const dark = new THREE.MeshLambertMaterial({ color: 0x2a2c30 });
     const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.85 });
 
@@ -27,9 +31,9 @@ export class VanView {
     };
 
     // main body (local: +z forward)
-    box(2.1, 1.5, 4.8, body, 0, 1.05, 0);
+    box(2.1, 1.5, 4.8, paint, 0, 1.05, 0);
     // cab
-    box(2.0, 0.75, 1.15, body, 0, 1.85, 1.55);
+    box(2.0, 0.75, 1.15, paint, 0, 1.85, 1.55);
     // windshield + side windows
     const shield = box(1.7, 0.5, 0.06, glass, 0, 1.9, 2.14);
     shield.rotation.x = 0.22;
@@ -44,10 +48,30 @@ export class VanView {
     // strap rails
     box(0.1, 0.06, 2.2, new THREE.MeshLambertMaterial({ color: 0x8a4a3a }), 0.95, 0.55, -1.0);
     box(0.1, 0.06, 2.2, new THREE.MeshLambertMaterial({ color: 0x8a4a3a }), -0.95, 0.55, -1.0);
-    // mud flaps, spare tire on the back
+    // spare tire on the back
     const spare = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.14, 8, 14), dark);
     spare.position.set(0, 1.1, -2.46);
     this.group.add(spare);
+
+    // livery: DUSTPAN RECOVERY CO. on both flanks + rear
+    const liveryTex = tex.decal(512, (ctx, sz) => {
+      ctx.clearRect(0, 0, sz, sz);
+      ctx.fillStyle = "#d8d2c0";
+      ctx.font = "bold 54px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("DUSTPAN", sz / 2, sz * 0.4);
+      ctx.fillText("RECOVERY", sz / 2, sz * 0.56);
+      ctx.font = "bold 26px monospace";
+      ctx.fillStyle = PAL.tungsten;
+      ctx.fillText("WE TOW REGRETS", sz / 2, sz * 0.74);
+    });
+    const liveryMat = new THREE.MeshBasicMaterial({ map: liveryTex, transparent: true });
+    for (const side of [1, -1]) {
+      const decal = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), liveryMat);
+      decal.position.set(side * 1.06, 1.15, -0.7);
+      decal.rotation.y = side * Math.PI / 2;
+      this.group.add(decal);
+    }
 
     // wheels
     for (const [wx, wz] of [[-1.0, 1.55], [1.0, 1.55], [-1.0, -1.45], [1.0, -1.45]] as [number, number][]) {
@@ -61,7 +85,7 @@ export class VanView {
     // rear doors (hinged at the sides)
     this.doorL = new THREE.Group();
     this.doorR = new THREE.Group();
-    const doorMat = new THREE.MeshLambertMaterial({ color: 0x6d5e42 });
+    const doorMat = new THREE.MeshLambertMaterial({ map: tex.vanPaint, color: 0xcfc4a8 });
     const dl = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.7, 0.08), doorMat);
     dl.position.x = 0.48;
     this.doorL.add(dl);
@@ -71,6 +95,12 @@ export class VanView {
     this.doorL.position.set(-1.02, 1.15, -2.4);
     this.doorR.position.set(1.02, 1.15, -2.4);
     this.group.add(this.doorL, this.doorR);
+
+    // amber roof beacon
+    this.beaconMat = new THREE.MeshBasicMaterial({ color: 0x4a3418 });
+    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.16, 8), this.beaconMat);
+    beacon.position.set(0, 2.56, 0.9);
+    this.group.add(beacon);
 
     // lights
     this.headMat = new THREE.MeshBasicMaterial({ color: 0x2e2a20 });
@@ -90,6 +120,26 @@ export class VanView {
     this.headL.target = headTarget;
     this.headR.target = headTarget;
     this.group.add(this.headL, this.headR);
+
+    // headlight pools on the asphalt ahead (additive, local frame)
+    const poolTex = tex.decal(256, (ctx, sz) => {
+      const g = ctx.createRadialGradient(sz / 2, sz / 2, 4, sz / 2, sz / 2, sz / 2);
+      g.addColorStop(0, "rgba(255,232,180,0.55)");
+      g.addColorStop(0.6, "rgba(255,224,168,0.18)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, sz, sz);
+    });
+    for (const px of [-0.75, 0.75]) {
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.6, 6.5),
+        new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.set(px, 0.02, 6.2);
+      this.group.add(pool);
+      this.pools.push(pool);
+    }
 
     this.interiorLight = new THREE.PointLight(0xffc37a, 0, 4.5, 1.8);
     this.interiorLight.position.set(0, 1.6, -1.0);
@@ -128,9 +178,25 @@ export class VanView {
     this.headR.intensity = lights ? 38 : 0;
     this.headMat.color.setHex(lights ? 0xffeeaa : 0x2e2a20);
     this.tailMat.color.setHex(lights ? 0xff4433 : 0x3a1414);
-    this.interiorLight.intensity = doorsOpen ? 7 : 0;
+    this.interiorLight.intensity = doorsOpen ? 8 : 0;
+    for (const p of this.pools) p.visible = lights;
+    this.beaconMat.color.set(lights ? PAL.tungsten : "#4a3418");
     // wheel spin
     const spin = (speed * t) % (Math.PI * 2);
     for (const w of this.wheels) w.rotation.x = spin;
+  }
+
+  dispose(): void {
+    this.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+      else if (mat) {
+        const anyMat = mat as THREE.Material & { map?: THREE.Texture };
+        anyMat.map?.dispose();
+        mat.dispose();
+      }
+    });
   }
 }
