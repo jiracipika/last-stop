@@ -36,6 +36,14 @@ interface TargetInfo {
 
 const clamp01 = (v: number) => clamp(v, 0, 1);
 
+// ---- moment-to-moment feel tuning (client-only; no server parity impact) ----
+const BASE_FOV = 75;
+const SPRINT_FOV_KICK = 6; // degrees of FOV widen while sprinting
+const FOV_EASE_RATE = 9; // exponential ease toward the sprint FOV target
+const BOB_AMPLITUDE = 0.045; // meters of view-bob at full walk speed
+const BUMP_MIN_IMPULSE = 2; // m/s of collision-stripped velocity that counts as a slam
+const BUMP_COOLDOWN = 0.4; // seconds between wall-thud sounds
+
 /** Two-snapshot interpolation buffer for remote entities (~120 ms delay). */
 class SnapBuf {
   private snaps: { at: number; x: number; z: number; yaw: number }[] = [];
@@ -125,7 +133,7 @@ export class Engine {
     this.renderer.setClearColor(0x0a0f16);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 240);
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.08, 240);
     this.scene.fog = new THREE.FogExp2(0x0a0f16, 0.021);
 
     this.scene.add(new THREE.AmbientLight(0x22304a, 0.75));
@@ -426,7 +434,11 @@ export class Engine {
         const dragged = !e.on && e.dragged === true;
         if (e.sid === this.net.sid) {
           if (dragged) this.store.toast("It DRAGGED you out of there!", "warn");
-          else audio.vanDoor();
+          else {
+            // lid clunk plus a body-of-cloth rustle, both ways in/out
+            audio.vanDoor();
+            audio.rustle();
+          }
           if (e.on) this.store.toast("Tucked in. Stay quiet and it'll pass you by", "info");
         }
         if (dragged) {
@@ -675,9 +687,17 @@ export class Engine {
     } else {
       const speed = this.predictor.speedFor(st, this.net.sid);
       const seq = this.predictor.nextSeq();
+      this.predictor.carrying = me.carrying; // gates the stop-slide (server parity)
       this.predictor.step(dt, fi, speed);
       this.predictor.reconcile(me.x, me.z, me.inputSeq);
       void seq;
+      // hard contact with a wall/prop: the predictor reports how much velocity
+      // the collision resolve stripped this tick — slam it as a soft thud
+      this.bumpCd -= dt;
+      if (this.predictor.bumpImpulse >= BUMP_MIN_IMPULSE && this.bumpCd <= 0) {
+        this.bumpCd = BUMP_COOLDOWN;
+        audio.bump(this.predictor.bumpImpulse);
+      }
       // footsteps locally
       const v = Math.hypot(this.predictor.body.vx, this.predictor.body.vz);
       this.bobPhase += dt * (v * (me.sprinting ? 3.4 : 2.6));
@@ -710,6 +730,7 @@ export class Engine {
 
   private stepAcc = 0;
   private sendAcc = 0;
+  private bumpCd = 0;
 
   private syncEntities(dt: number, st: RoomState, t: number, nowMs: number): void {
     const k = Math.min(1, 12 * dt); // smoothing toward authoritative state
@@ -873,6 +894,18 @@ export class Engine {
       return;
     }
     const me = st?.players.get(this.net.sid);
+    // Sprint FOV kick: ease toward a slightly wider view while sprinting, ease
+    // back to base otherwise. Sits after the frozenCam return (photo mode is
+    // never touched) and ahead of the early-return branches so the FOV always
+    // settles even in the menu / spectate paths. The sprint flag is the
+    // server's authority (stamina/weight gates already applied there).
+    const sprinting = !!me && me.sprinting && !me.downed && !me.dead && me.seat === 0 && !me.hidden;
+    const targetFov = BASE_FOV + (sprinting ? SPRINT_FOV_KICK : 0);
+    const nextFov = this.camera.fov + (targetFov - this.camera.fov) * (1 - Math.exp(-FOV_EASE_RATE * dt));
+    if (Math.abs(nextFov - this.camera.fov) > 0.001) {
+      this.camera.fov = nextFov;
+      this.camera.updateProjectionMatrix();
+    }
     let cx = this.predictor.body.x;
     let cz = this.predictor.body.z;
     let cy: number = PLAYER.EYE;
@@ -921,7 +954,11 @@ export class Engine {
     } else {
       cy = PLAYER.EYE + this.predictor.body.y;
       if (this.settings.headBob && !me.downed) {
-        cy += Math.sin(this.bobPhase) * 0.045;
+        // bob amplitude tracks the predicted speed so it fades in as you get
+        // moving and dies out at rest (the seat/hidden overrides below still
+        // win, and bobPhase itself only advances while walking)
+        const v = Math.hypot(this.predictor.body.vx, this.predictor.body.vz);
+        cy += Math.sin(this.bobPhase) * BOB_AMPLITUDE * clamp01(v / PLAYER.WALK);
       }
       if (me.downed) cy = 0.5;
       if (me.hidden) cy = 1.05; // hunched behind the windshield

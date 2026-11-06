@@ -38,14 +38,17 @@ export function TitleScreen({
     <div className="title-screen">
       <div className="title-backdrop" />
       <div className="title-panel">
+        <div className="vacancy-strip">NO VACANCY</div>
         <h1 className="game-title">
-          <span className="t-pale">PALE</span> <span className="t-lantern">LANTERN</span>
+          <span className="t-pale">PALE</span> <span className="t-lantern">LA<span className="t-dead">N</span>TERN</span>
           <span className="t-sub">ROADSIDE RECOVERY</span>
         </h1>
         <p className="tagline">
           The van broke down at the worst motel on the highway. Haul the valuables, find a distributor cap,
           and get out before The Caretaker collects <em>you</em>.
         </p>
+
+        <div className="form-head">DUSTPAN RECOVERY CO. — NIGHT-SHIFT SIGN-IN · FORM 2AM-B</div>
 
         <label className="field">
           <span>Crew name</span>

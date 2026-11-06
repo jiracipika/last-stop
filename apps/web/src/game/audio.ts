@@ -176,6 +176,12 @@ export class GameAudio {
     this.noise(0.1, 0.2, 400, "lowpass", pan);
   }
 
+  /** Cloth rustle: squeezing into or climbing out of a hiding spot. */
+  rustle(): void {
+    this.noise(0.05, 0.14, 1500, "bandpass");
+    setTimeout(() => this.noise(0.035, 0.1, 1900, "bandpass"), 90);
+  }
+
   horn(): void {
     this.tone(392, 0.3, 0.5, "square");
     this.tone(466, 0.3, 0.5, "square");

@@ -4,6 +4,7 @@
 // and manifest). Lighting rule: warm = safety, cold = building interior,
 // red = hazard.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   WALL_BOXES, DOORS, doorAabb, PROPS, ROOMS, LAMPS, ROAD, GATE, MAP_BOUNDS, HIDE_SPOTS, mulberry32, type DoorDef, type PropDef,
 } from "@last-stop/shared";
@@ -29,6 +30,13 @@ interface Flicker {
   seed: number;
 }
 
+/** one merged draw call produced by bakeStatic() */
+interface BakeBucket {
+  geos: THREE.BufferGeometry[];
+  meshes: THREE.Mesh[];
+  mat: THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+}
+
 export class World3D {
   group = new THREE.Group();
   doorViews: DoorView[] = [];
@@ -48,6 +56,8 @@ export class World3D {
   private blackout: boolean;
   private lowQuality = false;
   private disposables: { geo?: THREE.BufferGeometry; mat?: THREE.Material; tex?: THREE.Texture }[] = [];
+  /** static scenery tagged during the build; bakeStatic() merges it per material family */
+  private staticParts: THREE.Mesh[] = [];
 
   constructor(blackout: boolean) {
     this.blackout = blackout;
@@ -65,6 +75,8 @@ export class World3D {
     this.buildSign();
     this.buildAtmosphere();
     this.buildSky();
+    // fold every tagged static mesh into one draw call per material family
+    this.bakeStatic();
   }
 
   // ------------------------------------------------------------------ helpers
@@ -85,6 +97,112 @@ export class World3D {
     m.position.set(x, y, z);
     this.disposables.push({ geo: m.geometry });
     return m;
+  }
+
+  /** this.box for never-animated scenery: tagged so bakeStatic() can merge it */
+  private sbox(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+    const m = this.box(w, h, d, mat, x, y, z);
+    this.staticParts.push(m);
+    return m;
+  }
+
+  /** custom-geometry static mesh (cylinders, tires, cones...) tagged for the merge */
+  private smesh<T extends THREE.Mesh>(m: T): T {
+    this.staticParts.push(m);
+    return m;
+  }
+
+  // -------------------------------------------------------------- static bake
+  /**
+   * Draw-call pass: the software-renderer target pays per draw call, so all
+   * tagged static scenery is folded into one BufferGeometry per material
+   * family. Two tricks keep the buckets coarse:
+   *  - repeat: rep() clones share .source with their base canvas, and a
+   *    material repeat is just a UV multiply — so it is baked into each
+   *    geometry's UVs and the merged mesh uses the base texture at repeat
+   *    (1,1). This is what lets every plaster wall / room floor merge despite
+   *    their per-wall / per-room repeat clones.
+   *  - tint: material.color is baked into a vertex-color attribute and the
+   *    merged material is white + vertexColors, so every tint of one texture
+   *    (all the metalWorn props, the wood furniture) and every solid color
+   *    shares a single draw call. Color math is unchanged (white * vColor *
+   *    map == original color * map).
+   * Deliberately NOT merged: door/hide-door/gate/fan/sign groups (animated),
+   * interior-light casings and flicker-driven bulbs/tubes (their materials are
+   * recolored every frame), transparent decals/pools/car glass (blend order),
+   * and dust/stars (Points). Merged geometry spans the whole lot, so the
+   * per-mesh frustum culling the originals had is gone — accepted trade: the
+   * merged vertex counts are tiny while SwiftShader's per-draw overhead is not.
+   */
+  private bakeStatic(): void {
+    // materials the flicker loop recolors must stay on their own live meshes
+    const live = new Set<THREE.Material>();
+    for (const f of this.flickers) if (f.mat) live.add(f.mat);
+    // rep() clones share .source with the base texture; map source -> base (repeat 1,1)
+    const baseOf = new Map<string, THREE.Texture>();
+    const kit: THREE.Texture[] = [
+      this.tex.asphalt, this.tex.gravel, this.tex.plaster, this.tex.garageSteel,
+      this.tex.concrete, this.tex.vinyl, this.tex.carpet, this.tex.wood,
+      this.tex.corrugated, this.tex.metalWorn, this.tex.vanPaint,
+      this.tex.junkerTeal, this.tex.primerCar,
+    ];
+    for (const t of kit) baseOf.set(t.source.uuid, t);
+    const buckets = new Map<string, BakeBucket>();
+    for (const mesh of this.staticParts) {
+      const src = mesh.material as THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+      const lambert = src instanceof THREE.MeshLambertMaterial;
+      const basic = src instanceof THREE.MeshBasicMaterial;
+      // skip anything animated (flicker recolor) or blended (draw-order sensitive)
+      if ((!lambert && !basic) || live.has(src) || src.transparent) continue;
+      const flat = lambert ? src.flatShading : false;
+      const map = src.map;
+      const key = `${lambert ? "L" : "B"}|${flat ? 1 : 0}|${map ? map.source.uuid : "none"}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        const baseMap = map ? baseOf.get(map.source.uuid) ?? map : null;
+        const mat = lambert
+          ? new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: flat, map: baseMap })
+          : new THREE.MeshBasicMaterial({ vertexColors: true, map: baseMap });
+        this.disposables.push({ mat, tex: baseMap ?? undefined });
+        bucket = { geos: [], meshes: [], mat };
+        buckets.set(key, bucket);
+      }
+      const geo = mesh.geometry.clone();
+      mesh.updateMatrix(); // tagged meshes are direct group children: local TRS is everything
+      geo.applyMatrix4(mesh.matrix);
+      // bake the material's texture repeat into the UVs (see doc comment)
+      if (map) {
+        const uv = geo.getAttribute("uv");
+        const rx = map.repeat.x;
+        const ry = map.repeat.y;
+        if (uv && (rx !== 1 || ry !== 1)) {
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * rx, uv.getY(i) * ry);
+        }
+      }
+      // bake tint into vertex colors; src.color is already linear working space
+      const n = geo.getAttribute("position").count;
+      const colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        colors[i * 3] = src.color.r;
+        colors[i * 3 + 1] = src.color.g;
+        colors[i * 3 + 2] = src.color.b;
+      }
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+      bucket.geos.push(geo);
+      bucket.meshes.push(mesh);
+    }
+    for (const [key, bucket] of buckets) {
+      const merged = mergeGeometries(bucket.geos, false);
+      if (!merged) continue; // attribute mismatch would be a bug; keep originals
+      const baked = new THREE.Mesh(merged, bucket.mat);
+      baked.name = `baked.${key}.${bucket.meshes.length}`;
+      this.group.add(baked);
+      this.disposables.push({ geo: merged });
+      // originals leave the graph; their geometries/materials stay in
+      // disposables and are freed exactly once by dispose() (they were never
+      // rendered, so no GPU resources were ever allocated for them)
+      for (const m of bucket.meshes) this.group.remove(m);
+    }
   }
 
   private pointLight(color: number, intensity: number, range: number, x: number, y: number, z: number, essential = false): THREE.PointLight {
@@ -109,26 +227,26 @@ export class World3D {
   private buildGround(): void {
     // asphalt lot (6 m per texture tile keeps texel density consistent everywhere)
     const lotMat = this.mat(this.tex.rep(this.tex.asphalt, 70 / 6, 54 / 6));
-    this.group.add(this.box(70, 0.1, 54, lotMat, 0, -0.05, 0));
+    this.group.add(this.sbox(70, 0.1, 54, lotMat, 0, -0.05, 0));
     const roadMat = this.mat(this.tex.rep(this.tex.asphalt, (ROAD.x1 - ROAD.x0 + 36) / 6, (ROAD.z1 - ROAD.z0) / 6));
-    this.group.add(this.box(ROAD.x1 - ROAD.x0 + 36, 0.1, ROAD.z1 - ROAD.z0 - 0.4, roadMat, ROAD.x0 + (ROAD.x1 - ROAD.x0) / 2 - 18, -0.045, 11));
+    this.group.add(this.sbox(ROAD.x1 - ROAD.x0 + 36, 0.1, ROAD.z1 - ROAD.z0 - 0.4, roadMat, ROAD.x0 + (ROAD.x1 - ROAD.x0) / 2 - 18, -0.045, 11));
     // center dashes + faded stall lines (paint sits on the asphalt)
     const paint = this.solid(0x8a8064);
     for (let x = -66; x < -30; x += 5) {
-      this.group.add(this.box(2.2, 0.02, 0.16, paint, x, 0.03, 11));
+      this.group.add(this.sbox(2.2, 0.02, 0.16, paint, x, 0.03, 11));
     }
     for (const [bx, bz] of [[-8, 6], [4, 6], [16, 6], [-8, 17], [4, 17]] as [number, number][]) {
-      this.group.add(this.box(0.14, 0.02, 3.2, paint, bx - 1.5, 0.03, bz + 1.9));
-      this.group.add(this.box(0.14, 0.02, 3.2, paint, bx + 1.5, 0.03, bz + 1.9));
+      this.group.add(this.sbox(0.14, 0.02, 3.2, paint, bx - 1.5, 0.03, bz + 1.9));
+      this.group.add(this.sbox(0.14, 0.02, 3.2, paint, bx + 1.5, 0.03, bz + 1.9));
     }
     // gravel yards
     const gravelMat = this.mat(this.tex.rep(this.tex.gravel, 12 / 5, 26 / 5));
-    this.group.add(this.box(12, 0.06, 26, gravelMat, -28, 0.0, -8));
-    this.group.add(this.box(6, 0.06, 22, this.mat(this.tex.rep(this.tex.gravel, 6 / 5, 22 / 5)), 32, 0.0, -10));
+    this.group.add(this.sbox(12, 0.06, 26, gravelMat, -28, 0.0, -8));
+    this.group.add(this.sbox(6, 0.06, 22, this.mat(this.tex.rep(this.tex.gravel, 6 / 5, 22 / 5)), 32, 0.0, -10));
     // parking bumpers
     const bump = this.solid(0x3a3d42);
     for (const [bx, bz] of [[-8, 6], [4, 6], [16, 6], [-8, 17], [4, 17]] as [number, number][]) {
-      this.group.add(this.box(2.4, 0.14, 0.5, bump, bx, 0.07, bz));
+      this.group.add(this.sbox(2.4, 0.14, 0.5, bump, bx, 0.07, bz));
     }
     // oil stains near the dead car + dumpster
     const oil = (x: number, z: number, s: number) =>
@@ -184,7 +302,7 @@ export class World3D {
           : w.kind === "rail"
             ? railMat
             : fenceMat;
-      this.group.add(this.box(width, w.h, depth, mat, cx, w.h / 2, cz));
+      this.group.add(this.sbox(width, w.h, depth, mat, cx, w.h / 2, cz));
       if (w.kind === "fence") {
         const post = this.solid(0x232529);
         const alongFence = width > depth;
@@ -192,7 +310,7 @@ export class World3D {
         for (let d = 0; d < len; d += 4) {
           const px = alongFence ? x0 + d : cx;
           const pz = alongFence ? cz : z0 + d;
-          this.group.add(this.box(0.14, w.h + 0.15, 0.14, post, px, (w.h + 0.15) / 2, pz));
+          this.group.add(this.sbox(0.14, w.h + 0.15, 0.14, post, px, (w.h + 0.15) / 2, pz));
         }
       }
     }
@@ -208,28 +326,28 @@ export class World3D {
       else if (["LAU", "MAI", "BOI", "STO"].includes(room.id)) mat = this.mat(this.tex.rep(this.tex.concrete, w / 4, d / 4), 0xb8b0a4);
       else if (room.id === "COR") mat = this.mat(this.tex.rep(this.tex.vinyl, w / 4, d / 4));
       else mat = this.mat(this.tex.rep(i % 2 === 0 ? this.tex.carpet : this.tex.vinyl, w / 4, d / 4), 0xc8c2b4);
-      this.group.add(this.box(w, 0.06, d, mat, (room.x0 + room.x1) / 2, 0.03, (room.z0 + room.z1) / 2));
+      this.group.add(this.sbox(w, 0.06, d, mat, (room.x0 + room.x1) / 2, 0.03, (room.z0 + room.z1) / 2));
     });
     // walkway floor
-    this.group.add(this.box(32, 0.08, 3, this.mat(this.tex.rep(this.tex.concrete, 8, 0.8), 0xa8a49a), -6, 0.04, -6.5));
+    this.group.add(this.sbox(32, 0.08, 3, this.mat(this.tex.rep(this.tex.concrete, 8, 0.8), 0xa8a49a), -6, 0.04, -6.5));
     // roofs
     const roofMat1 = this.mat(this.tex.rep(this.tex.corrugated, 16, 9));
-    this.group.add(this.box(33, 0.35, 18, roofMat1, -6, 3.35, -16));
-    this.group.add(this.box(15.4, 0.4, 17, this.mat(this.tex.rep(this.tex.corrugated, 7.7, 8.5)), 23, 4.15, -12));
+    this.group.add(this.sbox(33, 0.35, 18, roofMat1, -6, 3.35, -16));
+    this.group.add(this.sbox(15.4, 0.4, 17, this.mat(this.tex.rep(this.tex.corrugated, 7.7, 8.5)), 23, 4.15, -12));
     // walkway awning + posts
-    this.group.add(this.box(32.6, 0.22, 3.4, this.solid(0x2b2830), -6, 3.05, -6.5));
+    this.group.add(this.sbox(32.6, 0.22, 3.4, this.solid(0x2b2830), -6, 3.05, -6.5));
     for (const px of [-22, -14, -6, 2, 10]) {
-      this.group.add(this.box(0.16, 3, 0.16, this.solid(0x35313a), px, 1.5, -7.9));
+      this.group.add(this.sbox(0.16, 3, 0.16, this.solid(0x35313a), px, 1.5, -7.9));
     }
     // windows on the front wall: dark glass + cream frames
     const glass = new THREE.MeshBasicMaterial({ color: 0x0e151d });
     this.disposables.push({ mat: glass });
     const frame = this.solid(0x8d8067);
     for (const wx of [-20, -13, -6, 0.5, 5]) {
-      this.group.add(this.box(1.9, 1.35, 0.1, frame, wx, 1.9, -7.8));
-      this.group.add(this.box(1.6, 1.1, 0.06, glass, wx, 1.9, -7.82));
-      this.group.add(this.box(0.08, 1.1, 0.04, frame, wx, 1.9, -7.86));
-      this.group.add(this.box(1.6, 0.07, 0.04, frame, wx, 1.9, -7.86));
+      this.group.add(this.sbox(1.9, 1.35, 0.1, frame, wx, 1.9, -7.8));
+      this.group.add(this.sbox(1.6, 1.1, 0.06, glass, wx, 1.9, -7.82));
+      this.group.add(this.sbox(0.08, 1.1, 0.04, frame, wx, 1.9, -7.86));
+      this.group.add(this.sbox(1.6, 0.07, 0.04, frame, wx, 1.9, -7.86));
     }
   }
 
@@ -303,8 +421,8 @@ export class World3D {
     // hazard-red gate lamps — the recognizable EXIT
     const lampMat = new THREE.MeshBasicMaterial({ color: PAL.red });
     this.disposables.push({ mat: lampMat });
-    this.group.add(this.box(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z0 - 0.4));
-    this.group.add(this.box(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z1 + 0.4));
+    this.group.add(this.sbox(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z0 - 0.4));
+    this.group.add(this.sbox(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z1 + 0.4));
     if (!this.blackout) {
       this.flickers.push({ light: this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z0 - 0.2, true), mat: null, base: 5, style: 3, seed: 7 });
       this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z1 + 0.2, true);
@@ -317,10 +435,10 @@ export class World3D {
     for (const p of PROPS) {
       switch (p.kind) {
         case "vending": {
-          this.group.add(this.box(p.w, 1.9, p.d, this.mat(this.tex.metalWorn, 0x8a3030), p.x, 0.95, p.z));
+          this.group.add(this.sbox(p.w, 1.9, p.d, this.mat(this.tex.metalWorn, 0x8a3030), p.x, 0.95, p.z));
           const face = new THREE.MeshBasicMaterial({ color: 0x2a3d55 });
           this.disposables.push({ mat: face });
-          this.group.add(this.box(p.w - 0.2, 1.2, 0.05, face, p.x, 1.15, p.z + p.d / 2 + 0.03));
+          this.group.add(this.sbox(p.w - 0.2, 1.2, 0.05, face, p.x, 1.15, p.z + p.d / 2 + 0.03));
           break;
         }
         case "car":
@@ -331,15 +449,15 @@ export class World3D {
           else this.buildSouthFenceSedan(p);
           break;
         case "dumpster": {
-          this.group.add(this.box(p.w, 1.1, p.d, this.mat(this.tex.metalWorn, 0x3d5a44), p.x, 0.55, p.z));
+          this.group.add(this.sbox(p.w, 1.1, p.d, this.mat(this.tex.metalWorn, 0x3d5a44), p.x, 0.55, p.z));
           // a dumpster that is a hide spot gets its animated lid from
           // buildHideSpotDoors instead of this static top
           const isHide = HIDE_SPOTS.some((h) => h.kind === "trunk" && Math.abs(h.x - p.x) < 0.5 && Math.abs(h.z - p.z) < 0.5);
           if (isHide) {
             // dark muck so looking in under the tipped lid reads as garbage
-            this.group.add(this.box(p.w - 0.2, 0.04, p.d - 0.2, this.solid(0x1c211c), p.x, 1.08, p.z));
+            this.group.add(this.sbox(p.w - 0.2, 0.04, p.d - 0.2, this.solid(0x1c211c), p.x, 1.08, p.z));
           } else {
-            this.group.add(this.box(p.w + 0.1, 0.12, p.d + 0.1, this.mat(this.tex.metalWorn, 0x2f4636), p.x, 1.16, p.z));
+            this.group.add(this.sbox(p.w + 0.1, 0.12, p.d + 0.1, this.mat(this.tex.metalWorn, 0x2f4636), p.x, 1.16, p.z));
           }
           break;
         }
@@ -347,28 +465,28 @@ export class World3D {
           const t = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 2.4, 10), rust);
           t.position.set(p.x, 1.2, p.z);
           this.disposables.push({ geo: t.geometry });
-          this.group.add(t);
+          this.group.add(this.smesh(t));
           break;
         }
         case "workbench":
-          this.group.add(this.box(p.w, 0.12, p.d, this.mat(this.tex.wood, 0xb0a084), p.x, 0.95, p.z));
-          this.group.add(this.box(p.w - 0.4, 0.9, p.d - 0.3, this.mat(this.tex.metalWorn, 0x6a6258), p.x, 0.45, p.z));
+          this.group.add(this.sbox(p.w, 0.12, p.d, this.mat(this.tex.wood, 0xb0a084), p.x, 0.95, p.z));
+          this.group.add(this.sbox(p.w - 0.4, 0.9, p.d - 0.3, this.mat(this.tex.metalWorn, 0x6a6258), p.x, 0.45, p.z));
           break;
         case "shelf":
           for (const hy of [0.5, 1.1, 1.7]) {
-            this.group.add(this.box(p.w, 0.08, p.d, this.mat(this.tex.metalWorn, 0x7c7468), p.x, hy, p.z));
+            this.group.add(this.sbox(p.w, 0.08, p.d, this.mat(this.tex.metalWorn, 0x7c7468), p.x, hy, p.z));
           }
-          this.group.add(this.box(0.08, 1.8, 0.08, this.mat(this.tex.metalWorn), p.x, 0.9, p.z - p.d / 2 + 0.06));
-          this.group.add(this.box(0.08, 1.8, 0.08, this.mat(this.tex.metalWorn), p.x, 0.9, p.z + p.d / 2 - 0.06));
+          this.group.add(this.sbox(0.08, 1.8, 0.08, this.mat(this.tex.metalWorn), p.x, 0.9, p.z - p.d / 2 + 0.06));
+          this.group.add(this.sbox(0.08, 1.8, 0.08, this.mat(this.tex.metalWorn), p.x, 0.9, p.z + p.d / 2 - 0.06));
           break;
         case "washer":
           for (const oz of [-0.8, 0, 0.8]) {
-            this.group.add(this.box(p.w, 0.9, 0.7, this.solid(0x9aa0a8), p.x, 0.45, p.z + oz));
+            this.group.add(this.sbox(p.w, 0.9, 0.7, this.solid(0x9aa0a8), p.x, 0.45, p.z + oz));
             const door = new THREE.Mesh(new THREE.CircleGeometry(0.24, 12), new THREE.MeshBasicMaterial({ color: 0x18242e }));
             door.position.set(p.x + p.w / 2 + 0.01, 0.5, p.z + oz);
             door.rotation.y = Math.PI / 2;
             this.disposables.push({ geo: door.geometry, mat: door.material as THREE.Material });
-            this.group.add(door);
+            this.group.add(this.smesh(door));
           }
           break;
         case "tires":
@@ -377,7 +495,7 @@ export class World3D {
             tire.rotation.x = Math.PI / 2;
             tire.position.set(p.x + (i % 2) * 0.5, 0.2 + Math.floor(i / 2) * 0.42, p.z);
             this.disposables.push({ geo: tire.geometry });
-            this.group.add(tire);
+            this.group.add(this.smesh(tire));
           }
           break;
       }
@@ -390,11 +508,11 @@ export class World3D {
       cone.position.set(cx, 0.28, cz);
       cone.rotation.set(Math.PI / 2.1, rot, 0);
       this.disposables.push({ geo: cone.geometry });
-      this.group.add(cone);
+      this.group.add(this.smesh(cone));
     }
     const junk = this.solid(0x2c2a26);
     for (const [jx, jz] of [[-16, 9], [8, 18], [-24, 2], [26, 2], [12, -16.8]] as [number, number][]) {
-      this.group.add(this.box(0.5, 0.3, 0.4, junk, jx, 0.15, jz));
+      this.group.add(this.sbox(0.5, 0.3, 0.4, junk, jx, 0.15, jz));
     }
   }
 
@@ -419,33 +537,34 @@ export class World3D {
     const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.35 });
     this.disposables.push({ mat: glass });
     // lower hull, split around the door throat (south flank local x 0.85..1.78)
-    this.group.add(this.box(2.89, 0.28, 1.9, paint, X - 0.595, 0.54, Z));
-    this.group.add(this.box(0.93, 0.28, 1.65, paint, X + 1.315, 0.54, Z - 0.125));
-    this.group.add(this.box(0.93, 0.05, 0.25, paint, X + 1.315, 0.425, Z + 0.825));
-    this.group.add(this.box(0.26, 0.28, 1.9, paint, X + 1.91, 0.54, Z));
+    this.group.add(this.sbox(2.89, 0.28, 1.9, paint, X - 0.595, 0.54, Z));
+    this.group.add(this.sbox(0.93, 0.28, 1.65, paint, X + 1.315, 0.54, Z - 0.125));
+    this.group.add(this.sbox(0.93, 0.05, 0.25, paint, X + 1.315, 0.425, Z + 0.825));
+    this.group.add(this.sbox(0.26, 0.28, 1.9, paint, X + 1.91, 0.54, Z));
     // beltline: hood / cabin walls / trunk deck, inset for a bevel
-    this.group.add(this.box(1.34, 0.36, 1.84, paint, X - 1.37, 0.86, Z));
-    this.group.add(this.box(2.5, 0.36, 0.4, paint, X + 0.55, 0.86, Z - 0.75));
-    this.group.add(this.box(1.55, 0.36, 0.34, paint, X + 0.075, 0.86, Z + 0.78));
-    this.group.add(this.box(0.26, 0.36, 1.84, paint, X + 1.91, 0.86, Z));
-    // greenhouse: glass bands, pillars, roof
+    this.group.add(this.sbox(1.34, 0.36, 1.84, paint, X - 1.37, 0.86, Z));
+    this.group.add(this.sbox(2.5, 0.36, 0.4, paint, X + 0.55, 0.86, Z - 0.75));
+    this.group.add(this.sbox(1.55, 0.36, 0.34, paint, X + 0.075, 0.86, Z + 0.78));
+    this.group.add(this.sbox(0.26, 0.36, 1.84, paint, X + 1.91, 0.86, Z));
+    // greenhouse: glass bands, pillars, roof (glass stays unbaked: transparent,
+    // so its blend order must not get frozen by the merge)
     this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z + 0.7));
     this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z - 0.7));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X - 0.675, 1.23, Z));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X + 1.775, 1.23, Z));
     for (const [px, pz] of [[-0.7, 0.7], [-0.7, -0.7], [1.8, 0.7], [1.8, -0.7]] as [number, number][]) {
-      this.group.add(this.box(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
+      this.group.add(this.sbox(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
     }
-    this.group.add(this.box(2.62, 0.08, 1.62, paint, X + 0.55, 1.46, Z));
+    this.group.add(this.sbox(2.62, 0.08, 1.62, paint, X + 0.55, 1.46, Z));
     // cabin interior — the hide camera sits between the front seat backs at
     // the HIDE_SPOTS anchor, so the cabin must not read hollow
-    this.group.add(this.box(2.5, 0.05, 1.86, dark, X + 0.55, 0.685, Z));
-    this.group.add(this.box(0.14, 0.22, 1.36, dash, X - 0.6, 0.91, Z));
+    this.group.add(this.sbox(2.5, 0.05, 1.86, dark, X + 0.55, 0.685, Z));
+    this.group.add(this.sbox(0.14, 0.22, 1.36, dash, X - 0.6, 0.91, Z));
     for (const sz of [-0.48, 0.48]) {
-      this.group.add(this.box(0.14, 0.55, 0.4, seat, X - 0.35, 0.955, Z + sz));
-      this.group.add(this.box(0.42, 0.12, 0.4, seat, X - 0.52, 0.74, Z + sz));
+      this.group.add(this.sbox(0.14, 0.55, 0.4, seat, X - 0.35, 0.955, Z + sz));
+      this.group.add(this.sbox(0.42, 0.12, 0.4, seat, X - 0.52, 0.74, Z + sz));
     }
-    this.group.add(this.box(0.14, 0.52, 1.3, seat, X + 1.45, 0.94, Z));
+    this.group.add(this.sbox(0.14, 0.52, 1.3, seat, X + 1.45, 0.94, Z));
     // wheels: axis rotated to z so they actually roll, plus light hubs
     const tire = this.solid(0x14161a);
     const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
@@ -454,21 +573,21 @@ export class World3D {
       wheel.rotation.x = Math.PI / 2;
       wheel.position.set(X + wx, 0.34, Z + wz);
       this.disposables.push({ geo: wheel.geometry });
-      this.group.add(wheel);
+      this.group.add(this.smesh(wheel));
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.26, 8), hub);
       cap.rotation.x = Math.PI / 2;
       cap.position.set(X + wx, 0.34, Z + wz);
       this.disposables.push({ geo: cap.geometry });
-      this.group.add(cap);
+      this.group.add(this.smesh(cap));
     }
     // wheel well lining the throat where the rear tire would show through
-    this.group.add(this.box(0.26, 0.23, 0.25, dark, X + 1.4, 0.565, Z + 0.825));
+    this.group.add(this.sbox(0.26, 0.23, 0.25, dark, X + 1.4, 0.565, Z + 0.825));
     // bumpers as light metal end caps, flush with the footprint
-    this.group.add(this.box(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
-    this.group.add(this.box(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
+    this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
+    this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
     // rust blister sits proud of the hood, clear of the hood face (no z-fighting)
-    this.group.add(this.box(0.55, 0.03, 0.65, this.solid(0x8a4a32), X - 1.37, 1.07, Z + 0.2));
-    this.group.add(this.box(0.015, 0.16, 0.5, this.solid(0xc6b99b), X + 2.0475, 0.8, Z));
+    this.group.add(this.sbox(0.55, 0.03, 0.65, this.solid(0x8a4a32), X - 1.37, 1.07, Z + 0.2));
+    this.group.add(this.sbox(0.015, 0.16, 0.5, this.solid(0xc6b99b), X + 2.0475, 0.8, Z));
   }
 
   private buildSouthFenceSedan(p: PropDef): void {
@@ -485,31 +604,32 @@ export class World3D {
     const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.35 });
     this.disposables.push({ mat: glass });
     // lower hull: solid east of the trunk, rusted-open tub walls to the west
-    this.group.add(this.box(3.54, 0.28, 1.9, paint, X + 0.27, 0.54, Z));
-    this.group.add(this.box(0.54, 0.28, 1.35, paint, X - 1.77, 0.54, Z - 0.275));
-    this.group.add(this.box(0.08, 0.28, 0.4, dark, X - 2.0, 0.54, Z + 0.75));
-    this.group.add(this.box(0.46, 0.06, 0.55, dark, X - 1.73, 0.43, Z + 0.675));
+    this.group.add(this.sbox(3.54, 0.28, 1.9, paint, X + 0.27, 0.54, Z));
+    this.group.add(this.sbox(0.54, 0.28, 1.35, paint, X - 1.77, 0.54, Z - 0.275));
+    this.group.add(this.sbox(0.08, 0.28, 0.4, dark, X - 2.0, 0.54, Z + 0.75));
+    this.group.add(this.sbox(0.46, 0.06, 0.55, dark, X - 1.73, 0.43, Z + 0.675));
     // trunk deck ring around the mouth; the deck top sits just under the lid
-    this.group.add(this.box(1.14, 0.24, 1.35, paint, X - 1.47, 0.8, Z - 0.275));
-    this.group.add(this.box(0.08, 0.24, 0.55, paint, X - 2.0, 0.8, Z + 0.675));
-    this.group.add(this.box(0.6, 0.24, 1.9, paint, X - 1.2, 0.8, Z));
+    this.group.add(this.sbox(1.14, 0.24, 1.35, paint, X - 1.47, 0.8, Z - 0.275));
+    this.group.add(this.sbox(0.08, 0.24, 0.55, paint, X - 2.0, 0.8, Z + 0.675));
+    this.group.add(this.sbox(0.6, 0.24, 1.9, paint, X - 1.2, 0.8, Z));
     // beltline: hood + cabin walls (the cabin is a ring so glass sees an interior)
-    this.group.add(this.box(1.14, 0.36, 1.84, paint, X + 1.47, 0.86, Z));
-    this.group.add(this.box(1.8, 0.36, 0.4, paint, X, 0.86, Z - 0.75));
-    this.group.add(this.box(1.8, 0.36, 0.34, paint, X, 0.86, Z + 0.78));
-    // greenhouse: glass bands, pillars, roof
+    this.group.add(this.sbox(1.14, 0.36, 1.84, paint, X + 1.47, 0.86, Z));
+    this.group.add(this.sbox(1.8, 0.36, 0.4, paint, X, 0.86, Z - 0.75));
+    this.group.add(this.sbox(1.8, 0.36, 0.34, paint, X, 0.86, Z + 0.78));
+    // greenhouse: glass bands, pillars, roof (glass stays unbaked: transparent,
+    // so its blend order must not get frozen by the merge)
     this.group.add(this.box(1.8, 0.38, 0.04, glass, X, 1.23, Z + 0.7));
     this.group.add(this.box(1.8, 0.38, 0.04, glass, X, 1.23, Z - 0.7));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X + 0.875, 1.23, Z));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X - 0.875, 1.23, Z));
     for (const [px, pz] of [[-0.9, 0.7], [-0.9, -0.7], [0.9, 0.7], [0.9, -0.7]] as [number, number][]) {
-      this.group.add(this.box(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
+      this.group.add(this.sbox(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
     }
-    this.group.add(this.box(2.0, 0.08, 1.62, paint, X, 1.46, Z));
+    this.group.add(this.sbox(2.0, 0.08, 1.62, paint, X, 1.46, Z));
     // cabin interior seen through the glass
-    this.group.add(this.box(1.8, 0.04, 1.44, dark, X, 0.685, Z));
-    this.group.add(this.box(0.14, 0.22, 1.36, dash, X + 0.72, 0.91, Z));
-    this.group.add(this.box(0.14, 0.5, 1.3, seat, X - 0.62, 0.95, Z));
+    this.group.add(this.sbox(1.8, 0.04, 1.44, dark, X, 0.685, Z));
+    this.group.add(this.sbox(0.14, 0.22, 1.36, dash, X + 0.72, 0.91, Z));
+    this.group.add(this.sbox(0.14, 0.5, 1.3, seat, X - 0.62, 0.95, Z));
     // wheels: rear-south tire is flat, rear-north hubcap is gone
     const tire = this.solid(0x14161a);
     const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
@@ -520,21 +640,21 @@ export class World3D {
       wheel.position.set(X + wx, flat ? 0.245 : 0.34, Z + wz);
       if (flat) wheel.scale.z = 0.72; // squash the vertical radius: reads as flat
       this.disposables.push({ geo: wheel.geometry });
-      this.group.add(wheel);
+      this.group.add(this.smesh(wheel));
       if (wx < 0 && wz < 0) continue; // missing hubcap
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.26, 8), hub);
       cap.rotation.x = Math.PI / 2;
       cap.position.set(X + wx, flat ? 0.245 : 0.34, Z + wz);
       if (flat) cap.scale.z = 0.72;
       this.disposables.push({ geo: cap.geometry });
-      this.group.add(cap);
+      this.group.add(this.smesh(cap));
     }
     // bumpers as light metal end caps, flush with the footprint
-    this.group.add(this.box(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
-    this.group.add(this.box(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
+    this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
+    this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
     // primer delamination blister + plate above the rear bumper
-    this.group.add(this.box(0.5, 0.03, 0.6, this.solid(0x8a4a32), X + 1.47, 1.07, Z - 0.2));
-    this.group.add(this.box(0.015, 0.16, 0.5, this.solid(0xc6b99b), X - 2.0475, 0.8, Z - 0.2));
+    this.group.add(this.sbox(0.5, 0.03, 0.6, this.solid(0x8a4a32), X + 1.47, 1.07, Z - 0.2));
+    this.group.add(this.sbox(0.015, 0.16, 0.5, this.solid(0xc6b99b), X - 2.0475, 0.8, Z - 0.2));
   }
 
   // -------------------------------------------------------- hide-spot doors
@@ -608,7 +728,9 @@ export class World3D {
 
   private buildLamps(blackout: boolean): void {
     for (const l of LAMPS) {
-      this.group.add(this.box(0.16, 4.6, 0.16, this.solid(0x2e3034), l.x, 2.3, l.z));
+      // poles are static scenery and bake; heads stay out — their material is
+      // recolored by the flicker loop below
+      this.group.add(this.sbox(0.16, 4.6, 0.16, this.solid(0x2e3034), l.x, 2.3, l.z));
       const headMat = new THREE.MeshBasicMaterial({ color: blackout ? 0x223038 : 0xffd9a0 });
       this.disposables.push({ mat: headMat });
       const head = this.box(0.6, 0.25, 0.6, headMat, l.x, 4.65, l.z);
@@ -642,6 +764,8 @@ export class World3D {
 
   // ---------------------------------------------------------- interior lights
   private buildInteriorLights(blackout: boolean): void {
+    // Fixtures stay out of the bakeStatic merge: their tube/bulb materials are
+    // recolored every frame by the flicker loop and must stay on live meshes.
     // fluorescent fixture: casing + emissive tube + cool point light
     const fixture = (x: number, z: number, y: number, intensity: number, color: number, style: 0 | 1 | 2 | 3, seed: number, len = 1.3): Flicker => {
       const casing = this.box(len, 0.1, 0.28, this.solid(0x3a3f44), x, y + 0.06, z);
@@ -693,54 +817,54 @@ export class World3D {
   private buildRoomDressing(): void {
     const bed = (cx: number, cz: number, stripped: boolean): void => {
       const frame = this.mat(this.tex.wood, 0x8a7a5e);
-      this.group.add(this.box(2.4, 0.3, 1.15, frame, cx, 0.15, cz));
-      this.group.add(this.box(0.12, 1.0, 1.15, frame, cx - 1.14, 0.5, cz));
+      this.group.add(this.sbox(2.4, 0.3, 1.15, frame, cx, 0.15, cz));
+      this.group.add(this.sbox(0.12, 1.0, 1.15, frame, cx - 1.14, 0.5, cz));
       if (!stripped) {
-        this.group.add(this.box(2.2, 0.22, 1.0, this.solid(0x8d8578), cx + 0.05, 0.4, cz));
-        this.group.add(this.box(0.5, 0.14, 0.7, this.solid(0xc8c2b0), cx - 0.75, 0.55, cz));
+        this.group.add(this.sbox(2.2, 0.22, 1.0, this.solid(0x8d8578), cx + 0.05, 0.4, cz));
+        this.group.add(this.sbox(0.5, 0.14, 0.7, this.solid(0xc8c2b0), cx - 0.75, 0.55, cz));
         // slept-in lump
-        this.group.add(this.box(1.2, 0.16, 0.8, this.solid(0x746c60), cx + 0.45, 0.53, cz));
+        this.group.add(this.sbox(1.2, 0.16, 0.8, this.solid(0x746c60), cx + 0.45, 0.53, cz));
       }
     };
     // R1: intact bed + nightstand
     bed(-16.9, -13.5, false);
-    this.group.add(this.box(0.55, 0.55, 0.45, this.mat(this.tex.wood), -18.7, 0.28, -13.6));
+    this.group.add(this.sbox(0.55, 0.55, 0.45, this.mat(this.tex.wood), -18.7, 0.28, -13.6));
     // R2: bed + TV dresser (screen dead)
     bed(-12.2, -13.5, false);
-    this.group.add(this.box(1.7, 0.75, 0.5, this.mat(this.tex.wood, 0x9a8a70), -12.2, 0.38, -14.5));
-    this.group.add(this.box(0.85, 0.55, 0.3, this.solid(0x22262c), -12.2, 1.03, -14.5));
+    this.group.add(this.sbox(1.7, 0.75, 0.5, this.mat(this.tex.wood, 0x9a8a70), -12.2, 0.38, -14.5));
+    this.group.add(this.sbox(0.85, 0.55, 0.3, this.solid(0x22262c), -12.2, 1.03, -14.5));
     const tvGlass = new THREE.MeshBasicMaterial({ color: 0x0c141c });
     this.disposables.push({ mat: tvGlass });
-    this.group.add(this.box(0.7, 0.42, 0.04, tvGlass, -12.2, 1.03, -14.33));
+    this.group.add(this.sbox(0.7, 0.42, 0.04, tvGlass, -12.2, 1.03, -14.33));
     // R3: armchair + the lit floor lamp
-    this.group.add(this.box(0.85, 0.75, 0.8, this.solid(0x5a4a3c), -6.8, 0.38, -13.2));
-    this.group.add(this.box(0.85, 0.5, 0.22, this.solid(0x4c3e32), -6.8, 0.85, -12.9));
-    this.group.add(this.box(0.08, 1.5, 0.08, this.solid(0x2e2a26), -2.1, 0.75, -14.3));
+    this.group.add(this.sbox(0.85, 0.75, 0.8, this.solid(0x5a4a3c), -6.8, 0.38, -13.2));
+    this.group.add(this.sbox(0.85, 0.5, 0.22, this.solid(0x4c3e32), -6.8, 0.85, -12.9));
+    this.group.add(this.sbox(0.08, 1.5, 0.08, this.solid(0x2e2a26), -2.1, 0.75, -14.3));
     const shade = new THREE.MeshBasicMaterial({ color: PAL.tungsten });
     this.disposables.push({ mat: shade });
-    this.group.add(this.box(0.42, 0.3, 0.42, shade, -2.1, 1.6, -14.3));
+    this.group.add(this.sbox(0.42, 0.3, 0.42, shade, -2.1, 1.6, -14.3));
     // R4: stripped frame + cardboard boxes
     bed(3.4, -13.4, true);
     const card = this.solid(0x6a5a44);
-    this.group.add(this.box(0.8, 0.6, 0.6, card, 1.6, 0.3, -14.2));
-    this.group.add(this.box(0.6, 0.45, 0.5, card, 1.7, 0.82, -14.25));
+    this.group.add(this.sbox(0.8, 0.6, 0.6, card, 1.6, 0.3, -14.2));
+    this.group.add(this.sbox(0.6, 0.45, 0.5, card, 1.7, 0.82, -14.25));
     // ENTRY reception: desk + key rack + wall clock
-    this.group.add(this.box(2.4, 1.05, 0.7, this.mat(this.tex.wood, 0x8d7a5c), 8.2, 0.53, -13.6));
-    this.group.add(this.box(2.5, 0.08, 0.8, this.mat(this.tex.wood, 0xa08c68), 8.2, 1.08, -13.6));
-    this.group.add(this.box(1.1, 0.7, 0.06, this.mat(this.tex.wood, 0x7a684e), 9.4, 1.9, -14.8));
+    this.group.add(this.sbox(2.4, 1.05, 0.7, this.mat(this.tex.wood, 0x8d7a5c), 8.2, 0.53, -13.6));
+    this.group.add(this.sbox(2.5, 0.08, 0.8, this.mat(this.tex.wood, 0xa08c68), 8.2, 1.08, -13.6));
+    this.group.add(this.sbox(1.1, 0.7, 0.06, this.mat(this.tex.wood, 0x7a684e), 9.4, 1.9, -14.8));
     for (let i = 0; i < 6; i++) {
-      this.group.add(this.box(0.07, 0.16, 0.04, this.solid(0xb9975a), 9.05 + i * 0.15, 1.72, -14.76));
+      this.group.add(this.sbox(0.07, 0.16, 0.04, this.solid(0xb9975a), 9.05 + i * 0.15, 1.72, -14.76));
     }
     const clockFace = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), new THREE.MeshBasicMaterial({ color: 0xd8d2c0 }));
     clockFace.position.set(6.4, 2.2, -14.82);
     this.disposables.push({ geo: clockFace.geometry, mat: clockFace.material as THREE.Material });
-    this.group.add(clockFace);
-    this.group.add(this.box(0.03, 0.2, 0.02, this.solid(0x22262c), 6.4, 2.28, -14.8));
+    this.group.add(this.smesh(clockFace));
+    this.group.add(this.sbox(0.03, 0.2, 0.02, this.solid(0x22262c), 6.4, 2.28, -14.8));
     // corridor: ice machine against the north wall
-    this.group.add(this.box(1.1, 1.6, 0.75, this.mat(this.tex.metalWorn, 0x7a8a94), -20.3, 0.8, -17.5));
+    this.group.add(this.sbox(1.1, 1.6, 0.75, this.mat(this.tex.metalWorn, 0x7a8a94), -20.3, 0.8, -17.5));
     const iceFace = new THREE.MeshBasicMaterial({ color: 0x9fd8e8 });
     this.disposables.push({ mat: iceFace });
-    this.group.add(this.box(0.5, 0.3, 0.04, iceFace, -20.3, 1.1, -17.1));
+    this.group.add(this.sbox(0.5, 0.3, 0.04, iceFace, -20.3, 1.1, -17.1));
     // MAINT: pipes along the north wall
     const pipeMat = this.mat(this.tex.metalWorn, 0x9a8a74);
     for (const [y, r] of [[2.1, 0.09], [2.5, 0.07]] as [number, number][]) {
@@ -748,30 +872,30 @@ export class World3D {
       pipe.rotation.z = Math.PI / 2;
       pipe.position.set(-10, y, -23.8);
       this.disposables.push({ geo: pipe.geometry });
-      this.group.add(pipe);
+      this.group.add(this.smesh(pipe));
     }
     // BOILER: gauge + valve wheel
-    this.group.add(this.box(0.35, 0.35, 0.1, new THREE.MeshBasicMaterial({ color: PAL.rust }), -3.9, 1.5, -21.55));
+    this.group.add(this.sbox(0.35, 0.35, 0.1, new THREE.MeshBasicMaterial({ color: PAL.rust }), -3.9, 1.5, -21.55));
     // STORAGE: stacked boxes
-    this.group.add(this.box(0.9, 0.7, 0.7, this.solid(0x5c5244), 8.6, 0.35, -19.2));
-    this.group.add(this.box(0.7, 0.5, 0.6, this.solid(0x6a5a44), 8.5, 0.95, -19.3));
-    this.group.add(this.box(0.8, 0.6, 0.7, this.solid(0x5c5244), 6.9, 0.3, -19.4));
+    this.group.add(this.sbox(0.9, 0.7, 0.7, this.solid(0x5c5244), 8.6, 0.35, -19.2));
+    this.group.add(this.sbox(0.7, 0.5, 0.6, this.solid(0x6a5a44), 8.5, 0.95, -19.3));
+    this.group.add(this.sbox(0.8, 0.6, 0.7, this.solid(0x5c5244), 6.9, 0.3, -19.4));
     // GARAGE: tool board over the bench, oil drums, rolled-up bay door
     const board = this.mat(this.tex.wood, 0x6a5a44);
-    this.group.add(this.box(3.2, 1.2, 0.08, board, 23, 1.9, -19.9));
+    this.group.add(this.sbox(3.2, 1.2, 0.08, board, 23, 1.9, -19.9));
     const toolDark = this.solid(0x1c2024);
     for (let i = 0; i < 7; i++) {
-      this.group.add(this.box(0.06, 0.34 + (i % 3) * 0.12, 0.04, toolDark, 21.9 + i * 0.38, 1.9 + (i % 2) * 0.28, -19.84));
+      this.group.add(this.sbox(0.06, 0.34 + (i % 3) * 0.12, 0.04, toolDark, 21.9 + i * 0.38, 1.9 + (i % 2) * 0.28, -19.84));
     }
     for (const [dx, dz] of [[28.6, -17.6], [27.7, -18.3]] as [number, number][]) {
       const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 10), this.mat(this.tex.metalWorn, 0xa55235));
       drum.position.set(dx, 0.55, dz);
       this.disposables.push({ geo: drum.geometry });
-      this.group.add(drum);
+      this.group.add(this.smesh(drum));
     }
     const slats = this.mat(this.tex.metalWorn, 0x8a8478);
     for (let i = 0; i < 5; i++) {
-      this.group.add(this.box(8, 0.28, 0.18, slats, 23, 3.35 + i * 0.3, -4.1));
+      this.group.add(this.sbox(8, 0.28, 0.18, slats, 23, 3.35 + i * 0.3, -4.1));
     }
     // reception ceiling fan (spins in update)
     this.fan = new THREE.Group();

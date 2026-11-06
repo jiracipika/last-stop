@@ -359,7 +359,9 @@ export function buildTextures(): Tex {
   // from panel edges, grime at the rocker (front-yard sedan livery)
   const junkerTeal = canvasTex(512, (ctx, s) => {
     const rnd = (ctx as CanvasRenderingContext2D & { rnd: () => number }).rnd;
-    ctx.fillStyle = "#48706a";
+    // base lifted ~18% (was #48706a) so the sedan stays readable from the yard
+    // under the night grade — same trick as the plaster wainscot teal above
+    ctx.fillStyle = "#55847d";
     ctx.fillRect(0, 0, s, s);
     speckle(ctx, rnd, s, 1400, "#6da296", "#22383a");
     for (let i = 0; i < 6; i++) blob(ctx, rnd() * s, rnd() * s, s * (0.14 + rnd() * 0.22), "#7ba69a", 0.28);

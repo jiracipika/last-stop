@@ -158,6 +158,22 @@ export async function walkTo(bot: Bot, tx: number, tz: number, tolerance = 1.0, 
     await sleep(100);
   }
   room.send("in", { mx: 0, mz: 0, yaw: me(bot).yaw, sprint: false });
+  // settle: the stop-slide coasts up to ~0.4 m after input releases, so
+  // proximity checks right after walkTo would race the drift — wait until
+  // the bot's position is stable before handing control back
+  const settleStart = Date.now();
+  let last = { ...me(bot) };
+  let stableSince = Date.now();
+  while (Date.now() - settleStart < 1500) {
+    await sleep(120);
+    const now = me(bot);
+    if (dist2d(now.x, now.z, last.x, last.z) < 0.02) {
+      if (Date.now() - stableSince > 240) return;
+    } else {
+      stableSince = Date.now();
+    }
+    last = now;
+  }
 }
 
 function computePath(bot: Bot, tx: number, tz: number): number[] {

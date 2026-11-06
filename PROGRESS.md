@@ -2,7 +2,51 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief slices (2026-11-06)
+
+### Feel / perf / debrief slice (2026-11-06) — done
+
+Three parallel workstreams, reconciled:
+
+- **Movement feel** (engine/predict/world/constants): sprint FOV kick (+6°, eased), view-bob
+  scaled by actual predicted speed (downed/hidden/seat branches pinned), wall-bump thuds driven
+  by a read-only ghost probe in the predictor (velocity the wall resolution stripped — fires at
+  ≥2 m/s with cooldown), hide in/out rustle. **Stop-slide with full server↔predictor parity**:
+  releasing input coasts ~0.4 m (PLAYER.STOP_SLIDE_RATE, expression-identical both sides,
+  hidden/seat/downed pinned no-slide) — new stopslide.test.ts asserts the decay formula and
+  coast distance. **Post-gate fix the leash forced**: the coast strained two-handle hauls into
+  leash slips (slip → gentle drop → cargo damage → a coop run finished $151/$160), so carrying
+  now dead-stops like pre-slide (pinned by a 4th stopslide test); the suite went green only
+  after that. Known pre-existing gaps reported, deliberately not touched: predictor
+  under-predicts sprint speed (reconcile absorbs it), client omits the van AABB in dynamic
+  colliders.
+- **Perf: static geometry merge** (world3d/textures): a bakeStatic pass buckets all 355 static
+  meshes into 14 draw calls — repeat clones baked into per-mesh UVs (buckets keyed on
+  texture.source.uuid), material tints baked into vertex colors. Animated/flicker/transparent
+  content deliberately left live (doors, hideDoors, fan, sign, fixtures, glass, decals, fx).
+  Measured: renderer idle draw calls **380 → 184** (geometries 518 → 211); SwiftShader fps
+  unchanged at 20 (software-raster bound — the call cut pays off on real GPUs). Screenshots
+  confirm tiling, flicker tubes, lamps and the merged scene survive. carA's junkerTeal albedo
+  +18% so the rust streaks survive moonlight+ACES.
+- **Debrief + title** (Results/Title/styles): results screen is now a DUSTPAN RECOVERY shift
+  report — letterhead, per-outcome stamps and lines, crew ledger with derived statuses
+  (clocked out / left on site / empty-handed), randomized "management notes" one-liners,
+  receipt print-in animation (reduced-motion safe). Title got the flickering PALE LANTERN
+  treatment with a dead letter + NO VACANCY strip + night-shift clipboard form. All e2e
+  selectors and replay wiring preserved. Future server tracking noted: per-player
+  survival-at-end, items left on timeout, shift duration.
+- Verification (2026-11-06): shared/server/web typecheck clean; server vitest **37/37** (12
+  files, `--no-file-parallelism` added — the integration suite is real-time-wait-bound and
+  file-parallel runs starve the 30 Hz sim); full e2e **5/5**; draw calls above. The Results
+  screen's new layout is NOT visually verified yet (needs a full mission end) — e2e only
+  confirms the flow still works. Flake forensics worth remembering: the first full vitest run
+  failed 2–3 carry tests with walkTo timeouts / rejected grabs. A controlled experiment
+  (worktree at the previous commit + a STOP_SLIDE_RATE=14 run that makes the coast
+  mathematically identical to the old damping) exonerated the stop-slide: the carry file is the
+  known CPU-load flake, made marginal by the coast's extra ~0.4 m of post-walkTo drift.
+  Fix is harness-side: walkTo now settles (zero input, waits ≤1.5 s for position stability)
+  before returning, so proximity checks don't race the coast; carry then passed 6/6 with the
+  full coast intact.
 
 ### Presence & content slice (2026-11-06): real junkers, an audible Caretaker, a third hide spot — done
 

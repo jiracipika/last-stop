@@ -942,7 +942,21 @@ export class World {
       const speed = this.effectiveSpeed(p);
       const beforeX = p.body.x;
       const beforeZ = p.body.z;
+      const preVx = p.body.vx;
+      const preVz = p.body.vz;
       stepPlayer(p.body, p.input, dt, speed, colliders);
+      // stop-slide: with the input fully released, replace stepPlayer's fast
+      // approach-damping with a gentle exponential decay so letting go of W
+      // coasts a fraction of a meter instead of dead-stopping. NOT while
+      // carrying: hauling already slows you, and the extra drift strains the
+      // two-handle leash into unfair slips. Grounded only (air control is
+      // unchanged) and unreachable while hidden/seated/downed — those
+      // branches continue above. Mirrored EXACTLY in predict.ts.
+      if (speed > 0 && !p.carrying && Math.hypot(p.input.mx, p.input.mz) <= 1e-4 && p.body.grounded) {
+        const keep = Math.exp(-PLAYER.STOP_SLIDE_RATE * dt);
+        p.body.vx = preVx * keep;
+        p.body.vz = preVz * keep;
+      }
       p.yaw = p.input.yaw;
       p.input.jump = false;
 

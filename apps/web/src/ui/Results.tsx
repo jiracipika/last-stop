@@ -1,8 +1,52 @@
-// Shared results screen: outcome, awards, per-player rows, instant replay.
-import React, { useMemo } from "react";
-import { COLORS, type MissionResults } from "@last-stop/shared";
+// Results screen: DUSTPAN RECOVERY shift report (debrief) — outcome, crew
+// ledger, employee file, management notes, instant replay.
+import React, { useMemo, useState } from "react";
+import { COLORS, MODIFIERS, type MissionAwardRow, type MissionResults } from "@last-stop/shared";
 import type { HudState } from "../game/store.js";
 import type { Net } from "../net.js";
+
+const money = (n: number): string => `$${Math.round(n)}`;
+
+// Management notes for the report footer, keyed to outcome. Picked at random
+// on mount; nothing here needs to be reproducible. 10 lines total, 2-4 shown.
+const MGMT_NOTES: Record<string, string[]> = {
+  escaped: [
+    "Quota met. Do not discuss the smell in R2.",
+    "Van returned with all four doors and most of its paint. Management is calling it a win.",
+    "Crew clocked out before the office opened. This is the preferred way to leave a site.",
+    "Cargo appraised, sold, forgotten. That is the healthy way to do this job.",
+  ],
+  timeout: [
+    "Corporate notes the van was not full. Corporate was not there.",
+    "The clock beat the crew to the van. Dawn wins again; it always was a morning person.",
+    "Remaining inventory has been written off. Briefly, so was the crew.",
+  ],
+  wipe: [
+    "Crew unaccounted for as of dawn. Payroll resolved this efficiently.",
+    "HR prefers the term 'involuntary early retirement'.",
+    "The motel declined to comment. The motel also declined to unlock the doors.",
+  ],
+};
+
+function pickNotes(outcome: string, count: number): string[] {
+  const pool = [...(MGMT_NOTES[outcome] ?? MGMT_NOTES.wipe ?? [])];
+  const out: string[] = [];
+  while (out.length < count && pool.length > 0) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
+  }
+  return out;
+}
+
+// Crew status derived from outcome + per-row stats (all client-visible data).
+function crewStatus(outcome: string, r: MissionAwardRow): { label: string; left: boolean } {
+  if (outcome === "escaped") {
+    if (r.downed >= 3) return { label: "barely clocked out", left: false };
+    if (r.delivered <= 0) return { label: "clocked out (empty-handed)", left: false };
+    return { label: "clocked out", left: false };
+  }
+  if (outcome === "timeout" && r.downed > 0) return { label: "left on site (limping)", left: true };
+  return { label: "left on site", left: true };
+}
 
 export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React.ReactElement {
   const results = useMemo<MissionResults | null>(() => {
@@ -13,23 +57,56 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
     }
   }, [hud.resultsJson]);
 
+  const outcome = hud.outcome || results?.outcome || "";
+  const win = outcome === "escaped";
+
+  // 2-4 management notes, sampled without replacement on mount.
+  const [notes] = useState<string[]>(() => pickNotes(outcome, 2 + Math.floor(Math.random() * 3)));
+
   const outcomeTitle =
-    hud.outcome === "escaped" ? "GOT OUT ALIVE" : hud.outcome === "wipe" ? "CREW WIPED" : hud.outcome === "timeout" ? "OVERRUN AT DAWN" : "SHIFT OVER";
-  const outcomeClass = hud.outcome === "escaped" ? "win" : "loss";
+    outcome === "escaped" ? "GOT OUT ALIVE" : outcome === "wipe" ? "CREW WIPED" : outcome === "timeout" ? "OVERRUN AT DAWN" : "SHIFT OVER";
+  const outcomeClass = win ? "win" : "loss";
+  const outcomeLine =
+    outcome === "escaped"
+      ? results && !results.quotaMet
+        ? "Out the gate short of quota. Management will be scheduling a meeting about it."
+        : "Quota met, van loaded, crew aboard. Nobody made eye contact on the way out."
+      : outcome === "timeout"
+        ? "The clock hit zero before the van hit the highway. Dawn rolled in; the crew rolled out."
+        : outcome === "wipe"
+          ? "The night shift is not currently accepting new applicants."
+          : "The printer jammed. The meeting will continue until morale improves.";
+  const stamp = win ? "PAID IN FULL" : outcome === "wipe" ? "POSITIONS CLOSED" : outcome === "timeout" ? "DO NOT RE-ENTER" : "FILED";
+
+  const conditions = hud.modifiers.map((m) => MODIFIERS[m]?.name ?? m.toUpperCase()).join(" · ") || "STANDARD DREAD";
+  const awardsCount = results ? Object.values(results.awards).filter(Boolean).length : 0;
+  const crewSize = results ? results.rows.length : 0;
 
   return (
     <div className="results">
       <div className="results-panel">
+        <div className="report-head">
+          <span className="report-brand">DUSTPAN RECOVERY CO.</span>
+          <span className="report-motto">WE TOW REGRETS</span>
+        </div>
+        <div className="report-doc">SHIFT REPORT — PALE LANTERN SITE</div>
+        <div className="report-meta">
+          FORM 2AM-B · ROOM {hud.roomCode || "-----"} · CREW OF {crewSize} · SITE CONDITIONS: {conditions}
+        </div>
+
+        <span className={`report-stamp ${outcomeClass}`}>{stamp}</span>
         <h1 className={outcomeClass}>{outcomeTitle}</h1>
-        {results && (
+        <p className="report-line">{outcomeLine}</p>
+
+        {results && crewSize > 0 && (
           <>
             <div className="results-summary">
               <div>
-                <b>${results.salvage}</b>
-                <span>salvage of ${results.quota} quota</span>
+                <b>{money(results.salvage)}</b>
+                <span>salvage of {money(results.quota)} quota</span>
               </div>
               <div>
-                <b>${results.cargoDamage}</b>
+                <b>{money(results.cargoDamage)}</b>
                 <span>cargo damage</span>
               </div>
               <div>
@@ -38,33 +115,7 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
               </div>
             </div>
 
-            <div className="awards">
-              {results.awards.loudest && (
-                <div className="award">
-                  <span className="award-name">LUDEST EMPLOYEE</span>
-                  <span>{results.awards.loudest.nick} ({results.awards.loudest.noise} noise points)</span>
-                </div>
-              )}
-              {results.awards.biggestMistake && (
-                <div className="award">
-                  <span className="award-name">MOST EXPENSIVE MISTAKE</span>
-                  <span>{results.awards.biggestMistake.nick} (${results.awards.biggestMistake.loss} — {results.awards.biggestMistake.item})</span>
-                </div>
-              )}
-              {results.awards.topHauler && (
-                <div className="award">
-                  <span className="award-name">TOP HAULER</span>
-                  <span>{results.awards.topHauler.nick} (${results.awards.topHauler.value})</span>
-                </div>
-              )}
-              {results.awards.medic && (
-                <div className="award">
-                  <span className="award-name">COWORKER OF THE NIGHT</span>
-                  <span>{results.awards.medic.nick} ({results.awards.medic.rescues} rescues)</span>
-                </div>
-              )}
-            </div>
-
+            <div className="report-sec">CREW LEDGER</div>
             <table className="results-table">
               <thead>
                 <tr>
@@ -75,27 +126,77 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
                   <th>rescues</th>
                   <th>biggest loss</th>
                   <th>times down</th>
+                  <th>status</th>
                 </tr>
               </thead>
               <tbody>
-                {results.rows.map((r, i) => (
-                  <tr key={i}>
-                    <td className="row-nick">
-                      <span className="dot" style={{ background: COLORS[r.color % COLORS.length] }} />
-                      {r.nick}
-                    </td>
-                    <td>${r.delivered}</td>
-                    <td>{r.items}</td>
-                    <td>{r.noise}</td>
-                    <td>{r.rescues}</td>
-                    <td>{r.biggestLoss > 0 ? `$${r.biggestLoss} (${r.lossItem})` : "—"}</td>
-                    <td>{r.downed}</td>
-                  </tr>
-                ))}
+                {results.rows.map((r, i) => {
+                  const st = crewStatus(outcome, r);
+                  return (
+                    <tr key={i}>
+                      <td className="row-nick">
+                        <span className="dot" style={{ background: COLORS[r.color % COLORS.length] }} />
+                        {r.nick}
+                      </td>
+                      <td>{money(r.delivered)}</td>
+                      <td>{r.items}</td>
+                      <td>{Math.round(r.noise)}</td>
+                      <td>{r.rescues}</td>
+                      <td>{r.biggestLoss > 0 ? `${money(r.biggestLoss)} (${r.lossItem})` : "—"}</td>
+                      <td>{r.downed}</td>
+                      <td className={st.left ? "st-left" : "st-out"}>{st.label}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+
+            {awardsCount > 0 && (
+              <>
+                <div className="report-sec">EMPLOYEE FILE — DO NOT LAMINATE</div>
+                <div className="awards">
+                  {results.awards.loudest && (
+                    <div className="award">
+                      <span className="award-name">LOUDEST EMPLOYEE</span>
+                      <span>{results.awards.loudest.nick} ({Math.round(results.awards.loudest.noise)} noise points)</span>
+                    </div>
+                  )}
+                  {results.awards.biggestMistake && (
+                    <div className="award">
+                      <span className="award-name">MOST EXPENSIVE MISTAKE</span>
+                      <span>{results.awards.biggestMistake.nick} ({money(results.awards.biggestMistake.loss)} — {results.awards.biggestMistake.item})</span>
+                    </div>
+                  )}
+                  {results.awards.topHauler && (
+                    <div className="award">
+                      <span className="award-name">TOP HAULER</span>
+                      <span>{results.awards.topHauler.nick} ({money(results.awards.topHauler.value)})</span>
+                    </div>
+                  )}
+                  {results.awards.medic && (
+                    <div className="award">
+                      <span className="award-name">COWORKER OF THE NIGHT</span>
+                      <span>{results.awards.medic.nick} ({results.awards.medic.rescues} rescues)</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
+        {(!results || crewSize === 0) && (
+          <p className="report-line">The detailed sheet jammed in the printer. Assume everyone did great.</p>
+        )}
+
+        <div className="mgmt-notes">
+          <div className="report-sec">MANAGEMENT NOTES</div>
+          <ul>
+            {notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </div>
+
         <div className="results-actions">
           <button className="btn primary" onClick={() => net.act("replay")}>
             Run it back

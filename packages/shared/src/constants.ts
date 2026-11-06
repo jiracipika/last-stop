@@ -12,6 +12,7 @@ export const PLAYER = {
   WALK: 3.2,
   SPRINT: 5.2,
   ACCEL_RATE: 14, // exponential approach rate toward wish velocity
+  STOP_SLIDE_RATE: 6, // per-second decay of coast velocity after input releases (~0.37 m slide at walk speed); MUST stay mirrored in web/src/game/predict.ts
   JUMP_V: 4.4,
   GRAVITY: 13,
   STAMINA_MAX: 100,
