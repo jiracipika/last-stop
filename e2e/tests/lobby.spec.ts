@@ -40,9 +40,10 @@ test("two browsers join one room by code, ready up, and start the shift", async 
   await pageB.locator(".join-row input").fill(code);
   await pageB.getByRole("button", { name: "Join crew" }).click();
 
-  // both rosters show two players
+  // both rosters show two players (joining browser's first state patch can
+  // lag a tick under suite load — same budget as pageA's)
   await expect(pageA.locator(".roster li:not(.empty)")).toHaveCount(2, { timeout: 15000 });
-  await expect(pageB.locator(".roster li:not(.empty)")).toHaveCount(2);
+  await expect(pageB.locator(".roster li:not(.empty)")).toHaveCount(2, { timeout: 15000 });
 
   // ready up both, host starts
   await pageA.getByRole("button", { name: "Ready up" }).click();

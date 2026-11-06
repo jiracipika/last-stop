@@ -339,6 +339,8 @@ export const PATROL_ROUTES: string[][] = [
   ["C5", "GL", "GI", "GA", "GB", "GY", "GB", "GA", "GC", "GA", "GI", "GL"],
   ["L8", "LW", "GT", "LW", "L4", "L5", "L6", "L9", "L3", "L2", "L1"],
   ["L2", "L7", "Y1", "Y2", "Y3", "L7", "L3", "L9", "GY", "GB", "GA"],
+  // east alley out-and-back (ES/EA/EA2 uncovered by the routes above)
+  ["GY", "ES", "EA", "EA2", "EA", "ES"],
 ];
 
 // ---------------------------------------------------------------------------
@@ -399,10 +401,19 @@ export interface HideSpot {
   doorX: number; // client door hinge
   doorZ: number;
   doorYaw: number;
+  // trunk-lid visuals (world3d defaults fit the sedan trunk; bigger tubs
+  // like the dumpster override these so the lid actually covers the top)
+  lidW?: number;
+  lidD?: number;
+  lidY?: number;
 }
 export const HIDE_SPOTS: HideSpot[] = [
   // dead sedan in the front yard — climb into the cabin
   { id: "carA", kind: "car", standX: -8.1, standZ: 1.9, x: -9, z: 0.15, doorX: -8.15, doorZ: 0.95, doorYaw: 0.2 },
   // sedan by the south fence — fold yourself into the trunk
   { id: "carB", kind: "trunk", standX: 21.6, standZ: 23.4, x: 22.3, z: 22.5, doorX: 21.95, doorZ: 22.85, doorYaw: -0.35 },
+  // dumpster in the motel/garage passage — climb in under the tip-up lid
+  // (prop at 13,-20 w2.2 d1.3, axis-aligned; stand in the open passage south
+  // of it, lid hinged on the rear/north top edge, yaw 0 covers the top)
+  { id: "dump1", kind: "trunk", standX: 13, standZ: -18.5, x: 13, z: -20, doorX: 13, doorZ: -20.65, doorYaw: 0, lidW: 2.3, lidD: 1.4, lidY: 1.16 },
 ];

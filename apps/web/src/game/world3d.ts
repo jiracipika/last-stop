@@ -5,7 +5,7 @@
 // red = hazard.
 import * as THREE from "three";
 import {
-  WALL_BOXES, DOORS, doorAabb, PROPS, ROOMS, LAMPS, ROAD, GATE, MAP_BOUNDS, HIDE_SPOTS, mulberry32, type DoorDef,
+  WALL_BOXES, DOORS, doorAabb, PROPS, ROOMS, LAMPS, ROAD, GATE, MAP_BOUNDS, HIDE_SPOTS, mulberry32, type DoorDef, type PropDef,
 } from "@last-stop/shared";
 import { buildTextures, PAL, type Tex } from "./textures.js";
 
@@ -323,22 +323,26 @@ export class World3D {
           this.group.add(this.box(p.w - 0.2, 1.2, 0.05, face, p.x, 1.15, p.z + p.d / 2 + 0.03));
           break;
         }
-        case "car": {
-          this.group.add(this.box(p.w, 0.55, p.d, this.mat(this.tex.vanPaint, 0x5a6a78), p.x, 0.45, p.z));
-          this.group.add(this.box(p.w - 0.7, 0.5, p.d - 1.4, this.solid(0x2c343b), p.x, 0.95, p.z));
-          for (const [ox, oz] of [[-1.4, 0.7], [1.4, 0.7], [-1.4, -0.7], [1.4, -0.7]] as [number, number][]) {
-            const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.22, 8), this.solid(0x14161a));
-            wheel.rotation.z = Math.PI / 2;
-            wheel.position.set(p.x + ox, 0.3, p.z + oz);
-            this.disposables.push({ geo: wheel.geometry });
-            this.group.add(wheel);
+        case "car":
+          // two junkers, told apart by world position (map.ts): the
+          // front-yard sedan (x < 0) hides players in its cabin, the
+          // south-fence one in its trunk
+          if (p.x < 0) this.buildFrontYardSedan(p);
+          else this.buildSouthFenceSedan(p);
+          break;
+        case "dumpster": {
+          this.group.add(this.box(p.w, 1.1, p.d, this.mat(this.tex.metalWorn, 0x3d5a44), p.x, 0.55, p.z));
+          // a dumpster that is a hide spot gets its animated lid from
+          // buildHideSpotDoors instead of this static top
+          const isHide = HIDE_SPOTS.some((h) => h.kind === "trunk" && Math.abs(h.x - p.x) < 0.5 && Math.abs(h.z - p.z) < 0.5);
+          if (isHide) {
+            // dark muck so looking in under the tipped lid reads as garbage
+            this.group.add(this.box(p.w - 0.2, 0.04, p.d - 0.2, this.solid(0x1c211c), p.x, 1.08, p.z));
+          } else {
+            this.group.add(this.box(p.w + 0.1, 0.12, p.d + 0.1, this.mat(this.tex.metalWorn, 0x2f4636), p.x, 1.16, p.z));
           }
           break;
         }
-        case "dumpster":
-          this.group.add(this.box(p.w, 1.1, p.d, this.mat(this.tex.metalWorn, 0x3d5a44), p.x, 0.55, p.z));
-          this.group.add(this.box(p.w + 0.1, 0.12, p.d + 0.1, this.mat(this.tex.metalWorn, 0x2f4636), p.x, 1.16, p.z));
-          break;
         case "boilerTank": {
           const t = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 2.4, 10), rust);
           t.position.set(p.x, 1.2, p.z);
@@ -394,22 +398,168 @@ export class World3D {
     }
   }
 
+  // ---------------------------------------------------------- junker sedans
+  // Both "car" props are stealth hide spots now (cabin / trunk) and the hide
+  // camera sits at eye height inside them, so each gets a real three-volume
+  // body, tinted glass, bumpers and a furnished interior. Bodies stay
+  // axis-aligned inside the p.w x p.d collider footprint; the offsets below
+  // assume the 4.4 x 1.9 sedan of map.ts and are placed so the HIDE_SPOTS
+  // door anchors land exactly on the faces opened here.
+
+  private buildFrontYardSedan(p: PropDef): void {
+    // faded teal livery with rust streaks; the driver-door throat is cut into
+    // the south flank so the engine's hide door closes over a real opening
+    const X = p.x;
+    const Z = p.z;
+    const paint = this.mat(this.tex.junkerTeal);
+    const dark = this.solid(0x1a1d20);
+    const trim = this.mat(this.tex.metalWorn, 0xc8c2b6);
+    const seat = this.solid(0x3d3a34);
+    const dash = this.solid(0x22262a);
+    const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.35 });
+    this.disposables.push({ mat: glass });
+    // lower hull, split around the door throat (south flank local x 0.85..1.78)
+    this.group.add(this.box(2.89, 0.28, 1.9, paint, X - 0.595, 0.54, Z));
+    this.group.add(this.box(0.93, 0.28, 1.65, paint, X + 1.315, 0.54, Z - 0.125));
+    this.group.add(this.box(0.93, 0.05, 0.25, paint, X + 1.315, 0.425, Z + 0.825));
+    this.group.add(this.box(0.26, 0.28, 1.9, paint, X + 1.91, 0.54, Z));
+    // beltline: hood / cabin walls / trunk deck, inset for a bevel
+    this.group.add(this.box(1.34, 0.36, 1.84, paint, X - 1.37, 0.86, Z));
+    this.group.add(this.box(2.5, 0.36, 0.4, paint, X + 0.55, 0.86, Z - 0.75));
+    this.group.add(this.box(1.55, 0.36, 0.34, paint, X + 0.075, 0.86, Z + 0.78));
+    this.group.add(this.box(0.26, 0.36, 1.84, paint, X + 1.91, 0.86, Z));
+    // greenhouse: glass bands, pillars, roof
+    this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z + 0.7));
+    this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z - 0.7));
+    this.group.add(this.box(0.05, 0.38, 1.36, glass, X - 0.675, 1.23, Z));
+    this.group.add(this.box(0.05, 0.38, 1.36, glass, X + 1.775, 1.23, Z));
+    for (const [px, pz] of [[-0.7, 0.7], [-0.7, -0.7], [1.8, 0.7], [1.8, -0.7]] as [number, number][]) {
+      this.group.add(this.box(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
+    }
+    this.group.add(this.box(2.62, 0.08, 1.62, paint, X + 0.55, 1.46, Z));
+    // cabin interior — the hide camera sits between the front seat backs at
+    // the HIDE_SPOTS anchor, so the cabin must not read hollow
+    this.group.add(this.box(2.5, 0.05, 1.86, dark, X + 0.55, 0.685, Z));
+    this.group.add(this.box(0.14, 0.22, 1.36, dash, X - 0.6, 0.91, Z));
+    for (const sz of [-0.48, 0.48]) {
+      this.group.add(this.box(0.14, 0.55, 0.4, seat, X - 0.35, 0.955, Z + sz));
+      this.group.add(this.box(0.42, 0.12, 0.4, seat, X - 0.52, 0.74, Z + sz));
+    }
+    this.group.add(this.box(0.14, 0.52, 1.3, seat, X + 1.45, 0.94, Z));
+    // wheels: axis rotated to z so they actually roll, plus light hubs
+    const tire = this.solid(0x14161a);
+    const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
+    for (const [wx, wz] of [[-1.4, 0.78], [1.4, 0.78], [-1.4, -0.78], [1.4, -0.78]] as [number, number][]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.22, 10), tire);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(X + wx, 0.34, Z + wz);
+      this.disposables.push({ geo: wheel.geometry });
+      this.group.add(wheel);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.26, 8), hub);
+      cap.rotation.x = Math.PI / 2;
+      cap.position.set(X + wx, 0.34, Z + wz);
+      this.disposables.push({ geo: cap.geometry });
+      this.group.add(cap);
+    }
+    // wheel well lining the throat where the rear tire would show through
+    this.group.add(this.box(0.26, 0.23, 0.25, dark, X + 1.4, 0.565, Z + 0.825));
+    // bumpers as light metal end caps, flush with the footprint
+    this.group.add(this.box(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
+    this.group.add(this.box(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
+    // rust blister sits proud of the hood, clear of the hood face (no z-fighting)
+    this.group.add(this.box(0.55, 0.03, 0.65, this.solid(0x8a4a32), X - 1.37, 1.07, Z + 0.2));
+    this.group.add(this.box(0.015, 0.16, 0.5, this.solid(0xc6b99b), X + 2.0475, 0.8, Z));
+  }
+
+  private buildSouthFenceSedan(p: PropDef): void {
+    // primer-brown/grey livery, rear facing west: the trunk is a mouth cut
+    // through the rear deck + south flank right under the hide-spot's trunk
+    // lid hinge, so the closed lid reads as a junker lid resting ajar
+    const X = p.x;
+    const Z = p.z;
+    const paint = this.mat(this.tex.primerCar);
+    const dark = this.solid(0x1a1d20);
+    const trim = this.mat(this.tex.metalWorn, 0xc8c2b6);
+    const seat = this.solid(0x3d3a34);
+    const dash = this.solid(0x22262a);
+    const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.35 });
+    this.disposables.push({ mat: glass });
+    // lower hull: solid east of the trunk, rusted-open tub walls to the west
+    this.group.add(this.box(3.54, 0.28, 1.9, paint, X + 0.27, 0.54, Z));
+    this.group.add(this.box(0.54, 0.28, 1.35, paint, X - 1.77, 0.54, Z - 0.275));
+    this.group.add(this.box(0.08, 0.28, 0.4, dark, X - 2.0, 0.54, Z + 0.75));
+    this.group.add(this.box(0.46, 0.06, 0.55, dark, X - 1.73, 0.43, Z + 0.675));
+    // trunk deck ring around the mouth; the deck top sits just under the lid
+    this.group.add(this.box(1.14, 0.24, 1.35, paint, X - 1.47, 0.8, Z - 0.275));
+    this.group.add(this.box(0.08, 0.24, 0.55, paint, X - 2.0, 0.8, Z + 0.675));
+    this.group.add(this.box(0.6, 0.24, 1.9, paint, X - 1.2, 0.8, Z));
+    // beltline: hood + cabin walls (the cabin is a ring so glass sees an interior)
+    this.group.add(this.box(1.14, 0.36, 1.84, paint, X + 1.47, 0.86, Z));
+    this.group.add(this.box(1.8, 0.36, 0.4, paint, X, 0.86, Z - 0.75));
+    this.group.add(this.box(1.8, 0.36, 0.34, paint, X, 0.86, Z + 0.78));
+    // greenhouse: glass bands, pillars, roof
+    this.group.add(this.box(1.8, 0.38, 0.04, glass, X, 1.23, Z + 0.7));
+    this.group.add(this.box(1.8, 0.38, 0.04, glass, X, 1.23, Z - 0.7));
+    this.group.add(this.box(0.05, 0.38, 1.36, glass, X + 0.875, 1.23, Z));
+    this.group.add(this.box(0.05, 0.38, 1.36, glass, X - 0.875, 1.23, Z));
+    for (const [px, pz] of [[-0.9, 0.7], [-0.9, -0.7], [0.9, 0.7], [0.9, -0.7]] as [number, number][]) {
+      this.group.add(this.box(0.09, 0.4, 0.1, paint, X + px, 1.23, Z + pz));
+    }
+    this.group.add(this.box(2.0, 0.08, 1.62, paint, X, 1.46, Z));
+    // cabin interior seen through the glass
+    this.group.add(this.box(1.8, 0.04, 1.44, dark, X, 0.685, Z));
+    this.group.add(this.box(0.14, 0.22, 1.36, dash, X + 0.72, 0.91, Z));
+    this.group.add(this.box(0.14, 0.5, 1.3, seat, X - 0.62, 0.95, Z));
+    // wheels: rear-south tire is flat, rear-north hubcap is gone
+    const tire = this.solid(0x14161a);
+    const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
+    for (const [wx, wz] of [[-1.4, 0.78], [1.4, 0.78], [-1.4, -0.78], [1.4, -0.78]] as [number, number][]) {
+      const flat = wx < 0 && wz > 0;
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.22, 10), tire);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(X + wx, flat ? 0.245 : 0.34, Z + wz);
+      if (flat) wheel.scale.z = 0.72; // squash the vertical radius: reads as flat
+      this.disposables.push({ geo: wheel.geometry });
+      this.group.add(wheel);
+      if (wx < 0 && wz < 0) continue; // missing hubcap
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.26, 8), hub);
+      cap.rotation.x = Math.PI / 2;
+      cap.position.set(X + wx, flat ? 0.245 : 0.34, Z + wz);
+      if (flat) cap.scale.z = 0.72;
+      this.disposables.push({ geo: cap.geometry });
+      this.group.add(cap);
+    }
+    // bumpers as light metal end caps, flush with the footprint
+    this.group.add(this.box(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
+    this.group.add(this.box(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
+    // primer delamination blister + plate above the rear bumper
+    this.group.add(this.box(0.5, 0.03, 0.6, this.solid(0x8a4a32), X + 1.47, 1.07, Z - 0.2));
+    this.group.add(this.box(0.015, 0.16, 0.5, this.solid(0xc6b99b), X - 2.0475, 0.8, Z - 0.2));
+  }
+
   // -------------------------------------------------------- hide-spot doors
   private hideDoors = new Map<string, { group: THREE.Group; open: boolean; kind: string; baseYaw: number }>();
 
   private buildHideSpotDoors(): void {
     for (const s of HIDE_SPOTS) {
       const g = new THREE.Group();
-      const paint = this.mat(this.tex.metalWorn, 0x6a7078);
       if (s.kind === "car") {
-        // driver door, hinged at its front edge, swings out
+        // driver door, hinged at its front edge, swings out; wears the
+        // junker's body paint (see the sedan builders)
+        const paint = this.mat(s.id === "carA" ? this.tex.junkerTeal : this.tex.primerCar);
         g.add(this.box(0.95, 0.8, 0.06, paint, 0.48, 0, 0));
         g.add(this.box(0.05, 0.05, 0.1, this.solid(0x14161a), 0.8, 0, 0.05));
         g.position.set(s.doorX, 0.85, s.doorZ);
       } else {
-        // trunk lid, hinged at the body edge, tips up
-        g.add(this.box(1.5, 0.05, 0.75, paint, 0, 0, 0.38));
-        g.position.set(s.doorX, 0.95, s.doorZ);
+        // lid, hinged at the body edge, tips up; sized per spot so it
+        // actually covers the tub it belongs to (dumpster >> sedan trunk)
+        const lidW = s.lidW ?? 1.5;
+        const lidD = s.lidD ?? 0.75;
+        const lidY = s.lidY ?? 0.95;
+        const paint = s.lidY !== undefined ? this.mat(this.tex.metalWorn, 0x2f4636) : this.mat(this.tex.primerCar);
+        g.add(this.box(lidW, 0.08, lidD, paint, 0, 0, lidD / 2 + 0.005));
+        g.add(this.box(0.5, 0.05, 0.06, this.solid(0x14161a), 0, 0.03, lidD / 2 - 0.15));
+        g.position.set(s.doorX, lidY, s.doorZ);
       }
       g.rotation.y = s.doorYaw;
       this.group.add(g);
@@ -519,6 +669,14 @@ export class World3D {
       // Room 3 bedside lamp — one warm room among the dark ones
       const l2 = this.pointLight(0xE6AD61, 5, 6.5, -2.1, 1.1, -14.2);
       this.flickers.push({ light: l2, mat: null, base: 5, style: 0, seed: 10 });
+      // passage bug-lamp on the garage wall — the only light near the dumpster
+      // hide spot: it helps you find the lid and betrays you while you climb in
+      const bug = this.pointLight(0xE6AD61, 5.5, 7.5, 15.4, 2.3, -19.5);
+      this.flickers.push({ light: bug, mat: null, base: 5.5, style: 1, seed: 13 });
+      const bugBulb = new THREE.MeshBasicMaterial({ color: 0xe6c489 });
+      this.disposables.push({ mat: bugBulb });
+      this.group.add(this.box(0.22, 0.3, 0.22, bugBulb, 15.55, 2.3, -19.5));
+      this.groundPool("rgba(230,173,97,0.35)", 2.2, 14.6, -19.5, 0.45);
     }
     // maintenance stays red even in blackout — the emergency circuit
     const red = this.pointLight(0xb63d35, 9, 9, -10, 2.7, -21, true);

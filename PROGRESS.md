@@ -2,7 +2,40 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization landed (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content slices (2026-11-06)
+
+### Presence & content slice (2026-11-06): real junkers, an audible Caretaker, a third hide spot — done
+
+Three parallel workstreams, reconciled:
+
+- **The junkers are cars now** (world3d/textures): the two hide spots got real geometry — hull +
+  beveled beltline + greenhouse glass bands, rolling wheels with hubs (the old ones were mounted
+  sideways), bumpers, plates, and dressed interiors (dash, seats, bench) so the hide camera
+  doesn't sit in a hollow box. carA (front yard) wears faded teal with rust streaks (`junkerTeal`
+  0x2ea7); carB (south fence) wears primer brown with a flat tire and missing hubcap
+  (`primerCar` 0x5b21). Footprints and hide anchors unchanged — the driver-door throat and trunk
+  mouth are cut to line up with the animated door/lid. Known compromise: carB's lid rests ajar
+  over a rusted-open trunk mouth (hinge geometry can't close flush without moving shared
+  anchors) — reads as junk, kept deliberately.
+- **The Caretaker is audible and casts light** (audio/enemy3d/engine): distance-attenuated,
+  panned footsteps whose cadence follows its gait (~1.1 steps/s stalking, ~2.4 chasing), random
+  lantern clinks while calm, a thump+scrape when it drags someone out of a hide spot (hooked the
+  `hide` event's `dragged` flag). Everything arrives muffled (×0.45) while YOU are hidden. Its
+  lantern now casts a warm additive ground pool that flares with its intent (windup brightest,
+  door-pounding strobes) — you can see it coming through windows. Also fixed: EnemyView leaked a
+  fresh MeshBasicMaterial every frame (lampFace) and was never disposed — both fixed.
+- **Content**: third hide spot — the passage dumpster (`dump1`, server-generic, lid sized per
+  spot via new optional `HideSpot.lidW/lidD/lidY`; dark muck visible under the tipped lid). New
+  patrol route through the east alley nodes (GY→ES→EA→EA2→EA→ES) that no previous route covered.
+  hide.test.ts extended with a dumpster wire test incl. stand-point return. Screenshot audit
+  showed the dumpster passage was pitch black — added a bug-lamp on the garage wall (warm, buzzing):
+  it guides you to the lid and betrays you while you climb in.
+- Verification (2026-11-06): shared/server/web typecheck clean; server vitest **33/33** (12 files);
+  full Playwright e2e **5/5** (one lobby flake — pageB's first state patch lagged past 5 s under
+  suite load while pageA already had both players — hardened its timeout to match pageA's 15 s).
+  Screenshot close-ups of both junkers + dumpster in `screenshots/presence-slice/`; known issue:
+  carA's new paint is barely readable at night grade from the yard angle (stealth-dark by
+  design, but worth a fill light or brighter albedo in a later pass).
 
 ### Gameplay slice (2026-11-06): hiding in the junkers + crew customization — done
 

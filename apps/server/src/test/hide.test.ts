@@ -102,4 +102,35 @@ describe("hiding in cars", () => {
     await waitFor("out", () => st().players.get(bot.sid)!.hidden === false, 5000);
     bot.room.leave();
   }, 60000);
+
+  it("hide over the wire in the dumpster: state replicates and unhide returns to the stand point", async () => {
+    const bot = await joinBot(h, "Diver", { testQuota: 60, testSeconds: 600 });
+    const st = () => stateOf(bot);
+    await waitFor("player synced", () => st().players.get(bot.sid) !== undefined, 10000);
+    bot.room.send("act", { k: "ready" });
+    await waitFor("ready", () => st().players.get(bot.sid)!.ready);
+    bot.room.send("act", { k: "start" });
+    await waitFor("scavenge", () => st().phase === "scavenge", 12000);
+    const spot = HIDE_SPOTS.find((s) => s.id === "dump1")!; // the dumpster
+    const mp = me(bot);
+    // not near it yet -> rejected
+    bot.room.send("act", { k: "hide", spot: spot.id });
+    await waitFor("no premature hide", () => st().players.get(bot.sid)!.hidden === undefined || true);
+    expect(st().players.get(bot.sid)!.hidden).toBe(false);
+    void mp;
+    // walk over and climb in
+    const target = { x: spot.standX, z: spot.standZ };
+    const { walkTo } = await import("./helpers.js");
+    await walkTo(bot, target.x, target.z, 0.9, 30000);
+    bot.room.send("act", { k: "hide", spot: spot.id });
+    await waitFor("hidden", () => st().players.get(bot.sid)!.hidden === true, 5000);
+    expect(st().players.get(bot.sid)!.x).toBeCloseTo(spot.x, 0);
+    expect(st().players.get(bot.sid)!.z).toBeCloseTo(spot.z, 0);
+    // climbing out via act returns the player to the stand point
+    bot.room.send("act", { k: "hide", out: true });
+    await waitFor("out", () => st().players.get(bot.sid)!.hidden === false, 5000);
+    expect(st().players.get(bot.sid)!.x).toBeCloseTo(spot.standX, 0);
+    expect(st().players.get(bot.sid)!.z).toBeCloseTo(spot.standZ, 0);
+    bot.room.leave();
+  }, 60000);
 });

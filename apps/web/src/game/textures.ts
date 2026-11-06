@@ -87,6 +87,10 @@ export interface Tex {
   corrugated: THREE.CanvasTexture;
   metalWorn: THREE.CanvasTexture;
   vanPaint: THREE.CanvasTexture;
+  /** faded teal junker paint with rust streaks (front-yard sedan) */
+  junkerTeal: THREE.CanvasTexture;
+  /** patchy brown/grey primer junker paint (south-fence sedan) */
+  primerCar: THREE.CanvasTexture;
   /** clone with independent repeat (shares the canvas — cheap) */
   rep(tex: THREE.CanvasTexture, x: number, y: number): THREE.CanvasTexture;
   /** flat decal texture from a draw fn, no repeat */
@@ -351,6 +355,60 @@ export function buildTextures(): Tex {
     }
   }, 0xa17);
 
+  // ---- faded teal junker paint: sun-bleached panels, rust bleeding down
+  // from panel edges, grime at the rocker (front-yard sedan livery)
+  const junkerTeal = canvasTex(512, (ctx, s) => {
+    const rnd = (ctx as CanvasRenderingContext2D & { rnd: () => number }).rnd;
+    ctx.fillStyle = "#48706a";
+    ctx.fillRect(0, 0, s, s);
+    speckle(ctx, rnd, s, 1400, "#6da296", "#22383a");
+    for (let i = 0; i < 6; i++) blob(ctx, rnd() * s, rnd() * s, s * (0.14 + rnd() * 0.22), "#7ba69a", 0.28);
+    // rust streaks run down the panels (v is up on box side faces)
+    for (let i = 0; i < 11; i++) {
+      const x = rnd() * s;
+      const y = rnd() * s * 0.55;
+      const len = s * (0.18 + rnd() * 0.34);
+      const streak = ctx.createLinearGradient(x, y, x, y + len);
+      streak.addColorStop(0, "rgba(165,82,53,0.6)");
+      streak.addColorStop(1, "rgba(165,82,53,0)");
+      ctx.fillStyle = streak;
+      ctx.fillRect(x, y, 3 + rnd() * 7, len);
+    }
+    for (let i = 0; i < 5; i++) blob(ctx, rnd() * s, rnd() * s * 0.7, s * 0.05, PAL.rust, 0.5);
+    const grime = ctx.createLinearGradient(0, s * 0.78, 0, s);
+    grime.addColorStop(0, "rgba(0,0,0,0)");
+    grime.addColorStop(1, "rgba(28,20,12,0.72)");
+    ctx.fillStyle = grime;
+    ctx.fillRect(0, s * 0.78, s, s * 0.22);
+  }, 0x2ea7);
+
+  // ---- primer-splotched junker paint: mismatched brown/grey patches, scuffs,
+  // no clear coat left (south-fence sedan livery)
+  const primerCar = canvasTex(512, (ctx, s) => {
+    const rnd = (ctx as CanvasRenderingContext2D & { rnd: () => number }).rnd;
+    ctx.fillStyle = "#6b6052";
+    ctx.fillRect(0, 0, s, s);
+    speckle(ctx, rnd, s, 1700, "#8a8072", "#453e34");
+    for (let i = 0; i < 9; i++) {
+      blob(ctx, rnd() * s, rnd() * s, s * (0.14 + rnd() * 0.22), rnd() > 0.5 ? "#7a6c5a" : "#6e6e66", 0.5);
+    }
+    for (let i = 0; i < 14; i++) {
+      ctx.strokeStyle = rnd() > 0.5 ? "rgba(200,190,170,0.3)" : "rgba(30,26,20,0.4)";
+      ctx.lineWidth = 1 + rnd() * 2;
+      const y = rnd() * s;
+      ctx.beginPath();
+      ctx.moveTo(rnd() * s * 0.4, y);
+      ctx.lineTo(rnd() * s * 0.4 + s * 0.45, y + (rnd() - 0.5) * 26);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 4; i++) blob(ctx, rnd() * s, rnd() * s, s * 0.05, PAL.rust, 0.42);
+    const grime = ctx.createLinearGradient(0, s * 0.8, 0, s);
+    grime.addColorStop(0, "rgba(0,0,0,0)");
+    grime.addColorStop(1, "rgba(24,18,12,0.7)");
+    ctx.fillStyle = grime;
+    ctx.fillRect(0, s * 0.8, s, s * 0.2);
+  }, 0x5b21);
+
   const rep = (tex: THREE.CanvasTexture, x: number, y: number) => {
     const t = tex.clone();
     t.needsUpdate = true;
@@ -370,5 +428,5 @@ export function buildTextures(): Tex {
     return tex;
   };
 
-  return { asphalt, gravel, plaster, garageSteel, concrete, vinyl, carpet, wood, corrugated, metalWorn, vanPaint, rep, decal };
+  return { asphalt, gravel, plaster, garageSteel, concrete, vinyl, carpet, wood, corrugated, metalWorn, vanPaint, junkerTeal, primerCar, rep, decal };
 }

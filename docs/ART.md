@@ -80,6 +80,8 @@ unless noted). Tiles at consistent world scale: floors 4 m/tile, walls ~4 m/tile
 | corrugated | 512 | 0x40f | seam stripes, rust streaks (roofs) |
 | metalWorn | 512 | 0x7e7 | worn painted steel (shelves, gate, drums, poles, washer) |
 | vanPaint | 512 | 0xa17 | cream + teal sweep, scratches, rust rocker |
+| junkerTeal | 512 | 0x2ea7 | faded teal sedan paint: sun-bleach, 11 rust streaks, rust blooms, rocker grime (front-yard junker + its door) |
+| primerCar | 512 | 0x5b21 | brown/grey primer blotches, key scratches, rust spots (south-fence junker + its lid) |
 | oil stain decals | 256 | per-position | radial blobs, garage/lot/car |
 | room numbers 1–4 | 128 | — | cream plates on front doors |
 | corridor plates | 256 | — | teal LAUNDRY/MAINT/BOILER/STORAGE |

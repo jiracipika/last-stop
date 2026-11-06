@@ -9,6 +9,8 @@ export class GameAudio {
   private windGain: GainNode | null = null;
   private chaseGain: GainNode | null = null;
   private chaseTimer = 0;
+  /** Listener is tucked in a junker: world events arrive muffled. */
+  hiddenMuffle = 1;
   volume = 0.8;
 
   unlock(): void {
@@ -230,6 +232,25 @@ export class GameAudio {
     this.tone(466, 0.16, 0.6, "sawtooth", 18);
   }
 
+  /** Caretaker footstep: heavy slow thud plus gravel scrape. */
+  private estep(pan: number, vol: number): void {
+    this.tone(50 + Math.random() * 10, 0.32 * vol, 0.3, "sine", 0, pan);
+    this.noise(0.13 * vol, 0.24, 260, "lowpass", pan);
+  }
+
+  /** Loose metal on the lantern swinging about. */
+  private clink(pan: number, vol: number): void {
+    const f = 1900 + Math.random() * 600;
+    this.tone(f, 0.05 * vol, 0.1, "triangle", 0, pan);
+    this.tone(f * 1.62, 0.03 * vol, 0.07, "triangle", 0, pan);
+  }
+
+  /** Busted: a body dragged out of a junker — muffled thump + scrape. */
+  private drag(pan: number, vol: number): void {
+    this.tone(64, 0.34 * vol, 0.45, "sine", 0, pan);
+    this.noise(0.2 * vol, 0.85, 380, "lowpass", pan);
+  }
+
   click(): void {
     this.tone(700, 0.04, 0.05, "triangle");
   }
@@ -281,6 +302,9 @@ export class GameAudio {
       case "bang": this.bang(pan); break;
       case "horn": this.horn(); break;
       case "bump": this.bump(6); break;
+      case "estep": this.estep(pan, atten * this.hiddenMuffle); break;
+      case "clink": this.clink(pan, atten * this.hiddenMuffle); break;
+      case "drag": this.drag(pan, atten); break;
       default: break;
     }
   }

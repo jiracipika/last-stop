@@ -98,6 +98,10 @@ export class Engine {
   private shakeAmount = 0;
   private bobPhase = 0;
   private lastEnemyAi = 0;
+  private lastEnemyX = 0;
+  private lastEnemyZ = 0;
+  private estepDist = 0;
+  private clinkTimer = 3;
   private spectateIdx = 0;
   private fpsAcc = 0;
   private fpsN = 0;
@@ -232,6 +236,7 @@ export class Engine {
     this.disposers.forEach((d) => d());
     this.world3d.dispose();
     this.vanView.dispose();
+    this.enemyView.dispose();
     this.renderer.dispose();
   }
 
@@ -417,13 +422,20 @@ export class Engine {
         break;
       case "seat":
         break;
-      case "hide":
+      case "hide": {
+        const dragged = !e.on && e.dragged === true;
         if (e.sid === this.net.sid) {
-          audio.vanDoor();
+          if (dragged) this.store.toast("It DRAGGED you out of there!", "warn");
+          else audio.vanDoor();
           if (e.on) this.store.toast("Tucked in. Stay quiet and it'll pass you by", "info");
-          else if (e.dragged) this.store.toast("It DRAGGED you out of there!", "warn");
+        }
+        if (dragged) {
+          // busted: the Caretaker hauled them out of the junker — thump + scrape from the car
+          const p = st?.players.get(String(e.sid));
+          if (p) audio.playEventAt("drag", p.x, p.z, cam);
         }
         break;
+      }
       case "prog":
         if (e.sid === this.net.sid) {
           this.store.set({ progress: clamp01(Number(e.v)), progressKind: String(e.k) });
@@ -822,6 +834,35 @@ export class Engine {
     audio.heartbeat(dt, intensity);
     if (me.seat === 1) audio.engine(st.van.speed, st.phase === "escape");
     else audio.engine(0, false);
+
+    // tucked in a junker? everything the Caretaker does arrives muffled
+    audio.hiddenMuffle = me.hidden ? 0.45 : 1;
+
+    // Caretaker footsteps and lantern clinks, positioned through playEventAt
+    const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
+    const ex = this.enemyView.group.position.x; // interpolated render position
+    const ez = this.enemyView.group.position.z;
+    const moved = Math.hypot(ex - this.lastEnemyX, ez - this.lastEnemyZ);
+    this.lastEnemyX = ex;
+    this.lastEnemyZ = ez;
+    if (st.phase === "scavenge" || st.phase === "escape") {
+      // distance-per-stride cadence: the slower it moves, the heavier the steps
+      if (moved < 1.5) this.estepDist += moved; // skip teleport frames
+      if (this.estepDist >= 1.9) {
+        this.estepDist = 0;
+        audio.playEventAt("estep", ex, ez, cam);
+      }
+      // loose metal on the swinging lantern, only while it is calm
+      if (e.ai === 0 || e.ai === 1) {
+        this.clinkTimer -= dt;
+        if (this.clinkTimer <= 0) {
+          this.clinkTimer = 2.5 + Math.random() * 4;
+          audio.playEventAt("clink", ex, ez, cam);
+        }
+      } else {
+        this.clinkTimer = 3 + Math.random() * 3;
+      }
+    }
   }
 
   private updateCamera(dt: number, t: number, st: RoomState | null): void {
