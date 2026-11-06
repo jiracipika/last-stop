@@ -23,6 +23,18 @@ pnpm dev:server
 pnpm dev:web
 ```
 
+## Live links
+
+- **Production:** <https://laststopgame.vercel.app>
+- **Staging:** <https://laststopstaging.vercel.app> (preview deployments; SSO protection is
+  disabled on this project so previews are public)
+- **Source:** <https://github.com/jiracipika/last-stop> (private)
+
+> ⚠️ **The deployed frontend is not yet playable online.** Vercel hosts the client only — the
+> authoritative game server must run on a persistent Node host (see *Hosting* below). Until that
+> server exists and `VITE_GAME_SERVER_URL` is set to its `wss://` address, room creation on the
+> deployed site will fail gracefully. Everything works locally with the two commands above.
+
 Open <http://localhost:5173>. One player picks a name/color and **Start a new shift**; the others
 enter the 5-letter code (or the invite link `?room=CODE`). Ready up, host starts. Solo practice
 works the same way — heavy items get lighter and quota scales down.
@@ -138,10 +150,12 @@ e2e/           Playwright browser tests
 
 ## Hosting
 
-### Frontend → Vercel (works today)
+### Frontend → Vercel (done)
 
-The web app is a static Vite bundle. Import the repo into Vercel, set **Root Directory** to the
-repo root (the `vercel.json` in `apps/web` configures the build), and set the env var:
+The web app is a static Vite bundle. The repo-root `vercel.json` configures the monorepo build
+(`pnpm --filter @last-stop/web build` → `apps/web/dist`). The project is deployed as
+`laststopgame` (production + public staging alias). To set the game server address in the
+dashboard, set the env var:
 
 ```
 VITE_GAME_SERVER_URL=wss://<your-game-server-host>
