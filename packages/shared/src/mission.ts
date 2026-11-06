@@ -38,7 +38,7 @@ export const MODIFIERS: Record<string, ModifierDef> = {
   wired: {
     id: "wired",
     name: "AMPED UP",
-    desc: "The Caretaker moves 20% faster. Do not let it see you run.",
+    desc: "The Caretaker moves 20% faster. It never gets faster than the end of a bad night.",
   },
   fatquota: {
     id: "fatquota",

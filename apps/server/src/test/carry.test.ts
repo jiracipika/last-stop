@@ -37,7 +37,11 @@ afterAll(async () => {
 describe("carrying", () => {
   // retry budget: this is the suite's tightest race (two bots must both be
   // in grab range on the same tick) and the known load-sensitive flake —
-  // 5+ historical failures, always this test, always timer starvation
+  // 5+ historical failures. Two causes found: ambient-load timer starvation
+  // (retry budget) and item-spawn drift — items have physics and the picked
+  // item can roll after mission start, so bots walked to a stale replicated
+  // position and both grabs landed out of range. The re-read below makes the
+  // test drift-proof; retries cover the rest.
   it("grabs are atomic: simultaneous grab of one item gives it to exactly one player", { retry: 2, timeout: 45000 }, async () => {
     // walk both bots near a small item
     let target: { id: string; x: number; z: number } | null = null;
@@ -51,6 +55,16 @@ describe("carrying", () => {
     const t = target!;
     await walkTo(host, t.x + 1.2, t.z, 0.9);
     await walkTo(mate, t.x - 1.2, t.z, 0.9);
+    // the item may have rolled since the plan snapshot — re-walk both bots
+    // to its LIVE position until both are genuinely in grab range
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const live = stateOf(host).items.get(t.id)!;
+      const dh = dist2d(me(host).x, me(host).z, live.x, live.z);
+      const dm = dist2d(me(mate).x, me(mate).z, live.x, live.z);
+      if (dh <= 2.2 && dm <= 2.2) break;
+      if (dh > 2.2) await walkTo(host, live.x + 1.2, live.z, 0.9);
+      if (dm > 2.2) await walkTo(mate, live.x - 1.2, live.z, 0.9);
+    }
     // simultaneous grabs
     host.room.send("act", { k: "grab", id: t.id });
     mate.room.send("act", { k: "grab", id: t.id });

@@ -37,7 +37,7 @@ describe("RAISED TARGETS (fatquota)", () => {
 });
 
 describe("AMPED UP (wired)", () => {
-  it("multiplies the Caretaker's speed by 1.2 on top of escalation", () => {
+  it("multiplies the Caretaker's speed by 1.2, capped at the esc-3 ceiling", () => {
     const w = new World();
     w.modifiersOverride = ["wired"];
     w.addPlayer("m2", "Sole", 0, true);
@@ -45,8 +45,11 @@ describe("AMPED UP (wired)", () => {
     const e = w.enemy;
     expect(e.speedMul()).toBeCloseTo(1.2, 5); // escalation 1: plain 1.0 * 1.2
     w.escalation = 2;
-    expect(e.speedMul()).toBeCloseTo(1.15 * 1.2, 5); // escalation stacks
+    expect(e.speedMul()).toBeCloseTo(1.3, 5); // 1.15 * 1.2 = 1.38, capped at 1.3
+    w.escalation = 3;
+    expect(e.speedMul()).toBeCloseTo(1.3, 5); // 1.3 * 1.2 = 1.56, capped: esc3+wired must stay escapable
     w.modifiers = [];
+    w.escalation = 2;
     expect(e.speedMul()).toBeCloseTo(1.15, 5);
   });
 });

@@ -4,6 +4,15 @@ import type { Prefs } from "../App.js";
 import type { Engine } from "../game/engine.js";
 import { audio } from "../game/audio.js";
 
+// Graphics tiers: applied instantly via Engine.applyQuality (renderer pixel
+// ratio, fog) + World3D.setQuality (dust, flicker, light-cull radius) and
+// persisted so the next boot starts at the same tier.
+const QUALITY_TIERS: { value: Prefs["quality"]; label: string }[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 export function PauseOverlay({
   prefs,
   savePrefs,
@@ -55,14 +64,20 @@ export function PauseOverlay({
           />
           <b>{Math.round(prefs.volume * 100)}%</b>
         </label>
-        <label className="setting">
+        <div className="setting quality">
           <span>Graphics quality</span>
-          <select value={prefs.quality} onChange={(e) => apply({ ...prefs, quality: e.target.value as Prefs["quality"] })}>
-            <option value="low">Low (integrated GPUs)</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
+          <div className="q-btns">
+            {QUALITY_TIERS.map((q) => (
+              <button
+                key={q.value}
+                className={`q-btn ${prefs.quality === q.value ? "sel" : ""}`}
+                onClick={() => apply({ ...prefs, quality: q.value })}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="setting row">
           <label>
             <input

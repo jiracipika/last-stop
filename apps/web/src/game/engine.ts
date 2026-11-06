@@ -1,8 +1,11 @@
 // Engine: three.js renderer + game view orchestration. Runs its own rAF loop;
-// React only reads the HudStore.
+// React only reads the HudStore. Doubles as the title-screen attract renderer:
+// it boots once at the title (no room state) and the SAME canvas / WebGL
+// context / World3D then serves the whole session — joining only hands the
+// camera from the attract path to the gameplay path (see setAttract).
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, CARRY, HIDE_SPOTS, dist2d, clamp, angleLerp,
+  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp, angleLerp,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -43,6 +46,34 @@ const FOV_EASE_RATE = 9; // exponential ease toward the sprint FOV target
 const BOB_AMPLITUDE = 0.045; // meters of view-bob at full walk speed
 const BUMP_MIN_IMPULSE = 2; // m/s of collision-stripped velocity that counts as a slam
 const BUMP_COOLDOWN = 0.4; // seconds between wall-thud sounds
+
+// ---- attract mode (title-screen cinematic) ---------------------------------
+// A closed loop of slow dolly moves past the lot's landmarks: the PALE
+// LANTERN sign, the porch bulbs, the parked van, then a crane back out to the
+// wide shot. Tuned by eye — every number lives in this table. Segment easing
+// is smoothstep, so velocity hits zero at every pose and the loop wraps with
+// no visible seam. The camera is a pure function of wall-clock t, which makes
+// stop/resume (hidden tab, cancelled join) pop-free.
+const ATTRACT_FOV = 66; // narrower lens than gameplay; the FOV ease hands it back on join
+
+interface AttractPose {
+  pos: [number, number, number];
+  look: [number, number, number];
+  dur: number; // seconds of travel to the NEXT pose
+}
+
+const ATTRACT_PATH: AttractPose[] = [
+  // wide establishing shot from the south-west fence line: motel facade,
+  // sign, lamp pool — the whole lot in one frame
+  { pos: [-26, 10.5, 15], look: [-6, 2.0, -6], dur: 12 },
+  // slow push in on the sign's lit face (it faces the south-east)
+  { pos: [-4.5, 2.8, 5.5], look: [-13, 4.6, -2.5], dur: 13 },
+  // glide east along the walkway, porch bulbs and dead windows sliding past
+  { pos: [9.5, 2.6, 0.5], look: [-2, 2.2, -7.8], dur: 13 },
+  // swing around the van's rear three-quarter at its lot spawn
+  { pos: [8.5, 2.6, 20.5], look: [2, 1.5, 13.5], dur: 12 },
+];
+const ATTRACT_LOOP_LEN = ATTRACT_PATH.reduce((s, p) => s + p.dur, 0); // 50 s
 
 /** Two-snapshot interpolation buffer for remote entities (~120 ms delay). */
 class SnapBuf {
@@ -92,11 +123,29 @@ export class Engine {
   avatars = new Map<string, AvatarView>();
   itemViews = new Map<string, ItemView>();
   markers3d: Marker3D[] = [];
-  input: InputManager;
   predictor: Predictor;
   store: HudStore;
   net: Net;
   settings: QualitySettings;
+  /** True while the title cinematic owns the camera (no room joined). */
+  private attractMode = true;
+  /** Wired by App: drops the title back to its static backdrop if the
+   *  attract loop ever throws, so a broken menu never blocks joining. */
+  onAttractFail: (() => void) | null = null;
+  private inputInstance: InputManager | null = null;
+  /**
+   * Input listeners attach on first need, not at construction: at the title
+   * they would swallow WASD/Space keystrokes (the manager preventDefaults
+   * movement keys on window) while the player types in the sign-in sheet.
+   */
+  get input(): InputManager {
+    if (!this.inputInstance) {
+      this.inputInstance = new InputManager(this.renderer.domElement);
+      this.inputInstance.sensitivity = this.settings.sensitivity;
+      this.inputInstance.onAction = (a) => this.onAction(a);
+    }
+    return this.inputInstance;
+  }
 
   private raf = 0;
   private lastFrame = 0;
@@ -123,6 +172,7 @@ export class Engine {
   private vanBuf = new SnapBuf();
   private enemyBuf = new SnapBuf();
   private lastPatchAt = 0;
+  private watchedRoom: unknown = null; // room instance the patch stamp is wired to
   private hudTimer = 0;
   private lastPhase = "lobby";
   private stormOn = false;
@@ -158,14 +208,12 @@ export class Engine {
     this.scene.add(this.enemyView.group);
 
     this.predictor = new Predictor(() => this.dynamicColliders());
-    this.input = new InputManager(canvas);
-    this.input.sensitivity = settings.sensitivity;
-    this.input.onAction = (a) => this.onAction(a);
+    // InputManager is created lazily by the `input` getter: at the title its
+    // window listeners would eat the nickname field's keystrokes.
 
     net.onEvent((e) => this.handleEvent(e));
-    net.room?.onStateChange(() => {
-      this.lastPatchAt = performance.now();
-    });
+    // net.room?.onStateChange is NOT subscribed here: at boot (attract mode)
+    // no room exists yet — the subscription is attached lazily in frame().
     net.onStatus(() => {
       store.set({ connStatus: net.status, connDetail: net.statusDetail });
     });
@@ -175,6 +223,20 @@ export class Engine {
     const onResize = () => this.resize();
     window.addEventListener("resize", onResize);
     this.disposers.push(() => window.removeEventListener("resize", onResize));
+
+    // Attract power-saving: a hidden tab must not keep rendering the menu
+    // cinematic. The game loop is deliberately left alone — rAF is already
+    // suspended by the browser for hidden tabs and mid-mission sim state
+    // would only stutter on an explicit stop/start.
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (this.attractMode) this.stop();
+      } else if (this.attractMode) {
+        this.start();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    this.disposers.push(() => document.removeEventListener("visibilitychange", onVisibility));
 
     // WebGL context loss: keep the page alive and recover when it returns
     const onCtxLost = (e: Event) => {
@@ -209,6 +271,14 @@ export class Engine {
   }
 
   applyQuality(): void {
+    // Tier definitions — renderer knobs here, world knobs in World3D.setQuality:
+    //   low    — pixelRatio <= 1 (0.75x DPR), antialias off (construction-time),
+    //            denser fog, dust motes off, flicker flattened to steady,
+    //            light-cull radius halved (fewer lit pixels per frame)
+    //   medium — pixelRatio <= 1.25, everything else on
+    //   high   — full devicePixelRatio, everything on (previous default look)
+    // Antialias is fixed when the GL context is created: flipping it live
+    // would need a new context, so only the pixel ratio responds mid-session.
     const q = this.settings.quality;
     const dpr = window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(q === "low" ? Math.min(1, dpr * 0.75) : q === "medium" ? Math.min(1.25, dpr) : dpr);
@@ -244,9 +314,30 @@ export class Engine {
     cancelAnimationFrame(this.raf);
   }
 
+  /**
+   * Title <-> game handoff. ON: the attract camera owns the view and input
+   * listeners are torn down again (typing in the sign-in sheet must never be
+   * hijacked). OFF: the loop keeps running — the game camera takes over the
+   * moment room state lands; App explicitly stops/starts the loop around the
+   * join window itself.
+   */
+  setAttract(on: boolean): void {
+    if (on === this.attractMode) return;
+    this.attractMode = on;
+    if (on) {
+      if (this.inputInstance) {
+        this.input.exitLock();
+        this.inputInstance.dispose();
+        this.inputInstance = null;
+      }
+      if (!document.hidden) this.start();
+    }
+  }
+
   dispose(): void {
     this.stop();
-    this.input.dispose();
+    this.inputInstance?.dispose();
+    this.inputInstance = null;
     this.disposers.forEach((d) => d());
     audio.setRain(false); // ambient loops outlive the engine; drop the storm with it
     this.world3d.setStorm(false);
@@ -643,6 +734,19 @@ export class Engine {
 
   // ------------------------------------------------------------------ frame
   private frame(now: number): void {
+    try {
+      this.frameInner(now);
+    } catch (e) {
+      // Failure isolation is attract-only: a thrown frame mid-game keeps
+      // today's loud-crash behavior so bugs stay visible.
+      if (!this.attractMode || this.net.state) throw e;
+      console.warn("[laststop] attract render failed; title falls back to the static backdrop", e);
+      this.onAttractFail?.();
+      this.stop();
+    }
+  }
+
+  private frameInner(now: number): void {
     const dt = Math.min(0.05, (now - this.lastFrame) / 1000) || 0.016;
     this.lastFrame = now;
     const t = now / 1000;
@@ -654,6 +758,16 @@ export class Engine {
     this.store.pruneToasts();
 
     if (st) {
+      // The engine boots before any room exists (attract mode), so the
+      // patch-timestamp subscription the interpolation buffers rely on is
+      // attached the first time a room appears — and re-attached if a
+      // reconnect swaps in a fresh room instance.
+      if (this.net.room && this.watchedRoom !== this.net.room) {
+        this.watchedRoom = this.net.room;
+        this.net.room.onStateChange(() => {
+          this.lastPatchAt = performance.now();
+        });
+      }
       const me = st.players.get(this.net.sid);
       if (me) {
         this.stepSelf(dt, st, me);
@@ -664,6 +778,14 @@ export class Engine {
       this.world3d.applyGate(dt);
       this.world3d.cullLights(this.camera.position);
       this.updateEnemyAudio(st, dt);
+    } else {
+      // No room yet (attract mode + the join window): the lot runs its
+      // ambient life — flicker, fan, sign sway — with no storm, no players
+      // and no Caretaker. The van sits at its lot spawn, engine cold.
+      this.vanView.update(VAN_START.x, VAN_START.z, VAN_START.yaw, 0, false, false, t);
+      this.enemyView.group.visible = false;
+      this.world3d.update(dt, t);
+      this.world3d.cullLights(this.camera.position);
     }
 
     this.updateCamera(dt, t, st);
@@ -947,33 +1069,44 @@ export class Engine {
       this.camera.lookAt(f.tx, f.ty, f.tz);
       return;
     }
+    const attract = this.attractMode && !st;
     const me = st?.players.get(this.net.sid);
     // Sprint FOV kick: ease toward a slightly wider view while sprinting, ease
     // back to base otherwise. Sits after the frozenCam return (photo mode is
     // never touched) and ahead of the early-return branches so the FOV always
     // settles even in the menu / spectate paths. The sprint flag is the
-    // server's authority (stamina/weight gates already applied there).
+    // server's authority (stamina/weight gates already applied there). Attract
+    // rests on a narrower cinematic lens; the same ease hands it back on join,
+    // which reads as a subtle push-in when the shift starts.
     const sprinting = !!me && me.sprinting && !me.downed && !me.dead && me.seat === 0 && !me.hidden;
-    const targetFov = BASE_FOV + (sprinting ? SPRINT_FOV_KICK : 0);
+    const targetFov = attract ? ATTRACT_FOV : BASE_FOV + (sprinting ? SPRINT_FOV_KICK : 0);
     const nextFov = this.camera.fov + (targetFov - this.camera.fov) * (1 - Math.exp(-FOV_EASE_RATE * dt));
     if (Math.abs(nextFov - this.camera.fov) > 0.001) {
       this.camera.fov = nextFov;
       this.camera.updateProjectionMatrix();
     }
-    let cx = this.predictor.body.x;
-    let cz = this.predictor.body.z;
-    let cy: number = PLAYER.EYE;
-    let yaw = this.input.yaw;
-    let pitch = this.input.pitch;
+
+    if (attract) {
+      this.attractCamera(t);
+      return;
+    }
 
     if (!st || st.phase === "lobby" || st.phase === "briefing" || st.phase === "results" || !me) {
-      // menu orbit over the lot
+      // menu orbit over the lot (in-room lobby / briefing / results)
       const r = 26;
       const a = t * 0.08;
       this.camera.position.set(Math.sin(a) * r, 12 + Math.sin(t * 0.2) * 1.5, 10 + Math.cos(a) * r);
       this.camera.lookAt(0, 1, -4);
       return;
     }
+
+    // Input reads live below the attract/lobby returns: at the title no
+    // InputManager exists at all (see the input getter).
+    let cx = this.predictor.body.x;
+    let cz = this.predictor.body.z;
+    let cy: number = PLAYER.EYE;
+    let yaw = this.input.yaw;
+    let pitch = this.input.pitch;
 
     if (me.dead) {
       // spectate: follow a living teammate
@@ -1030,6 +1163,26 @@ export class Engine {
       this.camera.position.y += (Math.random() - 0.5) * this.shakeAmount * 0.2;
       this.camera.rotation.z += (Math.random() - 0.5) * this.shakeAmount * 0.03;
     }
+  }
+
+  /** Title cinematic: ease along ATTRACT_PATH. A pure function of wall-clock
+   *  t, so stopping/respawning the loop (hidden tab, cancelled join) never
+   *  makes the camera pop. */
+  private attractCamera(t: number): void {
+    let u = ((t % ATTRACT_LOOP_LEN) + ATTRACT_LOOP_LEN) % ATTRACT_LOOP_LEN;
+    let i = 0;
+    while (u >= ATTRACT_PATH[i]!.dur) {
+      u -= ATTRACT_PATH[i]!.dur;
+      i = (i + 1) % ATTRACT_PATH.length;
+    }
+    const a = ATTRACT_PATH[i]!;
+    const b = ATTRACT_PATH[(i + 1) % ATTRACT_PATH.length]!;
+    const s = u / a.dur;
+    const e = s * s * (3 - 2 * s); // smoothstep: rests at every landmark
+    const mix = (p: readonly [number, number, number], q: readonly [number, number, number], k: 0 | 1 | 2) =>
+      p[k] + (q[k] - p[k]) * e;
+    this.camera.position.set(mix(a.pos, b.pos, 0), mix(a.pos, b.pos, 1), mix(a.pos, b.pos, 2));
+    this.camera.lookAt(mix(a.look, b.look, 0), mix(a.look, b.look, 1), mix(a.look, b.look, 2));
   }
 
   private updateMarkers(dt: number): void {

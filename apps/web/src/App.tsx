@@ -28,7 +28,7 @@ const DEFAULT_PREFS: Prefs = {
   nick: "",
   color: 0,
   hat: 0,
-  quality: "medium",
+  quality: "high", // full-fat look by default; players who saved a tier keep it
   headBob: true,
   shake: true,
   sensitivity: 1,
@@ -50,6 +50,9 @@ export function App(): React.ReactElement {
   const [screen, setScreen] = useState<"title" | "game">("title");
   const [fatal, setFatal] = useState("");
   const [paused, setPaused] = useState(false);
+  // true once the attract renderer is live: lets CSS trade the opaque title
+  // backdrop for a translucent grade over the 3D lot
+  const [attractLive, setAttractLive] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<Engine | null>(null);
 
@@ -67,9 +70,14 @@ export function App(): React.ReactElement {
     audio.setVolume(prefs.volume);
   }, [prefs.volume]);
 
-  // engine lifecycle
+  // Engine lifecycle. The engine boots ONCE — at the title, in ATTRACT MODE —
+  // and the same canvas / WebGL context / World3D instance then serves the
+  // whole session (title cinematic -> lobby -> mission). Rebuilding on join
+  // would re-bake the entire world on the join frame for zero benefit; the
+  // engine already renders fine without room state, so the live instance is
+  // reused and only the camera changes owner (Engine.setAttract).
   useEffect(() => {
-    if (screen !== "game" || !canvasRef.current) return;
+    if (engineRef.current || !canvasRef.current) return;
     try {
       const engine = new Engine(canvasRef.current, net, store, {
         quality: prefs.quality,
@@ -78,14 +86,37 @@ export function App(): React.ReactElement {
         sensitivity: prefs.sensitivity,
       });
       engineRef.current = engine;
+      // a thrown attract frame drops the title back to its static backdrop
+      engine.onAttractFail = () => setAttractLive(false);
+      engine.start(); // boots into attract mode (Engine default)
+      setAttractLive(true);
+    } catch (e) {
+      // Attract is pure dressing: a broken menu must never block joining, so
+      // this is only a console warn and the CSS backdrop stays as-is.
+      console.warn("[laststop] attract mode unavailable; title keeps the static backdrop", e);
+    }
+    // Deliberately no teardown: this engine is a page-lifetime singleton
+    // shared by title and game (canvasRef persists across screen switches),
+    // so there is nothing to dispose on a screen change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [net, store]);
+
+  // Game-time fallback: if the attract boot failed, retry once the player
+  // actually joins — past this point a missing renderer IS fatal.
+  useEffect(() => {
+    if (screen !== "game" || engineRef.current || !canvasRef.current) return;
+    try {
+      const engine = new Engine(canvasRef.current, net, store, {
+        quality: prefs.quality,
+        headBob: prefs.headBob,
+        shake: prefs.shake,
+        sensitivity: prefs.sensitivity,
+      });
+      engineRef.current = engine;
+      engine.setAttract(false);
       engine.start();
-      return () => {
-        engine.dispose();
-        engineRef.current = null;
-      };
     } catch (e) {
       setFatal(`Could not start the 3D renderer: ${String(e)}. Try updating your browser or enabling hardware acceleration.`);
-      return;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
@@ -113,6 +144,9 @@ export function App(): React.ReactElement {
   const enterRoom = useCallback(
     async (mode: "create" | "join", code: string) => {
       audio.unlock();
+      const engine = engineRef.current;
+      engine?.setAttract(false); // hand the camera over; input listeners attach
+      engine?.stop(); // attract rendering halts the moment a join starts
       try {
         if (mode === "create") {
           const roomCode = await net.createRoom(prefs.nick || "Rookie", prefs.color, prefs.hat);
@@ -124,7 +158,9 @@ export function App(): React.ReactElement {
         }
         setScreen("game");
         setPaused(false);
+        engine?.start(); // the same loop resumes as the game loop
       } catch (e) {
+        engine?.setAttract(true); // join failed: settle back into the cinematic
         store.toast(`Could not join: ${String(e)}`, "warn");
       }
     },
@@ -135,6 +171,7 @@ export function App(): React.ReactElement {
     net.leave();
     setScreen("title");
     setPaused(false);
+    engineRef.current?.setAttract(true); // the cinematic resumes over the live lot
   }, [net]);
 
   const resume = useCallback(() => {
@@ -158,8 +195,10 @@ export function App(): React.ReactElement {
   }, [net, store]);
 
   return (
-    <div className="app">
-      {screen === "game" && <canvas ref={canvasRef} className="game-canvas" onClick={onCanvasClick} />}
+    <div className={attractLive ? "app attract-live" : "app"}>
+      {/* always mounted: the attract camera renders it behind the title panel,
+          then the game engine keeps using the same canvas after joining */}
+      <canvas ref={canvasRef} className="game-canvas" onClick={onCanvasClick} />
       {fatal ? (
         <div className="fatal">
           <h2>LAST STOP can't start here</h2>

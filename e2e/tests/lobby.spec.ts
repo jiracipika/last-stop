@@ -55,13 +55,23 @@ test("two browsers join one room by code, ready up, and start the shift", async 
   // the mission HUD appears and record whether the briefing was seen.
   let sawBriefing = false;
   const deadline = Date.now() + 40000;
+  const samples: string[] = [];
+  const netSnapshot = (page: Page): Promise<string> =>
+    page.evaluate(`(() => {
+      const ls = window.__laststop;
+      const s = ls?.net?.state;
+      const players = s ? [...s.players.values()].map((p) => p.nick + (ls.net.sid === p.sid ? "*" : "")).join(",") : "none";
+      return \`status=\${ls?.net?.status} ph=\${s?.phase ?? "null"} room=\${ls?.net?.room?.id ?? "none"} players=\${players}\`;
+    })()`);
   while (Date.now() < deadline) {
     const a = await phaseOf(pageA);
     const b = await phaseOf(pageB);
     if (a === "briefing" || b === "briefing") sawBriefing = true;
     if (a === "mission" && b === "mission") break;
+    samples.push(`A[${a} ${await netSnapshot(pageA)}] B[${b} ${await netSnapshot(pageB)}]`);
     await pageA.waitForTimeout(250);
   }
+  if (samples.length) console.log("LOBBY POLL SAMPLES:\n" + samples.slice(-8).join("\n"));
   expect(pageBErrors).toEqual([]);
   expect(sawBriefing).toBe(true);
   for (const page of [pageA, pageB]) {

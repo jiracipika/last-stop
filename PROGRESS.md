@@ -2,7 +2,35 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance slices (2026-11-06)
+
+### In-engine title, quality presets, balance sweep (2026-11-06) — done
+
+- **The motel lot is the title screen**: the engine now boots at App mount with an ATTRACT
+  MODE — one WebGL context for life (world3d built once, never rebuilt on join/leave), a 50 s
+  cinematic camera loop (wide lot → sign push-in → walkway glide → van three-quarter), no
+  players/enemy/HUD/audio. InputManager construction is lazy (WASD preventDefault would have
+  eaten nickname typing — the key trap). Joining halts the loop and hands over the camera
+  (FOV eases 66→75); a failed join relaunches the cinematic; tab-hidden stops the loop at
+  title. Any attract failure falls back to the static CSS background without blocking joins.
+  Title.tsx: zero changes — every e2e selector intact.
+- **Quality presets** (Low/Medium/High in the pause menu, persisted): Low = pixelRatio ≤1 +
+  dust off + flicker flattened + light-cull radius halved; Medium = ≤1.25; High = full (the
+  old default look). Low→High now restores flicker styles correctly.
+- **Balance sweep tool** (`apps/server/scripts/balance-sweep.ts` → `docs/BALANCE.md`,
+  deterministic, 56 combos × 5 seeds): the flag rule (1.6× median) clears all combos — but the
+  tool self-reports that the median line is self-referential; against the true base,
+  21/56 combos exceed 1.6× base (37.5% of missions), led by fragile+sensitive+wired at 2.10×.
+  **The sweep caught a real fairness bug**: escalation stacking put esc3+wired chase speed at
+  7.1 m/s vs player sprint 5.2 — unwinnable. Fix: speedMul is capped at the escalation-3
+  ceiling of 1.3 (AMPED UP is a big early-night threat, a no-op at the top; modifiers.test
+  pins the cap). Also corrected: CURSED BELLS emits real server-side noise (was mislabeled
+  client-only) — sweep weight 1.15, regenerated report.
+- Verification (2026-11-06): tsc ×3 clean; server vitest **41/41** (14 files); full Playwright
+  e2e **6/6** (lobby test now instrumented: on failure it dumps per-page net phase/players
+  samples — the one historical cold-start stall showed DOM briefing lagging the net phase;
+  benign-but-diagnosed). Visual smoke still needed: title look/join transition, preset
+  toggling, storm+blackout together.
 
 ### chaseSid over the wire + STORM CELL (2026-11-06) — done
 

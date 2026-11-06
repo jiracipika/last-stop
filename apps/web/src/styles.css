@@ -100,6 +100,20 @@ body,
   background: rgba(28, 8, 6, 0.55);
   animation: vacancyHum 5.2s infinite;
 }
+/* ATTRACT MODE: the live 3D lot renders behind the clipboard, so the title
+   trades its opaque backdrop for a translucent night grade over the render.
+   Without .attract-live (engine failed to boot) the opaque background above
+   is untouched — the static fallback stays exactly as it was. */
+.app.attract-live .title-screen {
+  background:
+    radial-gradient(1200px 500px at 70% 10%, rgba(64, 90, 140, 0.1), transparent 60%),
+    radial-gradient(900px 420px at 20% 85%, rgba(160, 90, 40, 0.08), transparent 60%),
+    linear-gradient(rgba(10, 14, 20, 0.42), rgba(5, 7, 10, 0.66));
+}
+/* the painted highway dashes would sit on top of the real highway */
+.app.attract-live .title-backdrop::after {
+  display: none;
+}
 @keyframes vacancyHum {
   0%, 88%, 92%, 100% { opacity: 0.85; }
   90% { opacity: 0.45; }
@@ -1025,13 +1039,28 @@ body,
 .setting.row {
   grid-template-columns: 1fr 1fr;
 }
-.setting select {
-  background: #0d1219;
-  color: #e6eef7;
-  border: 1px solid #2a3442;
+/* quality presets: three buttons instead of the old dropdown */
+.setting.quality {
+  grid-template-columns: 1fr auto;
+}
+.q-btns {
+  display: flex;
+  gap: 6px;
+}
+.q-btn {
+  padding: 6px 12px;
   border-radius: 4px;
-  padding: 6px;
+  border: 1px solid #2a3442;
+  background: #0d1219;
+  color: #8a99ac;
   font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.q-btn.sel {
+  border-color: #78e8ff;
+  color: #e6eef7;
+  box-shadow: 0 0 8px rgba(120, 232, 255, 0.35);
 }
 .pause-actions {
   display: flex;

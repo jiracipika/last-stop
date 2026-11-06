@@ -77,7 +77,9 @@ export class CaretakerAI {
 
   speedMul(): number {
     const esc = this.world.escalation === 3 ? 1.3 : this.world.escalation === 2 ? 1.15 : 1;
-    return esc * (this.world.modifiers.includes("wired") ? 1.2 : 1);
+    // AMPED UP stacks with escalation, but the night only gets so fast:
+    // unclamped, esc3+wired put chase at 7.1 m/s vs sprint 5.2 — unwinnable.
+    return Math.min(esc * (this.world.modifiers.includes("wired") ? 1.2 : 1), 1.3);
   }
 
   hearingMul(): number {

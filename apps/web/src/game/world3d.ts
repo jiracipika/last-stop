@@ -28,6 +28,8 @@ interface Flicker {
   base: number;
   style: 0 | 1 | 2 | 3; // steady | buzz | failing | pulse
   seed: number;
+  /** original style, kept so a Low -> higher tier switch can restore it */
+  style0?: 0 | 1 | 2 | 3;
 }
 
 /** one merged draw call produced by bakeStatic() */
@@ -43,6 +45,11 @@ interface BakeBucket {
 const STORM_FLASH_PEAK = 2.2;
 const STORM_FLASH_GAP_MIN = 8; // seconds between flashes
 const STORM_FLASH_GAP_MAX = 25;
+
+// light-cull radius multiplier (see cullLights); the Low tier halves it so
+// weak GPUs light fewer pixels per frame
+const CULL_SCALE_FULL = 3.4;
+const CULL_SCALE_LOW = 1.7;
 
 export class World3D {
   group = new THREE.Group();
@@ -62,6 +69,7 @@ export class World3D {
   private dust: THREE.Points[] = [];
   private blackout: boolean;
   private lowQuality = false;
+  private cullScale = CULL_SCALE_FULL;
   // storm atmosphere (STORM CELL modifier)
   private stormLight: THREE.HemisphereLight | null = null;
   private stormOn = false;
@@ -1121,23 +1129,33 @@ export class World3D {
     }
   }
 
-  /** cheap light culling: hide point lights the camera can't be lit by */
+  /** cheap light culling: hide point lights the camera can't be lit by.
+   *  The radius multiplier is quality-dependent (Low halves it). */
   cullLights(cam: THREE.Vector3): void {
     for (const m of this.managed) {
       if (m.essential) continue;
       const p = m.light.position;
       const d = (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2;
-      m.light.visible = d < (m.range * 3.4) ** 2;
+      m.light.visible = d < (m.range * this.cullScale) ** 2;
     }
   }
 
+  /**
+   * Quality tiers: low = dust motes off + flicker flattened to steady + the
+   * light-cull radius halved. medium/high = full dressing; they differ only
+   * in renderer pixel ratio, which the engine owns (Engine.applyQuality).
+   */
   setQuality(q: "low" | "medium" | "high"): void {
     this.lowQuality = q === "low";
+    this.cullScale = this.lowQuality ? CULL_SCALE_LOW : CULL_SCALE_FULL;
     for (const pts of this.dust) pts.visible = !this.lowQuality;
-    if (this.lowQuality) {
-      for (const f of this.flickers) {
+    for (const f of this.flickers) {
+      if (this.lowQuality) {
+        if (f.style0 === undefined) f.style0 = f.style;
         f.style = 0;
         f.light.intensity = f.base;
+      } else if (f.style0 !== undefined) {
+        f.style = f.style0; // tier raised again: bring the flicker back
       }
     }
   }
