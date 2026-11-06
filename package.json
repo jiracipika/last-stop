@@ -4,12 +4,6 @@
   "version": "0.1.0",
   "description": "LAST STOP — 1-4 player online co-op horror-comedy scavenging game",
   "packageManager": "pnpm@12.16.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "msgpackr-extract"
-    ]
-  },
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
