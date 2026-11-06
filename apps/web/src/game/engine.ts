@@ -839,7 +839,10 @@ export class Engine {
     }
 
     this.camera.position.set(cx, cy, cz);
-    this.camera.rotation.set(pitch, yaw, 0, "YXZ");
+    // three.js cameras look along local -Z at yaw 0, but the game's forward
+    // convention is (sin yaw, cos yaw) — offset by PI so the camera looks
+    // where the character actually moves (W = toward what you see)
+    this.camera.rotation.set(pitch, yaw + Math.PI, 0, "YXZ");
 
     // shake
     if (this.shakeAmount > 0.01 && this.settings.shake) {

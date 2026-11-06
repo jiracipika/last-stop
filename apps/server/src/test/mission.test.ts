@@ -105,7 +105,7 @@ describe("mission arcs", () => {
       let err = targetYaw - yaw;
       while (err > Math.PI) err -= Math.PI * 2;
       while (err < -Math.PI) err += Math.PI * 2;
-      const mx = Math.max(-1, Math.min(1, err * 2));
+      const mx = Math.max(-1, Math.min(1, -err * 2)); // steer: mx is negated into yaw
       const mz = Math.abs(err) < 0.3 ? 1 : 0.3;
       bot.room.send("in", { mx, mz, yaw: targetYaw, sprint: false });
       await sleep(120);

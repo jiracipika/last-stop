@@ -977,7 +977,7 @@ export class World {
     if (drivable && driver && driver.connected && driver.seat === 1 && !driver.dead && !driver.downed) {
       const i = driver.input;
       throttle = clamp(i.mz, -1, 1);
-      steer = clamp(i.mx, -1, 1);
+      steer = -clamp(i.mx, -1, 1); // D steers right on screen (yaw decreases)
       handbrake = i.jump;
 
       // leaving living teammates behind needs a confirming second press

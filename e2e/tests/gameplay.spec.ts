@@ -109,3 +109,48 @@ test("a dropped socket reconnects automatically and keeps the session", async ({
   expect(Math.hypot(pos2.x - pos1.x, pos2.z - pos1.z)).toBeGreaterThan(1);
   await ctx.close();
 }, 90000);
+
+test("W moves toward what the camera shows (screen-direction regression)", async ({ page }) => {
+  await enterSoloMission(page);
+  await page.waitForTimeout(600);
+
+  // camera must look along the character's forward (sin yaw, cos yaw):
+  // three.js looks along -Z at yaw 0, so camera yaw = player yaw + PI
+  const read = `(() => {
+    const ls = window.__laststop;
+    const me = ls.net.state.players.get(ls.net.sid);
+    const cam = ls.engine().camera;
+    return { yaw: me.yaw, x: me.x, z: me.z, camYaw: cam.rotation.y };
+  })()`;
+  const s0 = await page.evaluate(read);
+  let camDelta = (s0.camYaw - s0.yaw - Math.PI) % (2 * Math.PI);
+  if (camDelta > Math.PI) camDelta -= 2 * Math.PI;
+  if (camDelta < -Math.PI) camDelta += 2 * Math.PI;
+  expect(Math.abs(camDelta)).toBeLessThan(0.05);
+
+  // W: movement should align with the camera's view direction
+  await page.keyboard.down("w");
+  await page.waitForTimeout(1100);
+  await page.keyboard.up("w");
+  await page.waitForTimeout(400);
+  const s1 = await page.evaluate(read);
+  const dx = s1.x - s0.x;
+  const dz = s1.z - s0.z;
+  const len = Math.hypot(dx, dz);
+  expect(len).toBeGreaterThan(2);
+  const fwd = { x: Math.sin(s0.yaw), z: Math.cos(s0.yaw) };
+  expect((dx / len) * fwd.x + (dz / len) * fwd.z).toBeGreaterThan(0.8);
+
+  // D: strafe should align with the character's right vector
+  await page.keyboard.down("d");
+  await page.waitForTimeout(900);
+  await page.keyboard.up("d");
+  await page.waitForTimeout(400);
+  const s2 = await page.evaluate(read);
+  const dx2 = s2.x - s1.x;
+  const dz2 = s2.z - s1.z;
+  const len2 = Math.hypot(dx2, dz2);
+  expect(len2).toBeGreaterThan(1.5);
+  const right = { x: -Math.cos(s1.yaw), z: Math.sin(s1.yaw) };
+  expect((dx2 / len2) * right.x + (dz2 / len2) * right.z).toBeGreaterThan(0.8);
+}, 60000);

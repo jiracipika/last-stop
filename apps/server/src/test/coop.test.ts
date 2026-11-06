@@ -106,7 +106,7 @@ describe("four-crew cooperative mission", () => {
       let err = targetYaw - yaw;
       while (err > Math.PI) err -= Math.PI * 2;
       while (err < -Math.PI) err += Math.PI * 2;
-      dee.room.send("in", { mx: Math.max(-1, Math.min(1, err * 2)), mz: Math.abs(err) < 0.3 ? 1 : 0.3, yaw: targetYaw });
+      dee.room.send("in", { mx: Math.max(-1, Math.min(1, -err * 2)), mz: Math.abs(err) < 0.3 ? 1 : 0.3, yaw: targetYaw });
       await sleep(120);
     }
     dee.room.send("in", { mx: 0, mz: 0, yaw: targetYaw });
