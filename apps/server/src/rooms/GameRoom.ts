@@ -7,6 +7,11 @@ import { World, type RPlayer } from "../sim/world.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+/** Live rooms in this process — public hosting needs a hard cap so room
+ * creation can't be spammed into memory pressure. */
+const liveRooms = new Set<GameRoom>();
+const MAX_ROOMS = Number(process.env.LS_MAX_ROOMS ?? 4);
+
 interface Limiter {
   last: number;
   minGap: number; // seconds
@@ -19,6 +24,10 @@ export class GameRoom extends Room {
   inputFlood = new Map<string, { windowStart: number; count: number }>();
 
   override async onCreate(_options: Record<string, unknown>): Promise<void> {
+    if (liveRooms.size >= MAX_ROOMS) {
+      throw new Error("Server is at capacity — try again in a few minutes");
+    }
+    liveRooms.add(this);
     this.world = new World();
     this.state = this.world.state as never;
     // Test-only knobs (CI speed). Gated by server env so a hostile client
@@ -278,7 +287,7 @@ export class GameRoom extends Room {
   }
 
   override onDispose(): void {
-    // intervals are cleaned up by the framework
+    liveRooms.delete(this);
   }
 
   private tick(): void {

@@ -1,5 +1,12 @@
 # LAST STOP
 
+| Environment | Link |
+|---|---|
+| 🚀 **Production** | <https://laststopgame.vercel.app> |
+| 🔧 **Staging** | <https://laststopstaging.vercel.app> |
+| 🧪 **Beta** | <https://laststopbeta.vercel.app> |
+| 📦 **Source** | <https://github.com/jiracipika/last-stop> |
+
 **A 1–4 player online co-op horror-comedy shift.** Your crew's recovery van died outside the Pale
 Lantern Motel. Haul the valuables out, find a distributor cap, fix the van, and drive out before
 The Caretaker decides you're part of the inventory.
@@ -25,10 +32,10 @@ pnpm dev:web
 
 ## Live links
 
-- **Production:** <https://laststopgame.vercel.app>
-- **Staging:** <https://laststopstaging.vercel.app> (preview deployments; SSO protection is
-  disabled on this project so previews are public)
-- **Source:** <https://github.com/jiracipika/last-stop> (private)
+All three environments are in the table at the top of this README. Staging and Beta point at
+preview deployments (SSO protection is disabled on this project so previews are public).
+Deployments are CLI-driven (`vercel deploy --project laststopgame --prod`); pushing to GitHub
+does not auto-deploy.
 
 > ⚠️ **The deployed frontend is not yet playable online.** Vercel hosts the client only — the
 > authoritative game server must run on a persistent Node host (see *Hosting* below). Until that
