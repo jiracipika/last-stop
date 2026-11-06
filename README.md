@@ -150,16 +150,27 @@ e2e/           Playwright browser tests
 
 ## Hosting
 
+### Live links (as of 2026-11-06)
+
+- **Frontend (Vercel):** <https://last-stop-beta.vercel.app> — deployed and serving the game
+  shell. **Multiplayer is not wired yet**: `VITE_GAME_SERVER_URL` is unset because the
+  authoritative server has no public host. Once a game-server URL exists, set the env var on the
+  Vercel project (`last-stop`) and redeploy — that is the only remaining step.
+- **Source (GitHub, private):** <https://github.com/jiracipika/last-stop>
+
 ### Frontend → Vercel (done)
 
 The web app is a static Vite bundle. The repo-root `vercel.json` configures the monorepo build
-(`pnpm --filter @last-stop/web build` → `apps/web/dist`). The project is deployed as
-`laststopgame` (production + public staging alias). To set the game server address in the
-dashboard, set the env var:
+(`pnpm --filter @last-stop/web build` → `apps/web/dist`). To point the client at a game server,
+set the env var on the Vercel project and redeploy:
 
 ```
 VITE_GAME_SERVER_URL=wss://<your-game-server-host>
 ```
+
+Note for pnpm 12 on Vercel: dependency build scripts (esbuild, msgpackr-extract) must be allowed
+with explicit `--allow-build` flags in `installCommand` — the workspace-file allowlist alone is
+ignored under CI.
 
 ### Game server → a persistent Node host (NOT Vercel)
 
