@@ -845,7 +845,13 @@ export class Engine {
   private stepSelf(dt: number, st: RoomState, me: PlayerState): void {
     const fi = this.input.frame();
     const drivable = st.phase === "escape" && me.seat === 1;
-    if (me.seat > 0 || me.downed || me.dead || me.hidden) {
+    if (st.phase !== "scavenge" && st.phase !== "escape") {
+      // lobby/briefing: the server teleports the crew at startMission — keep
+      // stepping the predictor here and reconcile slingshots the body across
+      // the map for seconds after spawn-in. Pin to the authoritative spot.
+      this.predictor.reset(me.x, me.z, me.yaw);
+      this.input.jumpQueued = false;
+    } else if (me.seat > 0 || me.downed || me.dead || me.hidden) {
       // no local walking sim; follow authoritative position
       this.predictor.reset(me.x, me.z, me.yaw);
       this.input.jumpQueued = false;

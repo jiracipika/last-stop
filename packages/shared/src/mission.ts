@@ -9,6 +9,9 @@ export interface ModifierDef {
   desc: string;
 }
 
+// Player-facing modifier definitions; the client renders `desc` verbatim.
+// The difficulty model the draw uses lives in MODIFIER_SEVERITY_WEIGHTS below;
+// per-weight justification and the full combo ranking live in docs/BALANCE.md.
 export const MODIFIERS: Record<string, ModifierDef> = {
   blackout: {
     id: "blackout",
@@ -54,12 +57,81 @@ export const MODIFIERS: Record<string, ModifierDef> = {
 
 export const MODIFIER_POOL = ["blackout", "fragile", "sensitive", "shortclock", "bells", "wired", "fatquota", "storm"];
 
+// Severity model for the mission draw: one relative-difficulty weight per
+// modifier (vs a no-modifier shift); a combo's severity is the product of its
+// weights. These are the SAME constants the balance sweep scores with
+// (apps/server/scripts/balance-sweep.ts imports them), so the cap the draw
+// enforces and the report that justifies it cannot drift apart.
+// - wired 1.2: verified Caretaker speed x1.2 (enemy.ts:80); a worst case for
+//   escalations 1-2 only, since speedMul is capped at 1.3 at esc 3.
+// - sensitive 1.4: verified hear() radii x1.4 (world.ts:818); stacks with
+//   escalation unbounded.
+// - blackout 1.1: NET guess. The server only cuts enemy view range 15%
+//   (enemy.ts:115), but the lot lights die client-side too; the player-side
+//   visibility loss is modeled as dominating, so 1.1 -- NOT the raw 0.85
+//   enemy term. Least rigorous constant here: a modeling choice.
+// - bells 1.15: verified server-side stealth tax -- any carried item moving
+//   >1.2 m/s pings NOISE.BELL (12 m) hear() every ~1.6-3.1 s
+//   (world.ts:573-580); how much that costs is a guess.
+// - fragile 1.25: documented guess at the expected cargo-loss share (impact
+//   damage x2 is verified, world.ts:593; the 1.25 share is not measured).
+// - fatquota 1.15: verified quota x1.15 (quotaFor below).
+// - shortclock: the time term 720/630 -- same quota in 12.5% less shift.
+// - storm 1.0: verified atmosphere-only; zero server references.
+export const MODIFIER_SEVERITY_WEIGHTS: Record<string, number> = {
+  blackout: 1.1,
+  fragile: 1.25,
+  sensitive: 1.4,
+  shortclock: 720 / 630,
+  bells: 1.15,
+  wired: 1.2,
+  fatquota: 1.15,
+  storm: 1.0,
+};
+
+/** Ceiling on the severity of a dealt combo, chosen from the sweep's
+ * distribution (docs/BALANCE.md): 1.9 falls between the 8th-ranked combo
+ * (sensitive+shortclock+wired, 1.920) and the 9th (sensitive+bells+fatquota,
+ * 1.8515), so exactly the top 8 of 56 combos (14.3%, the "top ~15%" line)
+ * become undealable, and the cap itself only fires on those same 8/56 = 14.3%
+ * of initial draws. */
+export const SEVERITY_CAP = 1.9;
+
+/** Pure severity of a modifier combo: the product of its per-modifier weights
+ * (see MODIFIER_SEVERITY_WEIGHTS). Unknown ids weigh 1 so hand-built modifier
+ * lists can never produce NaN. */
+export function comboSeverity(modifiers: string[]): number {
+  let sev = 1;
+  for (const id of modifiers) sev *= MODIFIER_SEVERITY_WEIGHTS[id] ?? 1;
+  return sev;
+}
+
+/** Uniform 3-of-8 draw with a severity cap. Same rng pattern as the original:
+ * one call per pick from the shrinking pool, in the same order, so a seed
+ * deals the same first two picks it always did. If the drawn combo's
+ * comboSeverity exceeds SEVERITY_CAP, ONLY the last pick is re-rolled -- one
+ * extra rng call, no loop: the redraw bag is the remaining pool restricted to
+ * candidates that bring the combo back under the cap, and its result is
+ * accepted as-is. The restricted bag is never empty with the current weights:
+ * a cap-firing draw can never contain storm (any storm combo weighs <=
+ * 1.4 x 1.25 x 1.0 = 1.75), so storm (weight 1.0) always survives into it --
+ * but if weights ever change so it could be empty, the raw remaining pool is
+ * used as a fallback rather than looping. The re-roll always replaces the
+ * third pick with a DIFFERENT id (the rejected pick was spliced out), so the
+ * dealt combo never equals the over-cap draw that triggered it. */
 export function pickModifiers(rng: () => number): string[] {
   const pool = [...MODIFIER_POOL];
   const out: string[] = [];
   for (let i = 0; i < 3; i++) {
     const idx = Math.floor(rng() * pool.length);
     out.push(pool.splice(idx, 1)[0]!);
+  }
+  if (comboSeverity(out) > SEVERITY_CAP && pool.length > 0) {
+    const kept = out.slice(0, 2);
+    const safe = pool.filter((id) => comboSeverity([...kept, id]) <= SEVERITY_CAP);
+    const bag = safe.length > 0 ? safe : pool;
+    const idx = Math.floor(rng() * bag.length);
+    out[2] = bag[idx]!;
   }
   return out;
 }

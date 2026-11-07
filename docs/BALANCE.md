@@ -15,9 +15,16 @@ The difficulty index is deliberately crude and transparent:
 ```
 pressure = quotaFor(planValue(plan.items), players, combo) / planValue(plan.items)
 index    = pressure x (720 / missionSeconds(combo)) x threat x fragile
-threat   = (wired ? 1.2 : 1) x (sensitive ? 1.4 : 1) x (blackout ? 1.1 : 1)
+threat   = (wired ? 1.2 : 1) x (sensitive ? 1.4 : 1) x (blackout ? 1.1 : 1) x (bells ? 1.15 : 1)
 fragile  = fragile ? 1.25 : 1
 ```
+
+The per-modifier weights are the production severity weights (`MODIFIER_SEVERITY_WEIGHTS` in
+`packages/shared/src/mission.ts`) imported here, so this report and the `pickModifiers`
+severity cap score every combo with the same numbers. `comboSeverity(combo)` = the product of
+a combo's weights (reported in the `sev` column) is exactly what the draw's `SEVERITY_CAP`
+compares against; it matches the `xbase` column up to the pressure term's rounding jitter
+(fatquota enters the sim index via pressure and comboSeverity as a flat x1.15 -- same effect).
 
 - `720 / missionSeconds` is the reciprocal of `timeFactor = missionSeconds/720`: SHORT SHIFT
   (630 s) squeezes the same quota into 12.5% less time.
@@ -46,130 +53,205 @@ the ratio to the true baseline is also reported in the `xbase` column so both re
 | shortclock | SHORT SHIFT | x1.143 time term | shift 720 -> 630 s (mission.ts:74) |
 | bells | CURSED BELLS | 1.150 threat | ALL carried cargo emits NOISE.BELL (12 m) hear() pings while moved (world.ts:573-580) + client audio |
 | wired | AMPED UP | 1.200 threat (worst case) | Caretaker speed x1.2, capped at the esc-3 ceiling of 1.3 (enemy.ts speedMul) |
-| fatquota | RAISED TARGETS | pressure x1.15 | quota x1.15 after quotaFactor (mission.ts:81) |
-| storm | STORM CELL | 1.0 | client atmosphere only; zero server references found |
+| fatquota | RAISED TARGETS | x1.150 (comboSeverity) | quota x1.15 after quotaFactor (mission.ts:81); the sim index picks it up via pressure, comboSeverity as a flat term |
+| storm | STORM CELL | 1.000 | client atmosphere only; zero server references found |
 
 ## Results
 
 Median combo index: **0.840**; flag line (1.6x median): **1.344**.
 
 No combo exceeds the flag line. Highest index is 1.113 (EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP),
-i.e. 2.101x the no-modifier baseline.
+i.e. 2.100x the no-modifier baseline.
 
-Context (NOT the spec flag): 27 combo(s) sit above 1.6x the true
+Context (NOT the spec flag): 26 combo(s) sit above 1.6x the true
 no-modifier baseline (0.530, i.e. index > 0.848), which is the
 stricter reading of the acceptance line:
 
 | combo | index | xbase |
 | --- | --- | --- |
-| EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP | 1.113 | 2.101 |
-| EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS | 1.067 | 2.013 |
-| EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS | 1.067 | 2.012 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP | 1.113 | 2.100 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS | 1.067 | 2.013 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS | 1.067 | 2.012 |
 | EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT | 1.060 | 2.000 |
 | LIGHT SLEEPER + CURSED BELLS + AMPED UP | 1.024 | 1.932 |
-| LIGHT SLEEPER + AMPED UP + RAISED TARGETS | 1.024 | 1.932 |
+| LIGHT SLEEPER + AMPED UP + RAISED TARGETS | 1.024 | 1.931 |
 | BLACKOUT + EGGSHELL CONTRACT + LIGHT SLEEPER | 1.020 | 1.925 |
-| LIGHT SLEEPER + SHORT SHIFT + AMPED UP | 1.018 | 1.920 |
-| LIGHT SLEEPER + CURSED BELLS + RAISED TARGETS | 0.981 | 1.851 |
-| BLACKOUT + LIGHT SLEEPER + AMPED UP | 0.979 | 1.848 |
+| LIGHT SLEEPER + SHORT SHIFT + AMPED UP | 1.018 | 1.921 |
+| LIGHT SLEEPER + CURSED BELLS + RAISED TARGETS | 0.981 | 1.852 |
+| BLACKOUT + LIGHT SLEEPER + AMPED UP | 0.980 | 1.848 |
 | LIGHT SLEEPER + SHORT SHIFT + RAISED TARGETS | 0.975 | 1.840 |
 | LIGHT SLEEPER + SHORT SHIFT + CURSED BELLS | 0.975 | 1.840 |
-| BLACKOUT + LIGHT SLEEPER + CURSED BELLS | 0.939 | 1.772 |
+| BLACKOUT + LIGHT SLEEPER + CURSED BELLS | 0.939 | 1.771 |
 | BLACKOUT + LIGHT SLEEPER + RAISED TARGETS | 0.939 | 1.771 |
 | BLACKOUT + LIGHT SLEEPER + SHORT SHIFT | 0.933 | 1.760 |
 | EGGSHELL CONTRACT + LIGHT SLEEPER + STORM CELL | 0.927 | 1.750 |
-| EGGSHELL CONTRACT + AMPED UP + RAISED TARGETS | 0.914 | 1.725 |
 | EGGSHELL CONTRACT + CURSED BELLS + AMPED UP | 0.914 | 1.725 |
+| EGGSHELL CONTRACT + AMPED UP + RAISED TARGETS | 0.914 | 1.724 |
 | EGGSHELL CONTRACT + SHORT SHIFT + AMPED UP | 0.909 | 1.715 |
 | LIGHT SLEEPER + AMPED UP + STORM CELL | 0.890 | 1.680 |
-| EGGSHELL CONTRACT + CURSED BELLS + RAISED TARGETS | 0.876 | 1.654 |
+| EGGSHELL CONTRACT + CURSED BELLS + RAISED TARGETS | 0.876 | 1.653 |
 | BLACKOUT + EGGSHELL CONTRACT + AMPED UP | 0.874 | 1.650 |
 | EGGSHELL CONTRACT + SHORT SHIFT + CURSED BELLS | 0.871 | 1.643 |
-| EGGSHELL CONTRACT + SHORT SHIFT + RAISED TARGETS | 0.871 | 1.643 |
-| LIGHT SLEEPER + RAISED TARGETS + STORM CELL | 0.853 | 1.610 |
+| EGGSHELL CONTRACT + SHORT SHIFT + RAISED TARGETS | 0.870 | 1.642 |
 | LIGHT SLEEPER + CURSED BELLS + STORM CELL | 0.853 | 1.610 |
-| LIGHT SLEEPER + SHORT SHIFT + STORM CELL | 0.848 | 1.600 |
+| LIGHT SLEEPER + RAISED TARGETS + STORM CELL | 0.853 | 1.610 |
+
+## Severity cap (SEVERITY_CAP = 1.900)
+
+`pickModifiers` (`packages/shared/src/mission.ts`) no longer deals the harshest stacks at full
+probability. Mechanics:
+
+- Draw 3 of 8 uniformly as before: one rng call per pick from the shrinking pool, in the same
+  order, so a seed deals the same first two picks it always did.
+- If `comboSeverity(draw) > 1.900`, ONLY the last pick is re-rolled: one extra rng call, no loop.
+  The redraw bag is the remaining pool restricted to candidates that bring the combo back
+  under the cap; the redraw result is accepted as-is. The re-roll always lands on a DIFFERENT
+  id (the rejected pick was spliced out of the pool), so the dealt combo never equals the
+  over-cap draw that triggered it.
+- Refinement vs the raw "re-draw and accept unconditionally" rule: the redraw bag is filtered
+  to under-cap candidates. Unfiltered, a re-roll can still land over the cap (e.g.
+  LIGHT SLEEPER + SHORT SHIFT + AMPED UP re-rolled to EGGSHELL CONTRACT = 2.0), which would
+  (a) break the invariant that no dealt combo exceeds the cap and (b) keep every combo
+  reachable, leaving this reachability section nothing to report. The filtered bag is never
+  empty with the current weights: any storm combo weighs <= 1.4 x 1.25 x 1.0 = 1.75, so a
+  cap-firing draw can never contain STORM CELL, and storm (weight 1.0) therefore always
+  survives into the bag. If weights ever change so it could be empty, the raw remaining pool
+  is the fallback (still bounded, no loop).
+
+### What the cap excludes
+
+CAP = 1.900 excludes 8 of 56 combos (14.286% of the
+pre-cap distribution -- the "top ~15%" line): severities 1.920 to
+2.100. Highest-severity combo still dealt: LIGHT SLEEPER + CURSED BELLS + RAISED TARGETS at sev 1.851.
+
+| excluded combo | sev |
+| --- | --- |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP | 2.100 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS | 2.012 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS | 2.012 |
+| EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT | 2.000 |
+| LIGHT SLEEPER + CURSED BELLS + AMPED UP | 1.932 |
+| LIGHT SLEEPER + AMPED UP + RAISED TARGETS | 1.932 |
+| BLACKOUT + EGGSHELL CONTRACT + LIGHT SLEEPER | 1.925 |
+| LIGHT SLEEPER + SHORT SHIFT + AMPED UP | 1.920 |
+
+The cap fires on 8/56 = 14.286% of initial draws (the same combos: severity is
+order-independent, so every permutation of an over-cap combo trips it). Those missions
+re-roll their third pick once; the dealt combo is always back under the cap.
+
+### Post-cap reachability
+
+Exact per-combo deal probabilities, from enumerating all 336 ordered initial draws
+(8x7x6, each 1/336) plus the production redraw rule above -- no rng involved; they sum to
+1.000:
+
+- 8 combos are UNREACHABLE -- the cap can never deal them:
+
+  - EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP (sev 2.100)
+  - EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS (sev 2.012)
+  - EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS (sev 2.012)
+  - EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT (sev 2.000)
+  - LIGHT SLEEPER + CURSED BELLS + AMPED UP (sev 1.932)
+  - LIGHT SLEEPER + AMPED UP + RAISED TARGETS (sev 1.932)
+  - BLACKOUT + EGGSHELL CONTRACT + LIGHT SLEEPER (sev 1.925)
+  - LIGHT SLEEPER + SHORT SHIFT + AMPED UP (sev 1.920)
+
+- 48 combos remain reachable. Per-mission deal probability ranges from
+1.786% (SHORT SHIFT + CURSED BELLS + RAISED TARGETS) to 4.762% (EGGSHELL CONTRACT + LIGHT SLEEPER + STORM CELL); the pre-cap
+uniform value was 1.786%. The distribution is no longer uniform: combos that are the only
+    safe re-roll target for a common over-cap first pair gain the most (STORM CELL after
+    EGGSHELL CONTRACT + LIGHT SLEEPER).
+- Reachable combos still above 1.6x base severity (sev > 1.6): 18 of 48;
+  expected share of missions dealing one of them: 43.274% (pre-cap: 26/56
+  combos = 46.429% of missions). The mission can still be hard -- the cap only
+  removes the harshest ~15% of the distribution.
+
 
 ### All combos, most brutal first
 
-| # | combo | sec | pressure | threat | fragile | timex | index | xbase | flag |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP | 720 | 0.530 | 1.680 | 1.250 | 1.000 | 1.113 | 2.101 |  |
-| 2 | EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS | 720 | 0.530 | 1.610 | 1.250 | 1.000 | 1.067 | 2.013 |  |
-| 3 | EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS | 720 | 0.609 | 1.400 | 1.250 | 1.000 | 1.067 | 2.012 |  |
-| 4 | EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT | 630 | 0.530 | 1.400 | 1.250 | 1.143 | 1.060 | 2.000 |  |
-| 5 | LIGHT SLEEPER + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.932 | 1.000 | 1.000 | 1.024 | 1.932 |  |
-| 6 | LIGHT SLEEPER + AMPED UP + RAISED TARGETS | 720 | 0.609 | 1.680 | 1.000 | 1.000 | 1.024 | 1.932 |  |
-| 7 | BLACKOUT + EGGSHELL CONTRACT + LIGHT SLEEPER | 720 | 0.530 | 1.540 | 1.250 | 1.000 | 1.020 | 1.925 |  |
-| 8 | LIGHT SLEEPER + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.680 | 1.000 | 1.143 | 1.018 | 1.920 |  |
-| 9 | LIGHT SLEEPER + CURSED BELLS + RAISED TARGETS | 720 | 0.609 | 1.610 | 1.000 | 1.000 | 0.981 | 1.851 |  |
-| 10 | BLACKOUT + LIGHT SLEEPER + AMPED UP | 720 | 0.530 | 1.848 | 1.000 | 1.000 | 0.979 | 1.848 |  |
-| 11 | LIGHT SLEEPER + SHORT SHIFT + RAISED TARGETS | 630 | 0.610 | 1.400 | 1.000 | 1.143 | 0.975 | 1.840 |  |
-| 12 | LIGHT SLEEPER + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.610 | 1.000 | 1.143 | 0.975 | 1.840 |  |
-| 13 | BLACKOUT + LIGHT SLEEPER + CURSED BELLS | 720 | 0.530 | 1.771 | 1.000 | 1.000 | 0.939 | 1.772 |  |
-| 14 | BLACKOUT + LIGHT SLEEPER + RAISED TARGETS | 720 | 0.609 | 1.540 | 1.000 | 1.000 | 0.939 | 1.771 |  |
-| 15 | BLACKOUT + LIGHT SLEEPER + SHORT SHIFT | 630 | 0.530 | 1.540 | 1.000 | 1.143 | 0.933 | 1.760 |  |
-| 16 | EGGSHELL CONTRACT + LIGHT SLEEPER + STORM CELL | 720 | 0.530 | 1.400 | 1.250 | 1.000 | 0.927 | 1.750 |  |
-| 17 | EGGSHELL CONTRACT + AMPED UP + RAISED TARGETS | 720 | 0.609 | 1.200 | 1.250 | 1.000 | 0.914 | 1.725 |  |
-| 18 | EGGSHELL CONTRACT + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.380 | 1.250 | 1.000 | 0.914 | 1.725 |  |
-| 19 | EGGSHELL CONTRACT + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.200 | 1.250 | 1.143 | 0.909 | 1.715 |  |
-| 20 | LIGHT SLEEPER + AMPED UP + STORM CELL | 720 | 0.530 | 1.680 | 1.000 | 1.000 | 0.890 | 1.680 |  |
-| 21 | EGGSHELL CONTRACT + CURSED BELLS + RAISED TARGETS | 720 | 0.610 | 1.150 | 1.250 | 1.000 | 0.876 | 1.654 |  |
-| 22 | BLACKOUT + EGGSHELL CONTRACT + AMPED UP | 720 | 0.530 | 1.320 | 1.250 | 1.000 | 0.874 | 1.650 |  |
-| 23 | EGGSHELL CONTRACT + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.150 | 1.250 | 1.143 | 0.871 | 1.643 |  |
-| 24 | EGGSHELL CONTRACT + SHORT SHIFT + RAISED TARGETS | 630 | 0.609 | 1.000 | 1.250 | 1.143 | 0.871 | 1.643 |  |
-| 25 | LIGHT SLEEPER + RAISED TARGETS + STORM CELL | 720 | 0.610 | 1.400 | 1.000 | 1.000 | 0.853 | 1.610 |  |
-| 26 | LIGHT SLEEPER + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.610 | 1.000 | 1.000 | 0.853 | 1.610 |  |
-| 27 | LIGHT SLEEPER + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.400 | 1.000 | 1.143 | 0.848 | 1.600 |  |
-| 28 | CURSED BELLS + AMPED UP + RAISED TARGETS | 720 | 0.610 | 1.380 | 1.000 | 1.000 | 0.841 | 1.588 |  |
-| 29 | BLACKOUT + EGGSHELL CONTRACT + CURSED BELLS | 720 | 0.530 | 1.265 | 1.250 | 1.000 | 0.838 | 1.582 |  |
-| 30 | BLACKOUT + EGGSHELL CONTRACT + RAISED TARGETS | 720 | 0.609 | 1.100 | 1.250 | 1.000 | 0.838 | 1.581 |  |
-| 31 | SHORT SHIFT + CURSED BELLS + AMPED UP | 630 | 0.530 | 1.380 | 1.000 | 1.143 | 0.836 | 1.578 |  |
-| 32 | SHORT SHIFT + AMPED UP + RAISED TARGETS | 630 | 0.610 | 1.200 | 1.000 | 1.143 | 0.836 | 1.577 |  |
-| 33 | BLACKOUT + EGGSHELL CONTRACT + SHORT SHIFT | 630 | 0.530 | 1.100 | 1.250 | 1.143 | 0.833 | 1.571 |  |
-| 34 | BLACKOUT + LIGHT SLEEPER + STORM CELL | 720 | 0.530 | 1.540 | 1.000 | 1.000 | 0.816 | 1.540 |  |
-| 35 | BLACKOUT + AMPED UP + RAISED TARGETS | 720 | 0.610 | 1.320 | 1.000 | 1.000 | 0.805 | 1.518 |  |
-| 36 | BLACKOUT + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.518 | 1.000 | 1.000 | 0.805 | 1.518 |  |
-| 37 | SHORT SHIFT + CURSED BELLS + RAISED TARGETS | 630 | 0.609 | 1.150 | 1.000 | 1.143 | 0.801 | 1.511 |  |
-| 38 | BLACKOUT + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.320 | 1.000 | 1.143 | 0.800 | 1.509 |  |
-| 39 | EGGSHELL CONTRACT + AMPED UP + STORM CELL | 720 | 0.530 | 1.200 | 1.250 | 1.000 | 0.795 | 1.500 |  |
-| 40 | BLACKOUT + CURSED BELLS + RAISED TARGETS | 720 | 0.610 | 1.265 | 1.000 | 1.000 | 0.771 | 1.455 |  |
-| 41 | BLACKOUT + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.265 | 1.000 | 1.143 | 0.766 | 1.446 |  |
-| 42 | BLACKOUT + SHORT SHIFT + RAISED TARGETS | 630 | 0.609 | 1.100 | 1.000 | 1.143 | 0.766 | 1.446 |  |
-| 43 | EGGSHELL CONTRACT + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.150 | 1.250 | 1.000 | 0.762 | 1.438 |  |
-| 44 | EGGSHELL CONTRACT + RAISED TARGETS + STORM CELL | 720 | 0.609 | 1.000 | 1.250 | 1.000 | 0.762 | 1.437 |  |
-| 45 | EGGSHELL CONTRACT + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.000 | 1.250 | 1.143 | 0.757 | 1.429 |  |
-| 46 | AMPED UP + RAISED TARGETS + STORM CELL | 720 | 0.609 | 1.200 | 1.000 | 1.000 | 0.731 | 1.380 |  |
-| 47 | CURSED BELLS + AMPED UP + STORM CELL | 720 | 0.530 | 1.380 | 1.000 | 1.000 | 0.731 | 1.380 |  |
-| 48 | BLACKOUT + EGGSHELL CONTRACT + STORM CELL | 720 | 0.530 | 1.100 | 1.250 | 1.000 | 0.729 | 1.375 |  |
-| 49 | SHORT SHIFT + AMPED UP + STORM CELL | 630 | 0.530 | 1.200 | 1.000 | 1.143 | 0.727 | 1.372 |  |
-| 50 | CURSED BELLS + RAISED TARGETS + STORM CELL | 720 | 0.610 | 1.150 | 1.000 | 1.000 | 0.701 | 1.323 |  |
-| 51 | BLACKOUT + AMPED UP + STORM CELL | 720 | 0.530 | 1.320 | 1.000 | 1.000 | 0.700 | 1.320 |  |
-| 52 | SHORT SHIFT + RAISED TARGETS + STORM CELL | 630 | 0.609 | 1.000 | 1.000 | 1.143 | 0.697 | 1.314 |  |
-| 53 | SHORT SHIFT + CURSED BELLS + STORM CELL | 630 | 0.530 | 1.150 | 1.000 | 1.143 | 0.696 | 1.314 |  |
-| 54 | BLACKOUT + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.265 | 1.000 | 1.000 | 0.671 | 1.265 |  |
-| 55 | BLACKOUT + RAISED TARGETS + STORM CELL | 720 | 0.609 | 1.100 | 1.000 | 1.000 | 0.670 | 1.265 |  |
-| 56 | BLACKOUT + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.100 | 1.000 | 1.143 | 0.666 | 1.257 |  |
+| # | combo | sec | pressure | threat | fragile | timex | sev | index | xbase | deal% | flag |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP | 720 | 0.530 | 1.680 | 1.250 | 1.000 | 2.100 | 1.113 | 2.100 | 0.000% |  |
+| 2 | EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS | 720 | 0.610 | 1.400 | 1.250 | 1.000 | 2.012 | 1.067 | 2.013 | 0.000% |  |
+| 3 | EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS | 720 | 0.530 | 1.610 | 1.250 | 1.000 | 2.012 | 1.067 | 2.012 | 0.000% |  |
+| 4 | EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT | 630 | 0.530 | 1.400 | 1.250 | 1.143 | 2.000 | 1.060 | 2.000 | 0.000% |  |
+| 5 | LIGHT SLEEPER + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.932 | 1.000 | 1.000 | 1.932 | 1.024 | 1.932 | 0.000% |  |
+| 6 | LIGHT SLEEPER + AMPED UP + RAISED TARGETS | 720 | 0.609 | 1.680 | 1.000 | 1.000 | 1.932 | 1.024 | 1.931 | 0.000% |  |
+| 7 | BLACKOUT + EGGSHELL CONTRACT + LIGHT SLEEPER | 720 | 0.530 | 1.540 | 1.250 | 1.000 | 1.925 | 1.020 | 1.925 | 0.000% |  |
+| 8 | LIGHT SLEEPER + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.680 | 1.000 | 1.143 | 1.920 | 1.018 | 1.921 | 0.000% |  |
+| 9 | LIGHT SLEEPER + CURSED BELLS + RAISED TARGETS | 720 | 0.610 | 1.610 | 1.000 | 1.000 | 1.851 | 0.981 | 1.852 | 2.381% |  |
+| 10 | BLACKOUT + LIGHT SLEEPER + AMPED UP | 720 | 0.530 | 1.848 | 1.000 | 1.000 | 1.848 | 0.980 | 1.848 | 3.095% |  |
+| 11 | LIGHT SLEEPER + SHORT SHIFT + RAISED TARGETS | 630 | 0.610 | 1.400 | 1.000 | 1.143 | 1.840 | 0.975 | 1.840 | 2.381% |  |
+| 12 | LIGHT SLEEPER + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.610 | 1.000 | 1.143 | 1.840 | 0.975 | 1.840 | 2.381% |  |
+| 13 | BLACKOUT + LIGHT SLEEPER + CURSED BELLS | 720 | 0.530 | 1.771 | 1.000 | 1.000 | 1.771 | 0.939 | 1.771 | 2.202% |  |
+| 14 | BLACKOUT + LIGHT SLEEPER + RAISED TARGETS | 720 | 0.610 | 1.540 | 1.000 | 1.000 | 1.771 | 0.939 | 1.771 | 2.202% |  |
+| 15 | BLACKOUT + LIGHT SLEEPER + SHORT SHIFT | 630 | 0.530 | 1.540 | 1.000 | 1.143 | 1.760 | 0.933 | 1.760 | 2.202% |  |
+| 16 | EGGSHELL CONTRACT + LIGHT SLEEPER + STORM CELL | 720 | 0.530 | 1.400 | 1.250 | 1.000 | 1.750 | 0.927 | 1.750 | 4.762% |  |
+| 17 | EGGSHELL CONTRACT + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.380 | 1.250 | 1.000 | 1.725 | 0.914 | 1.725 | 2.143% |  |
+| 18 | EGGSHELL CONTRACT + AMPED UP + RAISED TARGETS | 720 | 0.609 | 1.200 | 1.250 | 1.000 | 1.725 | 0.914 | 1.724 | 2.143% |  |
+| 19 | EGGSHELL CONTRACT + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.200 | 1.250 | 1.143 | 1.714 | 0.909 | 1.715 | 2.143% |  |
+| 20 | LIGHT SLEEPER + AMPED UP + STORM CELL | 720 | 0.530 | 1.680 | 1.000 | 1.000 | 1.680 | 0.890 | 1.680 | 2.976% |  |
+| 21 | EGGSHELL CONTRACT + CURSED BELLS + RAISED TARGETS | 720 | 0.609 | 1.150 | 1.250 | 1.000 | 1.653 | 0.876 | 1.653 | 2.024% |  |
+| 22 | BLACKOUT + EGGSHELL CONTRACT + AMPED UP | 720 | 0.530 | 1.320 | 1.250 | 1.000 | 1.650 | 0.874 | 1.650 | 2.024% |  |
+| 23 | EGGSHELL CONTRACT + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.150 | 1.250 | 1.143 | 1.643 | 0.871 | 1.643 | 2.024% |  |
+| 24 | EGGSHELL CONTRACT + SHORT SHIFT + RAISED TARGETS | 630 | 0.609 | 1.000 | 1.250 | 1.143 | 1.643 | 0.870 | 1.642 | 2.024% |  |
+| 25 | LIGHT SLEEPER + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.610 | 1.000 | 1.000 | 1.610 | 0.853 | 1.610 | 2.083% |  |
+| 26 | LIGHT SLEEPER + RAISED TARGETS + STORM CELL | 720 | 0.609 | 1.400 | 1.000 | 1.000 | 1.610 | 0.853 | 1.610 | 2.083% |  |
+| 27 | LIGHT SLEEPER + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.400 | 1.000 | 1.143 | 1.600 | 0.848 | 1.600 | 2.083% |  |
+| 28 | CURSED BELLS + AMPED UP + RAISED TARGETS | 720 | 0.610 | 1.380 | 1.000 | 1.000 | 1.587 | 0.841 | 1.587 | 2.024% |  |
+| 29 | BLACKOUT + EGGSHELL CONTRACT + RAISED TARGETS | 720 | 0.610 | 1.100 | 1.250 | 1.000 | 1.581 | 0.838 | 1.582 | 2.024% |  |
+| 30 | BLACKOUT + EGGSHELL CONTRACT + CURSED BELLS | 720 | 0.530 | 1.265 | 1.250 | 1.000 | 1.581 | 0.838 | 1.581 | 2.024% |  |
+| 31 | SHORT SHIFT + CURSED BELLS + AMPED UP | 630 | 0.530 | 1.380 | 1.000 | 1.143 | 1.577 | 0.836 | 1.577 | 2.024% |  |
+| 32 | SHORT SHIFT + AMPED UP + RAISED TARGETS | 630 | 0.609 | 1.200 | 1.000 | 1.143 | 1.577 | 0.836 | 1.577 | 2.024% |  |
+| 33 | BLACKOUT + EGGSHELL CONTRACT + SHORT SHIFT | 630 | 0.530 | 1.100 | 1.250 | 1.143 | 1.571 | 0.833 | 1.571 | 2.024% |  |
+| 34 | BLACKOUT + LIGHT SLEEPER + STORM CELL | 720 | 0.530 | 1.540 | 1.000 | 1.000 | 1.540 | 0.816 | 1.540 | 1.905% |  |
+| 35 | BLACKOUT + AMPED UP + RAISED TARGETS | 720 | 0.610 | 1.320 | 1.000 | 1.000 | 1.518 | 0.805 | 1.518 | 1.905% |  |
+| 36 | BLACKOUT + CURSED BELLS + AMPED UP | 720 | 0.530 | 1.518 | 1.000 | 1.000 | 1.518 | 0.804 | 1.518 | 1.905% |  |
+| 37 | SHORT SHIFT + CURSED BELLS + RAISED TARGETS | 630 | 0.609 | 1.150 | 1.000 | 1.143 | 1.511 | 0.801 | 1.511 | 1.786% |  |
+| 38 | BLACKOUT + SHORT SHIFT + AMPED UP | 630 | 0.530 | 1.320 | 1.000 | 1.143 | 1.509 | 0.800 | 1.509 | 1.905% |  |
+| 39 | EGGSHELL CONTRACT + AMPED UP + STORM CELL | 720 | 0.530 | 1.200 | 1.250 | 1.000 | 1.500 | 0.795 | 1.500 | 1.905% |  |
+| 40 | BLACKOUT + CURSED BELLS + RAISED TARGETS | 720 | 0.610 | 1.265 | 1.000 | 1.000 | 1.455 | 0.771 | 1.455 | 1.786% |  |
+| 41 | BLACKOUT + SHORT SHIFT + CURSED BELLS | 630 | 0.530 | 1.265 | 1.000 | 1.143 | 1.446 | 0.766 | 1.446 | 1.786% |  |
+| 42 | BLACKOUT + SHORT SHIFT + RAISED TARGETS | 630 | 0.609 | 1.100 | 1.000 | 1.143 | 1.446 | 0.766 | 1.445 | 1.786% |  |
+| 43 | EGGSHELL CONTRACT + RAISED TARGETS + STORM CELL | 720 | 0.610 | 1.000 | 1.250 | 1.000 | 1.438 | 0.762 | 1.438 | 1.905% |  |
+| 44 | EGGSHELL CONTRACT + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.150 | 1.250 | 1.000 | 1.438 | 0.762 | 1.438 | 1.905% |  |
+| 45 | EGGSHELL CONTRACT + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.000 | 1.250 | 1.143 | 1.429 | 0.757 | 1.429 | 1.905% |  |
+| 46 | CURSED BELLS + AMPED UP + STORM CELL | 720 | 0.530 | 1.380 | 1.000 | 1.000 | 1.380 | 0.732 | 1.381 | 1.905% |  |
+| 47 | AMPED UP + RAISED TARGETS + STORM CELL | 720 | 0.610 | 1.200 | 1.000 | 1.000 | 1.380 | 0.731 | 1.380 | 1.905% |  |
+| 48 | BLACKOUT + EGGSHELL CONTRACT + STORM CELL | 720 | 0.530 | 1.100 | 1.250 | 1.000 | 1.375 | 0.729 | 1.375 | 1.905% |  |
+| 49 | SHORT SHIFT + AMPED UP + STORM CELL | 630 | 0.530 | 1.200 | 1.000 | 1.143 | 1.371 | 0.727 | 1.372 | 1.905% |  |
+| 50 | CURSED BELLS + RAISED TARGETS + STORM CELL | 720 | 0.610 | 1.150 | 1.000 | 1.000 | 1.322 | 0.701 | 1.323 | 1.786% |  |
+| 51 | BLACKOUT + AMPED UP + STORM CELL | 720 | 0.530 | 1.320 | 1.000 | 1.000 | 1.320 | 0.700 | 1.320 | 1.786% |  |
+| 52 | SHORT SHIFT + CURSED BELLS + STORM CELL | 630 | 0.530 | 1.150 | 1.000 | 1.143 | 1.314 | 0.697 | 1.314 | 1.786% |  |
+| 53 | SHORT SHIFT + RAISED TARGETS + STORM CELL | 630 | 0.609 | 1.000 | 1.000 | 1.143 | 1.314 | 0.696 | 1.314 | 1.786% |  |
+| 54 | BLACKOUT + RAISED TARGETS + STORM CELL | 720 | 0.609 | 1.100 | 1.000 | 1.000 | 1.265 | 0.670 | 1.265 | 1.786% |  |
+| 55 | BLACKOUT + CURSED BELLS + STORM CELL | 720 | 0.530 | 1.265 | 1.000 | 1.000 | 1.265 | 0.670 | 1.265 | 1.786% |  |
+| 56 | BLACKOUT + SHORT SHIFT + STORM CELL | 630 | 0.530 | 1.100 | 1.000 | 1.143 | 1.257 | 0.666 | 1.257 | 1.786% |  |
 
 ### 5 most brutal
 
-- EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP -- index 1.113 (2.101x base)
-- EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS -- index 1.067 (2.013x base)
-- EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS -- index 1.067 (2.012x base)
+- EGGSHELL CONTRACT + LIGHT SLEEPER + AMPED UP -- index 1.113 (2.100x base)
+- EGGSHELL CONTRACT + LIGHT SLEEPER + RAISED TARGETS -- index 1.067 (2.013x base)
+- EGGSHELL CONTRACT + LIGHT SLEEPER + CURSED BELLS -- index 1.067 (2.012x base)
 - EGGSHELL CONTRACT + LIGHT SLEEPER + SHORT SHIFT -- index 1.060 (2.000x base)
 - LIGHT SLEEPER + CURSED BELLS + AMPED UP -- index 1.024 (1.932x base)
 
 ### 5 most benign
 
 - BLACKOUT + SHORT SHIFT + STORM CELL -- index 0.666 (1.257x base)
+- BLACKOUT + CURSED BELLS + STORM CELL -- index 0.670 (1.265x base)
 - BLACKOUT + RAISED TARGETS + STORM CELL -- index 0.670 (1.265x base)
-- BLACKOUT + CURSED BELLS + STORM CELL -- index 0.671 (1.265x base)
-- SHORT SHIFT + CURSED BELLS + STORM CELL -- index 0.696 (1.314x base)
-- SHORT SHIFT + RAISED TARGETS + STORM CELL -- index 0.697 (1.314x base)
+- SHORT SHIFT + RAISED TARGETS + STORM CELL -- index 0.696 (1.314x base)
+- SHORT SHIFT + CURSED BELLS + STORM CELL -- index 0.697 (1.314x base)
 
 ### Draw frequency
 
-`pickModifiers` draws 3 of 8 uniformly without replacement (mission.ts:57), so all 56 combos are equally likely: 1.79% per mission each. A flagged combo is rare in absolute terms (~1-in-56 per mission per combo), but across a session of ~30 missions the expected hits for any 3 specific combos is ~1.6, so brutal combos WILL be seen in regular play.
+Pre-cap, `pickModifiers` drew 3 of 8 uniformly without replacement, so all 56 combos
+were equally likely at 1.786% per mission. With SEVERITY_CAP the live distribution is no
+longer uniform: the "deal%" column above and the "Post-cap reachability" section give the
+exact numbers. The 8 capped combos can never appear; the rest still show
+up regularly (the expected hits for any 3 specific reachable combos across a ~30-mission
+session is ~1.6), just never harsher than sev 1.900.
 
 ## Caveats -- what the index ignores (read before trusting it)
 

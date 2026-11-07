@@ -1,6 +1,6 @@
 // Results screen: DUSTPAN RECOVERY shift report (debrief) — outcome, crew
-// ledger, employee file, management notes, instant replay.
-import React, { useMemo, useState } from "react";
+// ledger, employee file, management notes, personnel file, instant replay.
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { COLORS, MODIFIERS, type MissionAwardRow, type MissionResults } from "@last-stop/shared";
 import type { HudState } from "../game/store.js";
 import type { Net } from "../net.js";
@@ -38,6 +38,32 @@ function pickNotes(outcome: string, count: number): string[] {
     out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
   }
   return out;
+}
+
+// Personnel file: per-browser personal bests, kept in localStorage
+// ("laststop.best", same pattern as App's "laststop.prefs"). haul = best
+// single-shift salvage (max, any outcome); time = fastest successful shift in
+// seconds (min, escaped runs only). A missing/blank record means the section
+// stays hidden until a first shift files one.
+const BEST_KEY = "laststop.best";
+
+interface PersonnelBest {
+  haul?: number;
+  time?: number;
+}
+
+function loadBest(): PersonnelBest {
+  try {
+    const raw = localStorage.getItem(BEST_KEY);
+    if (!raw) return {};
+    const p = JSON.parse(raw) as PersonnelBest;
+    return {
+      haul: typeof p.haul === "number" ? p.haul : undefined,
+      time: typeof p.time === "number" ? p.time : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 // Crew status derived from outcome + per-row stats (all client-visible data).
@@ -105,6 +131,53 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
   // predates the field.
   const shiftLen =
     typeof results?.shiftSeconds === "number" ? clock(Math.max(0, Math.round(results.shiftSeconds))) : "";
+
+  // Personnel file bookkeeping. Reads once on mount, then re-reads + persists
+  // once per fresh results payload (ref-guarded, so re-renders and StrictMode
+  // double-fired effects can't double-count a record). A stat is only flagged
+  // as a new record when it beats a value that already existed — a first-ever
+  // entry files itself quietly.
+  const bestRef = useRef<string | null>(null);
+  const [best, setBest] = useState<PersonnelBest>(loadBest);
+  const [newHaul, setNewHaul] = useState(false);
+  const [newTime, setNewTime] = useState(false);
+
+  useEffect(() => {
+    if (!results || bestRef.current === hud.resultsJson) return;
+    bestRef.current = hud.resultsJson;
+    const prev = loadBest();
+    const next: PersonnelBest = { ...prev };
+    let haulPB = false;
+    let timePB = false;
+    const haul = Math.round(results.salvage);
+    if (typeof prev.haul === "number") {
+      if (haul > prev.haul) {
+        next.haul = haul;
+        haulPB = true;
+      }
+    } else {
+      next.haul = haul;
+    }
+    if (win && typeof results.shiftSeconds === "number") {
+      const t = Math.max(0, Math.round(results.shiftSeconds));
+      if (typeof prev.time === "number") {
+        if (t < prev.time) {
+          next.time = t;
+          timePB = true;
+        }
+      } else {
+        next.time = t;
+      }
+    }
+    try {
+      localStorage.setItem(BEST_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable (private mode etc): bests just don't persist */
+    }
+    setBest(next);
+    setNewHaul(haulPB);
+    setNewTime(timePB);
+  }, [results, win, hud.resultsJson]);
 
   return (
     <div className="results">
@@ -221,6 +294,20 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
             ))}
           </ul>
         </div>
+
+        {(best.haul !== undefined || best.time !== undefined) && (
+          <div className="personnel">
+            <div className="report-sec">PERSONNEL FILE — PERMANENT RECORD</div>
+            <ul>
+              {best.haul !== undefined && (
+                <li className={newHaul ? "record" : undefined}>best haul {money(best.haul)}</li>
+              )}
+              {best.time !== undefined && (
+                <li className={newTime ? "record" : undefined}>fastest clean exit {clock(best.time)}</li>
+              )}
+            </ul>
+          </div>
+        )}
 
         <div className="results-actions">
           <button className="btn primary" onClick={() => net.act("replay")}>

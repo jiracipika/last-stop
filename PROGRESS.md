@@ -2,7 +2,27 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel slices (2026-11-06)
+
+### Severity cap, spawn-in fix, benchmarks, personnel file (2026-11-06) — done
+
+- **Severity-capped modifier draw**: `comboSeverity()` now lives in shared (single source of
+  truth with the sweep tool) and `pickModifiers` re-rolls the last pick through a filtered
+  benign bag when a draw exceeds SEVERITY_CAP = 1.9 — the top-8 harshest stacks (incl.
+  fragile+sensitive+wired at 2.10× base) can no longer be dealt. Fires on ~14.3% of draws;
+  first two picks per seed unchanged; downstream rng consumption unaffected. 4 new tests
+  (rigged draws, 2000-seed sweep, determinism). BALANCE.md regenerated (also fixed a stale
+  doc: 26/56 combos over 1.6× base pre-cap, not 21).
+- **Spawn-in slingshot fixed** (found by the new bench tool): the predictor kept stepping
+  through lobby/briefing, so the startMission teleport got reconcile-slingshot across the map
+  for ~8-9 s at every spawn-in. The client now pins to the authoritative position outside
+  mission phases.
+- **docs/PERF.md** (new `e2e/bench.ts`): per-preset idle/walk draw calls + fps. Finding:
+  presets change per-pixel cost (DPR/AA/fog/dust), not draw calls (~165 across tiers) —
+  on SwiftShader fps cells are load-dependent floors; rerun on a quiet box for real numbers.
+- **PERSONNEL FILE on the debrief**: per-browser records (best haul; fastest clean exit for
+  escapes) with a subtle highlight on a beaten record; first-ever entries file quietly.
+- Verification: tsc ×3 clean; vitest + e2e below.
 
 ### Co-op presence + loot variety (2026-11-06) — done
 

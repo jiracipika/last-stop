@@ -986,6 +986,32 @@ body,
   left: 4px;
   color: #E6AD61;
 }
+/* personnel file: per-browser personal bests, same receipt voice as the
+   management notes; a stat that just set a record gets a quiet gold wash */
+.personnel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.personnel li {
+  position: relative;
+  padding: 6px 0 6px 20px;
+  border-bottom: 1px dotted #1d2530;
+  color: #b7c3d1;
+  font-size: 12.5px;
+  letter-spacing: 1px;
+  line-height: 1.55;
+}
+.personnel li::before {
+  content: ">";
+  position: absolute;
+  left: 4px;
+  color: #E6AD61;
+}
+.personnel li.record {
+  color: #ffd268;
+  background: rgba(255, 210, 104, 0.05);
+}
 .results-actions {
   display: flex;
   gap: 10px;

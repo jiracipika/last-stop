@@ -55,7 +55,7 @@ STORM CELL modifiers (rain, lightning, delayed thunder).
 | 2 | Second enemy or second map | high | replay variety | L | mission-flow tests + e2e for the new content |
 | 3 | Progression/economy (shift streaks, van upgrades) | medium | retention | L | server tests + results-screen surfacing |
 | 4 | In-engine title (3D backdrop behind the clipboard) + quality presets UI | medium | first impression, device reach | M | title shows the lot; preset toggles measurable |
-| 5 | Balance pass on the expanded modifier pool (8, pick 3 — seeds may now be brutal) | medium | fairness | M | seed sweep script: no modifier combo exceeds ~1.6× base difficulty |
+| 5 | Modifier balance: DONE in first pass (SEVERITY_CAP 1.9 draw cap, docs/BALANCE.md) — residual: re-verify the guessed weights (blackout 1.1, fragile 1.25) against real play | low | fairness | S | playtest notes on hard stacks |
 | 6 | Remotes smoothing + perf presets benchmarking | medium | smooth others | M | route benchmark numbers per preset |
 | 7 | Full regression + balance pass | — | ship quality | M | all suites green |
 
