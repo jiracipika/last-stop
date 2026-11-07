@@ -746,6 +746,57 @@ body,
   color: #46545f;
   font-size: 11px;
 }
+.lat-chip {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  padding: 4px 10px;
+  background: rgba(8, 12, 18, 0.82);
+  border: 1px solid #2a3442;
+  border-radius: 6px;
+  color: #8a99ac;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.lat-chip.amber {
+  color: #ffbe55;
+  border-color: #6e5a30;
+}
+.lat-chip.red {
+  color: #ff6e5e;
+  border-color: #6e4030;
+  animation: chasePulse 1.2s infinite;
+}
+.compass {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 14px;
+  background: rgba(8, 12, 18, 0.85);
+  border: 1px solid #2a3442;
+  border-radius: 6px;
+  color: #78e8ff;
+  font-size: 12px;
+  letter-spacing: 2px;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.compass.on {
+  opacity: 1;
+}
+.compass-arrow {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 13px solid #78e8ff;
+  filter: drop-shadow(0 0 4px rgba(120, 232, 255, 0.6));
+  transition: transform 0.15s linear;
+}
 
 /* ---------- briefing (night-shift briefing sheet; same receipt voice as the
    shift report, printed over the live lot) ---------- */

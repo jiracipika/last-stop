@@ -36,28 +36,30 @@ renderer** (motel sign canvas + one name sprite). Vision-model audit + code read
    genre's iconography). Medium-high.
 7. **No motion anywhere** — nothing sways, flickers, or drifts; the night feels dead, not
    tense. Medium.
-8. **Title screen is DOM-only** — no in-engine composition. Medium (backlog).
+8. **Title screen was DOM-only** — no in-engine composition. Medium (backlog). SHIPPED 2026-11-06: attract-mode backdrop.
 9. **HUD praised by the audit** ("strongest part of the frame") — leave mostly alone. —
 
 ## Backlog (priority order; each item = one reviewable slice)
 
-SHIPPED (2026-11-05 → 2026-11-06): texture pipeline + lighting + landmarks (slice 1);
+SHIPPED (2026-11-05 → 2026-11-07): texture pipeline + lighting + landmarks (slice 1);
 van presentation; hiding in junkers + dumpster + hats; junker geometry; Caretaker lantern
 pool + footsteps/clinks/drag; debrief shift-report + real survival data + first e2e
 screenshot of results; static-geometry merge (380 → 184 draw calls); stop-slide + sprint
 FOV + view-bob + bump thuds (carrying dead-stops: leash); spotted/lost/investigate/windup
 cues; chaseSid over the wire (targeted-you sting + toast); RAISED TARGETS / AMPED UP /
-STORM CELL modifiers (rain, lightning, delayed thunder).
+STORM CELL modifiers (rain, lightning, delayed thunder); in-engine attract-mode title +
+quality presets + PERSONNEL FILE bests + briefing sheet; netcode smoothing (predictor
+parity, decaying reconcile, 30 Hz patches); hide-spot dome lights + flush doors;
+success pull-away end-beat + escape compass + latency chip.
 
 | # | Slice | Severity | Player impact | Effort | Acceptance |
 |---|---|---|---|---|---|
-| 1 | Human playtest pass: feel constants (bob amp, FOV kick, coast, bump threshold, storm flash peak, lostYou floor) + hide/fairness feel | high | everything tuned by math gets ears/eyes | S (review) | playtest notes → constant tweaks → one regression gate |
+| 1 | Human playtest pass: feel constants (bob amp, FOV kick, coast, bump threshold, storm flash peak, lostYou floor) + hide/fairness feel + pull-away beat | high | everything tuned by math gets ears/eyes | S (review) | playtest notes → constant tweaks → one regression gate |
 | 2 | Second enemy or second map | high | replay variety | L | mission-flow tests + e2e for the new content |
 | 3 | Progression/economy (shift streaks, van upgrades) | medium | retention | L | server tests + results-screen surfacing |
-| 4 | In-engine title (3D backdrop behind the clipboard) + quality presets UI | medium | first impression, device reach | M | title shows the lot; preset toggles measurable |
-| 5 | Modifier balance: DONE in first pass (SEVERITY_CAP 1.9 draw cap, docs/BALANCE.md) — residual: re-verify the guessed weights (blackout 1.1, fragile 1.25) against real play | low | fairness | S | playtest notes on hard stacks |
-| 6 | Remotes smoothing + perf presets benchmarking | medium | smooth others | M | route benchmark numbers per preset |
-| 7 | Full regression + balance pass | — | ship quality | M | all suites green |
+| 4 | Modifier balance: DONE in first pass (SEVERITY_CAP 1.9 draw cap, docs/BALANCE.md) — residual: re-verify the guessed weights (blackout 1.1, fragile 1.25) against real play | low | fairness | S | playtest notes on hard stacks |
+| 5 | Remote-player smoothing residuals (pstep gains need ears) + per-preset bench rerun on a quiet box | medium | smooth others | M | route benchmark numbers per preset |
+| 6 | Full regression + balance pass | — | ship quality | M | all suites green |
 
 Deferred (per direction): voice chat, progression economy details.
 
@@ -106,5 +108,6 @@ unless noted). Tiles at consistent world scale: floors 4 m/tile, walls ~4 m/tile
   is backlog item 6.
 - Residual, accepted for now: exterior facade texture reads mostly flat beyond ~15 m — night
   grade + fog crush it by design; sign + porch lights + windows carry the facade at range.
-  Title screen is still DOM-only (backlog item 5).
+  Title screen: shipped 2026-11-06 as the in-engine attract-mode backdrop (auto-playing lot
+  camera behind the clipboard).
 

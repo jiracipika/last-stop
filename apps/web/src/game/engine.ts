@@ -177,6 +177,8 @@ export class Engine {
   private watchedRoom: unknown = null; // room instance the patch stamp is wired to
   private hudTimer = 0;
   private lastPhase = "lobby";
+  private lastPullT = 0; // previous frame's van.pullT, for the pull-away cue
+  private pullCued = false; // engine-start rumble fires once per mission
   private stormOn = false;
   private wasSeated = 0;
   private disposers: (() => void)[] = [];
@@ -993,6 +995,20 @@ export class Engine {
     const vs = this.vanBuf.sample(renderAt) ?? { x: v.x, z: v.z, yaw: v.yaw };
     this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t);
     this.vanView.syncCargo(v.cargo.length, v.strapped, t);
+    // pull-away cue: the server eases van.pullT 0 -> 1 when a successful
+    // mission starts the drive-off; the 0 crossing fires the engine-start
+    // rumble once per mission (latch resets outside escape/results).
+    if (st.phase === "escape" || st.phase === "results") {
+      const pullT = v.pullT;
+      if (pullT > 0 && this.lastPullT <= 0 && !this.pullCued) {
+        this.pullCued = true;
+        audio.engineStart(vs.x, vs.z, cam);
+      }
+      this.lastPullT = pullT;
+    } else {
+      this.lastPullT = 0;
+      this.pullCued = false;
+    }
     const e = st.enemy;
     this.enemyView.group.visible = st.phase === "scavenge" || st.phase === "escape";
     this.enemyBuf.push(this.lastPatchAt || nowMs, e.x, e.z, e.yaw);
@@ -1329,7 +1345,7 @@ export class Engine {
       twoHandle: def?.twoHandle ?? false,
       prompt: this.target?.label ?? "",
       teammates,
-      ping: this.net.ping,
+      ping: this.net.rttMs,
       modifiers: [...st.modifiers],
       escalation: st.escalation,
       gateOpen: st.gateOpen,

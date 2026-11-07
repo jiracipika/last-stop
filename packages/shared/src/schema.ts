@@ -87,6 +87,7 @@ export const VanState = schema(
     z: t.float64(),
     yaw: t.float64(),
     speed: t.float64(),
+    pullT: t.float64(), // 0..1 eased progress of the success pull-away (0 = not pulling)
     doorsOpen: t.boolean(),
     lightsOn: t.boolean(),
     partInstalled: t.boolean(),

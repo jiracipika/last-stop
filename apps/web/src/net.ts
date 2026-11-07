@@ -7,16 +7,23 @@ export type Ev = { t: string; [k: string]: unknown };
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "error" | "reconnecting";
 
+/** The page's Net instance (App builds one; set once a room actually joins).
+ *  The HUD reads live room state through this instead of importing the
+ *  engine or its predictor. */
+export let activeNet: Net | null = null;
+
 export class Net {
   client: Client;
   room: Room<RoomState> | null = null;
   status: ConnStatus = "idle";
   statusDetail = "";
-  ping = 0;
+  /** Last round-trip in ms; -1 = unknown (no pong yet, or disconnected). */
+  rttMs = -1;
   evListeners = new Set<(e: Ev) => void>();
   statusListeners = new Set<() => void>();
   private inputTimer: number | null = null;
   private pingTimer: number | null = null;
+  private pingSentAt = 0;
   private queuedInput: Record<string, unknown> | null = null;
   private reconnectionToken = "";
   private reconnectTries = 0;
@@ -106,11 +113,24 @@ export class Net {
       /* older SDK: no toggle, our flow still works */
     }
     this.setStatus("connected");
-    room.onMessage("ev", (msg: unknown) => this.emit(msg as Ev));
+    activeNet = this;
+    room.onMessage("ev", (msg: unknown) => {
+      const e = msg as Ev;
+      // Latency probe echo: the room answers "ping" with ev { t: "pong",
+      // c: <the number we sent> }. Only an exact match counts, so a stale
+      // pong can never pass for a fresh one.
+      if (e.t === "pong" && typeof e.c === "number" && this.pingSentAt > 0 && e.c === this.pingSentAt) {
+        this.rttMs = Math.round(performance.now() - this.pingSentAt);
+        this.pingSentAt = 0;
+      }
+      this.emit(e);
+    });
     room.onError((code, message) => {
       this.emit({ t: "roomError", code, msg: message });
     });
     room.onLeave((code) => {
+      this.rttMs = -1; // unknown until the next probe lands
+      this.pingSentAt = 0;
       if (code === 1000 || code === 1001) {
         this.setStatus("idle");
         return;
@@ -125,26 +145,15 @@ export class Net {
       }
     }, 50) as unknown as number;
     if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = setInterval(() => {
-      if (!this.room) return;
-      const sent = performance.now();
-      const off = this.onEventOnce("pong", () => {
-        this.ping = Math.round(performance.now() - sent);
-      });
-      void off;
-      this.room.send("ping", sent);
-    }, 2000) as unknown as number;
+    this.sendPing();
+    this.pingTimer = setInterval(() => this.sendPing(), 5000) as unknown as number;
   }
 
-  private onEventOnce(type: string, fn: (e: Ev) => void): () => void {
-    const wrap = (e: Ev) => {
-      if (e.t === type) {
-        fn(e);
-        this.evListeners.delete(wrap);
-      }
-    };
-    this.evListeners.add(wrap);
-    return () => this.evListeners.delete(wrap);
+  /** One latency probe; the echo updates rttMs in the ev handler above. */
+  private sendPing(): void {
+    if (!this.room) return;
+    this.pingSentAt = performance.now();
+    this.room.send("ping", this.pingSentAt);
   }
 
   private async tryReconnect(): Promise<void> {
@@ -177,6 +186,8 @@ export class Net {
   leave(): void {
     if (this.inputTimer) clearInterval(this.inputTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
+    this.rttMs = -1;
+    this.pingSentAt = 0;
     this.room?.leave(true);
     this.room = null;
     this.setStatus("idle");

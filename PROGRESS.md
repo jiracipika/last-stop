@@ -2,7 +2,38 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility slices (2026-11-06/07)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL slices (2026-11-06/07)
+
+### Motor-pool pull-away + crew QoL (2026-11-07) — done
+
+Recon showed reconnect (grace window, tests) and "Run it back" already shipped; this iteration
+fills the remaining autonomous gaps:
+
+- **Success end-beat**: crossing the finish line used to cut straight to the debrief. Now the
+  outcome lands immediately (`outcome = "escaped"`) while the world holds still for
+  MISSION.PULL_S = 2.6 s: the van eases out along its facing (smoothstepped `van.pullT` 0→1,
+  speed ease-in to PULL_SPEED 3.5), seated riders keep following their seats so the crew rides
+  out (orchestrator fix — the first cut left them standing in the lot), and results land when
+  the pull completes. Failure outcomes keep the immediate results. Mission-step/checkMissionEnd
+  frozen during the pull; FINISH_X can't re-trigger.
+- **Escape-phase compass**: HUD chevron + "VAN - Nm" pointing the way you must turn (relative
+  bearing vs camera yaw, wrapped), escape only, hidden within 4 m and for the dead.
+- **Latency chip**: net probes round-trip via the existing ping/pong ev channel (bare-number
+  echo — objects coerce to 0), every 5 s, `rttMs` sentinel -1; chip amber ≥120 ms, red >300.
+  The old 2 s ping loop leaked one wrapper per unanswered ping — deleted.
+- **Engine-start rumble**: `van.pullT` crossing 0 fires a one-shot low sawtooth rev + gravel
+  noise, swelled over ~2.3 s, positioned through the standard spatial path, latched once per
+  mission.
+- **`testAt: "escape"` knob** (LS_TEST_MODE=1): startMission jumps straight to escape with
+  partInstalled/gateOpen true — probes and e2e no longer need to play the whole shift to test
+  the endgame. Replay guard audited: already phase-gated + rate-limited, unchanged.
+- New server tests: endbeat.test.ts (success pull observed mid-beat, failure keeps pullT 0,
+  knob lands in escape); new e2e: escape.spec.ts (knob-driven escape HUD shot, compass +
+  latency chip verified on screen). One test-side bug found by the gate: the pull test kept
+  re-sampling vanXAtPull while pullT rose, chasing the van until the travel assertion compared
+  the end against itself — capture-once fixed. Verification: tsc ×3 clean; vitest 54/54;
+  e2e 7/7 (1 known ambient-load flake passed on retry); escape HUD screenshot vision-checked
+  (chip amber at 278 ms, compass "VAN - 5 m" pointing true).
 
 ### Netcode smoothing + hide-spot visibility (2026-11-06/07) — done
 

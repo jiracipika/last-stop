@@ -2,6 +2,7 @@
 import React from "react";
 import { COLORS } from "@last-stop/shared";
 import type { HudState } from "../game/store.js";
+import { activeNet } from "../net.js";
 
 const fmtTime = (s: number): string => {
   const m = Math.floor(s / 60);
@@ -20,6 +21,28 @@ export function Hud({
 }): React.ReactElement {
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
   const danger = hud.timer < 120;
+
+  // Escape-phase van compass: bearing + distance from the local player's
+  // authoritative state (no predictor import). The engine's yaw convention is
+  // forward = (sin yaw, cos yaw), so the relative bearing is
+  // atan2(dx, dz) - yaw; positive means the van sits to the right, which is
+  // exactly a clockwise CSS rotation. Recomputed per store sample (~12 Hz) —
+  // no second rAF loop.
+  let compass: { rot: number; dist: number } | null = null;
+  if (hud.phase === "escape" && activeNet) {
+    const st = activeNet.state;
+    const me = st?.players.get(activeNet.sid);
+    if (st && me && !me.dead) {
+      const dx = st.van.x - me.x;
+      const dz = st.van.z - me.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist >= 4) {
+        let rel = Math.atan2(dx, dz) - me.yaw;
+        rel = Math.atan2(Math.sin(rel), Math.cos(rel)); // wrap to (-PI, PI]
+        compass = { rot: rel, dist };
+      }
+    }
+  }
 
   return (
     <div className="hud">
@@ -40,6 +63,22 @@ export function Hud({
       {/* damage vignette */}
       {hud.damageFlash > 0 && <div className="vignette" style={{ opacity: hud.damageFlash * 0.7 }} />}
       {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && <div className="chase-vignette" />}
+
+      {/* latency chip */}
+      {hud.ping >= 0 && hud.connStatus === "connected" && (
+        <div className={`lat-chip ${hud.ping > 300 ? "red" : hud.ping >= 120 ? "amber" : ""}`}>
+          {hud.ping} ms
+        </div>
+      )}
+
+      {/* escape-phase compass to the van; stays mounted so CSS can fade it */}
+      <div className={`compass ${compass ? "on" : ""}`}>
+        <span
+          className="compass-arrow"
+          style={compass ? { transform: `rotate(${compass.rot}rad)` } : undefined}
+        />
+        {compass && <span>VAN - {Math.round(compass.dist)} m</span>}
+      </div>
 
       {/* top center: timer + quota */}
       <div className="topbar">
@@ -87,7 +126,7 @@ export function Hud({
             </b>
           </div>
           <div className="scanner-row"><span>STRAPS</span><b>{hud.strapped ? "SECURED" : "LOOSE"}</b></div>
-          <div className="scanner-row"><span>LINK</span><b className={hud.ping < 150 ? "" : "warn"}>{hud.ping}ms {hud.connStatus === "connected" ? "" : hud.connStatus}</b></div>
+          <div className="scanner-row"><span>LINK</span><b className={hud.ping >= 150 ? "warn" : ""}>{hud.ping < 0 ? "--" : `${hud.ping}ms`} {hud.connStatus === "connected" ? "" : hud.connStatus}</b></div>
         </div>
       </div>
 

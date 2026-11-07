@@ -42,6 +42,9 @@ export class GameRoom extends Room {
       const ez = Number(_options.testEnemyZ);
       if (Number.isFinite(ex) && Number.isFinite(ez)) this.world.testEnemyAt = { x: ex, z: ez };
       if (_options.testFreezeEnemyAfterDown === true) this.world.testFreezeEnemyAfterDown = true;
+      // test knob: the next mission start jumps straight to the escape phase
+      // (part installed, gate open) for compass/aim testing
+      if (_options.testAt === "escape") this.world.testAtEscape = true;
     }
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);

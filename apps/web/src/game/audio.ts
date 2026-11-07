@@ -466,6 +466,48 @@ export class GameAudio {
     this.engineOsc.frequency.value = 42 + Math.abs(speed) * 7;
   }
 
+  /** Pull-away cue: one-shot diesel rumble positioned at the van. Revs up
+   *  over ~2.5 s (the server's PULL_S drive-off) then dies out. */
+  engineStart(x: number, z: number, cam: { x: number; z: number; yaw: number }): void {
+    if (!this.ctx) return;
+    const { pan, atten } = this.spatial(x, z, cam);
+    if (atten < 0.03) return;
+    const vol = atten * this.hiddenMuffle;
+    const t = this.now();
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(38, t);
+    osc.frequency.linearRampToValueAtTime(58, t + 2.3);
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(120, t);
+    filter.frequency.exponentialRampToValueAtTime(420, t + 2.3);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.2 * vol, t + 2.3);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
+    const panner = this.ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    osc.connect(filter).connect(gain).connect(panner).connect(this.master!);
+    // gravel layer: same envelope through a fixed lowpass, adds the body a
+    // lone 40-60 Hz saw lacks on small speakers
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const nfilter = this.ctx.createBiquadFilter();
+    nfilter.type = "lowpass";
+    nfilter.frequency.value = 240;
+    const ngain = this.ctx.createGain();
+    ngain.gain.setValueAtTime(0.0001, t);
+    ngain.gain.linearRampToValueAtTime(0.08 * vol, t + 2.3);
+    ngain.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
+    src.connect(nfilter).connect(ngain).connect(panner);
+    osc.start(t);
+    src.start(t);
+    osc.stop(t + 3.5);
+    src.stop(t + 3.5);
+  }
+
   heartbeat(dt: number, intensity: number): void {
     if (intensity <= 0) return;
     this.chaseTimer -= dt;

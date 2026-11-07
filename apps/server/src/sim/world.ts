@@ -115,6 +115,10 @@ export class World {
   headlightsPulseT = 0;
   extractWarnUntil = 0;
   extractConfirmed = false;
+  // success end-beat: the van pulls away before results (finish/stepPull)
+  pulling = false;
+  pullElapsed = 0;
+  pullT = 0;
 
   enemy: CaretakerAI;
   events: GameEvent[] = [];
@@ -129,6 +133,8 @@ export class World {
   testSeconds = 0;
   testEnemyAt: { x: number; z: number } | null = null;
   testFreezeEnemyAfterDown = false;
+  /** test knob: startMission jumps straight to the escape phase */
+  testAtEscape = false;
 
   constructor() {
     this.state = new RoomState();
@@ -336,6 +342,9 @@ export class World {
     this.state.resultsJson = "";
     this.extractWarnUntil = 0;
     this.extractConfirmed = false;
+    this.pulling = false;
+    this.pullElapsed = 0;
+    this.pullT = 0;
 
     this.phase = "briefing";
     this.briefUntil = this.t + 5;
@@ -351,6 +360,17 @@ export class World {
     mods.length = 0;
     for (const m of this.modifiers) mods.push(m);
     this.emit({ t: "phase", p: "briefing", seed: this.seed, quota: this.quota, lootTotal: this.lootTotal, modifiers: this.modifiers });
+    if (this.testAtEscape) {
+      // test knob: skip briefing/scavenge, land in escape with objectives done
+      this.partInstalled = true;
+      this.gateOpen = true;
+      this.state.gateOpen = true;
+      this.briefUntil = this.t;
+      this.setPhase("escape");
+      this.emit({ t: "gate" });
+      this.say("Quota met, van running. GET OUT.");
+      this.syncAll();
+    }
   }
 
   resetVan(): void {
@@ -870,6 +890,12 @@ export class World {
     if (this.phase === "briefing" && this.t >= this.briefUntil) {
       this.setPhase("scavenge");
     }
+    if (this.pulling) {
+      // success end-beat: the world holds still while the van pulls away
+      this.stepPull(dt);
+      this.syncAll();
+      return;
+    }
     if (this.phase === "scavenge" || this.phase === "escape") {
       this.stepMission();
     }
@@ -1113,6 +1139,33 @@ export class World {
     return n;
   }
 
+  /** Success end-beat: ease pullT 0->1 over MISSION.PULL_S while the van
+   *  drives itself along its facing. Seated riders keep following their seats
+   *  (the crew rides out); everyone else, items and the enemy stay put. */
+  private stepPull(dt: number): void {
+    this.pullElapsed += dt;
+    const raw = Math.min(1, this.pullElapsed / MISSION.PULL_S);
+    this.pullT = raw * raw * (3 - 2 * raw); // smoothstep ease
+    const easeIn = this.pullT < 0.3 ? this.pullT / 0.3 : 1;
+    const v = MISSION.PULL_SPEED * easeIn;
+    this.van.speed = v;
+    this.van.x = clamp(this.van.x + Math.sin(this.van.yaw) * v * dt, -68.5, 33);
+    this.van.z = clamp(this.van.z + Math.cos(this.van.yaw) * v * dt, -25, 25);
+    for (const p of this.players.values()) {
+      if (p.dead || p.seat === 0) continue;
+      const w = this.vanPoint(VAN.SEATS[p.seat - 1]!);
+      p.body.x = w.x;
+      p.body.z = w.z;
+      p.body.y = 0;
+      p.body.vx = 0;
+      p.body.vz = 0;
+    }
+    if (this.pullElapsed >= MISSION.PULL_S) {
+      this.pulling = false;
+      this.finalize("escaped");
+    }
+  }
+
   private stepMission(): void {
     const elapsed = this.t - (this.endsAt - missionSeconds(this.modifiers));
     const want = elapsed > MISSION.ESCALATE_AT_S[1]! ? 3 : elapsed > MISSION.ESCALATE_AT_S[0]! ? 2 : 1;
@@ -1146,7 +1199,22 @@ export class World {
   }
 
   finish(outcome: "escaped" | "timeout" | "wipe"): void {
-    if (this.phase === "results") return;
+    if (this.phase === "results" || this.pulling) return;
+    if (outcome === "escaped") {
+      // success end-beat: record the outcome now, then hold the world while
+      // the van pulls away (stepPull); results land once the pull completes
+      this.pulling = true;
+      this.pullElapsed = 0;
+      this.pullT = 0;
+      this.state.outcome = outcome;
+      return;
+    }
+    this.finalize(outcome);
+  }
+
+  /** Scoreboard freeze shared by every outcome: phase -> results, rows,
+   *  awards and the results event. */
+  private finalize(outcome: "escaped" | "timeout" | "wipe"): void {
     if (outcome === "escaped") {
       for (const p of this.players.values()) {
         if (!p.dead && p.seat === 0) {
@@ -1279,6 +1347,7 @@ export class World {
     st.van.z = this.van.z;
     st.van.yaw = this.van.yaw;
     st.van.speed = this.van.speed;
+    st.van.pullT = this.pullT;
     st.van.doorsOpen = this.vanDoorsOpen;
     st.van.lightsOn = this.vanLightsOn;
     st.van.partInstalled = this.partInstalled;

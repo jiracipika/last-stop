@@ -126,6 +126,8 @@ export const MISSION = {
   TIME_S: 720, // 12 minutes
   ESCALATE_AT_S: [300, 540], // elapsed seconds -> escalation level 2, 3
   WIN_FINISH_X: -56,
+  PULL_S: 2.6, // success end-beat: van pull-away showtime before results
+  PULL_SPEED: 3.5, // pull-away speed (m/s along the van facing)
   RECONNECT_GRACE_S: 20,
   MAX_PLAYERS: 4,
 } as const;
