@@ -249,17 +249,19 @@ export class GameRoom extends Room {
     if (seated >= MISSION.MAX_PLAYERS) {
       throw new Error("Room is full");
     }
-    if (w.phase === "briefing" || w.phase === "scavenge" || w.phase === "escape") {
-      throw new Error("Mission in progress — try again after the shift");
-    }
+    // late join: clock in mid-shift (briefing/scavenge/escape, pull-away included)
+    const late = w.phase === "briefing" || w.phase === "scavenge" || w.phase === "escape";
     const nick = typeof options?.nick === "string" && options.nick.trim()
       ? options.nick.trim().slice(0, 16)
       : `Rookie${Math.floor(Math.random() * 90 + 10)}`;
     const color = typeof options?.color === "number" ? Math.max(0, Math.min(7, Math.round(options.color))) : w.players.size % 8;
     const hat = typeof options?.hat === "number" ? Math.max(0, Math.min(4, Math.round(options.hat))) : 0;
     const host = w.players.size === 0;
-    const p = w.addPlayer(client.sessionId, nick, color, host, hat);
+    const p = w.addPlayer(client.sessionId, nick, color, host, hat, late);
     this.broadcast("ev", { t: "join", sid: client.sessionId, nick: p.nick });
+    if (w.phase === "scavenge" || w.phase === "escape") {
+      w.say(`${p.nick} clocked in late - get to work.`);
+    }
   }
 
   override async onDrop(client: Client, _code?: number): Promise<void> {

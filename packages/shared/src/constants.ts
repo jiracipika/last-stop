@@ -130,6 +130,7 @@ export const MISSION = {
   PULL_SPEED: 3.5, // pull-away speed (m/s along the van facing)
   RECONNECT_GRACE_S: 20,
   MAX_PLAYERS: 4,
+  LATE_SPAWN_LOCAL_Z: 3.2, // late join spawn offset from van center along local z; clears VAN.HALF_L
 } as const;
 
 export const COLORS = [

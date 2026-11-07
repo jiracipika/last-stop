@@ -50,7 +50,8 @@ cues; chaseSid over the wire (targeted-you sting + toast); RAISED TARGETS / AMPE
 STORM CELL modifiers (rain, lightning, delayed thunder); in-engine attract-mode title +
 quality presets + PERSONNEL FILE bests + briefing sheet; netcode smoothing (predictor
 parity, decaying reconcile, 30 Hz patches); hide-spot dome lights + flush doors;
-success pull-away end-beat + escape compass + latency chip.
+success pull-away end-beat + escape compass + latency chip; late crew (mid-shift joins,
+van-side spawn, ?code= invite links).
 
 | # | Slice | Severity | Player impact | Effort | Acceptance |
 |---|---|---|---|---|---|

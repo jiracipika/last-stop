@@ -1,7 +1,15 @@
 // Title screen: neon sign vibes, nickname + color + headgear, create/join.
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { COLORS } from "@last-stop/shared";
 import type { Prefs } from "../App.js";
+
+// Invite links land here as /?code=CODE (legacy links used ?room=). Sanitize
+// hard: uppercase, keep A-Z0-9 only, cap at 5 (the room-code format).
+function inviteCodeFromUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("code") ?? params.get("room") ?? "";
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+}
 
 const HATS = [
   { label: "Hi-vis cap", glyph: "🧢" },
@@ -20,8 +28,17 @@ export function TitleScreen({
   savePrefs: (p: Prefs) => void;
   onEnter: (mode: "create" | "join", code: string) => void;
 }): React.ReactElement {
-  const [code, setCode] = useState(() => new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "");
+  const [code, setCode] = useState(inviteCodeFromUrl);
   const [busy, setBusy] = useState(false);
+  const joinInputRef = useRef<HTMLInputElement | null>(null);
+  const prefilled = code !== "";
+
+  // An invite-link code focuses the join field so the friend only adds a name.
+  useEffect(() => {
+    if (prefilled) joinInputRef.current?.focus();
+    // mount-only: the URL cannot change while the title screen is up
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const go = async (mode: "create" | "join") => {
     if (busy) return;
@@ -97,6 +114,7 @@ export function TitleScreen({
           </button>
           <div className="join-row">
             <input
+              ref={joinInputRef}
               maxLength={5}
               placeholder="CODE"
               value={code}

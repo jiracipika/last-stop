@@ -210,7 +210,7 @@ export class World {
   }
 
   // ---------------------------------------------------------------- lobby
-  addPlayer(sid: string, nick: string, color: number, host: boolean, hat = 0): RPlayer {
+  addPlayer(sid: string, nick: string, color: number, host: boolean, hat = 0, atVan = false): RPlayer {
     const used = new Set([...this.players.values()].map((p) => p.color));
     if (used.has(color)) {
       for (let i = 0; i < 8; i++) {
@@ -234,7 +234,8 @@ export class World {
       graceUntil: 0,
     };
     this.players.set(sid, p);
-    this.placeAtSpawn(p);
+    if (atVan) this.placeAtVan(p);
+    else this.placeAtSpawn(p);
     this.syncPlayerSchema(p, true);
     return p;
   }
@@ -269,6 +270,21 @@ export class World {
     p.body.vy = 0;
     p.yaw = s.yaw;
     p.input.yaw = s.yaw;
+    p.hidden = false;
+    p.hideSpot = "";
+  }
+
+  /** Late join: place at the van so a mid-shift arrival starts at the ride. */
+  placeAtVan(p: RPlayer): void {
+    const s = this.vanPoint({ x: 0, z: MISSION.LATE_SPAWN_LOCAL_Z });
+    p.body.x = s.x;
+    p.body.z = s.z;
+    p.body.y = 0;
+    p.body.vx = 0;
+    p.body.vz = 0;
+    p.body.vy = 0;
+    p.yaw = this.van.yaw;
+    p.input.yaw = this.van.yaw;
     p.hidden = false;
     p.hideSpot = "";
   }

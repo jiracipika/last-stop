@@ -2,7 +2,33 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL slices (2026-11-06/07)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL + late-crew slices (2026-11-06/07)
+
+### Late crew: mid-shift joins + invite links (2026-11-07) — done
+
+Friends no longer bounce off an active shift:
+
+- **Late join**: GameRoom.onJoin now accepts briefing/scavenge/escape (and the pull-away
+  window) instead of throwing "Mission in progress". Late crew spawn at the van —
+  `placeAtVan` = vanPoint(0, MISSION.LATE_SPAWN_LOCAL_Z = 3.2), which is past the FRONT
+  bumper (local +z is forward: ENGINE_POINT +2.55 vs DOOR_POINT -2.45), landing in the open
+  lot clear of hull (VAN.HALF_L 2.4) and props. Toast on the ev channel: "<nick> clocked in
+  late - get to work." No Caretaker spawn protection (documented; the lot is open ground).
+  Full-room rejection unchanged — note Colyseus locks the room at matchmake level at
+  maxClients, so the wire error is "room is locked", not the room's own "Room is full".
+- **Invite links**: the title now pre-fills the join code from `?code=` (uppercase, strip
+  non-alphanumerics, truncate to 5; legacy `?room=` still honored) and focuses the field;
+  the lobby's copy button shares `origin/?code=<code>` with brief "Copied" feedback.
+- **Host audit**: migration on leave already promotes correctly (schema flag + RPlayer flag,
+  toast); no fix needed, pinned by existing lobby coverage.
+- Tests: latejoin.test.ts ×4 (mid-escape join position/toast/movement, late grab works,
+  results-phase join still fine, full-room rejection); lobby.test's mid-mission case
+  inverted to pin the new allowance; latejoin.spec.ts e2e (two browsers, friend joins
+  mid-escape, HUD + Host teammate visible on the committed screenshot) + invite pre-fill.
+- Gate: tsc ×3 clean; vitest 58/58 (full-run 57/58 with one carry.test walkTo timeout =
+  the ambient-load starvation family, file re-verified 6/6 standalone); e2e 9/9 (latejoin
+  mid-shift flaky, passed on retry #2 — two browser contexts under SwiftShader);
+  vision-checked screenshots.
 
 ### Motor-pool pull-away + crew QoL (2026-11-07) — done
 

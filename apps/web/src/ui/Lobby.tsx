@@ -1,5 +1,5 @@
 // Crew room overlay: roster, ready-up, invite code, host start.
-import React from "react";
+import React, { useState } from "react";
 import { COLORS } from "@last-stop/shared";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
@@ -16,13 +16,15 @@ export function LobbyOverlay({
   prefs: Prefs;
   onLeave: () => void;
 }): React.ReactElement {
+  const [copied, setCopied] = useState(false);
   const st = net.state;
   if (!st) return <div className="lobby" />;
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
   const me = st.players.get(net.sid);
   const allReady = players.every(({ p }) => p.ready);
 
-  const inviteLink = `${location.origin}${location.pathname}?room=${hud.roomCode}`;
+  // /?code= pre-fills the title screen's join field (Title.inviteCodeFromUrl)
+  const inviteLink = `${location.origin}${location.pathname}?code=${hud.roomCode}`;
 
   return (
     <div className="lobby">
@@ -36,12 +38,15 @@ export function LobbyOverlay({
             className="btn small"
             onClick={() => {
               void navigator.clipboard?.writeText(inviteLink).then(
-                () => undefined,
+                () => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                },
                 () => undefined,
               );
             }}
           >
-            Copy invite link
+            {copied ? "Copied" : "Copy invite link"}
           </button>
         </div>
         <ul className="roster">

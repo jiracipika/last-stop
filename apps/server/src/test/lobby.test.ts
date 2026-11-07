@@ -60,7 +60,7 @@ describe("lobby", () => {
     a.room.leave();
   }, 30000);
 
-  it("rejects joins mid-mission", async () => {
+  it("allows late joins mid-mission; the joiner waits out briefing", async () => {
     const a = await joinBot(h, "Host2", {});
     const f = await joinExisting(h, a.room.roomId, "Friend");
     await waitFor("2 players", () => a.room.state.players.size === 2);
@@ -69,14 +69,12 @@ describe("lobby", () => {
     await waitFor("both ready", () => [...a.room.state.players.values()].every((p) => p.ready));
     a.room.send("act", { k: "start" });
     await waitFor("briefing", () => a.room.state.phase === "briefing");
-    let err = "";
-    try {
-      await joinExisting(h, a.room.roomId, "Latecomer");
-    } catch (e) {
-      err = String(e);
-    }
-    expect(err).toMatch(/progress/i);
-    a.room.leave();
+    const late = await joinExisting(h, a.room.roomId, "Latecomer");
+    await waitFor("3 players", () => a.room.state.players.size === 3);
+    expect(a.room.state.phase).toBe("briefing");
+    await waitFor("scavenge", () => a.room.state.phase === "scavenge", 12000);
+    late.room.leave();
     f.room.leave();
+    a.room.leave();
   }, 30000);
 });
