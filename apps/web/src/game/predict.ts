@@ -1,6 +1,6 @@
 // Local prediction for the owning player: same shared step function as the
 // server, with input-sequence reconciliation against authoritative patches.
-import { Body, MoveInput, stepPlayer, carrySpeedFactor, PLAYER, CARRY, ITEM_DEFS } from "@last-stop/shared";
+import { Body, MoveInput, stepPlayer, carrySpeedFactor, PLAYER, CARRY, ITEM_DEFS, clamp } from "@last-stop/shared";
 import type { RoomState } from "@last-stop/shared";
 
 interface RingEntry {
@@ -9,6 +9,11 @@ interface RingEntry {
   z: number;
 }
 
+/** The render offset never grows past this — beyond it the next reconcile
+ *  hard-cuts instead (bounded drift beats invisible teleport). */
+const VIS_MAX = 1.5;
+const clampVis = (v: number): number => clamp(v, -VIS_MAX, VIS_MAX);
+
 export class Predictor {
   body: Body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true };
   yaw = Math.PI;
@@ -16,6 +21,9 @@ export class Predictor {
   carrying = "";
   /** m/s of velocity the last step's collision resolve stripped (bump signal). */
   bumpImpulse = 0;
+  /** decaying render offset from reconciliation — see reconcile() */
+  visX = 0;
+  visZ = 0;
   private ring: RingEntry[] = [];
   private seq = 0;
   private colliders: () => import("@last-stop/shared").AABB[];
@@ -33,6 +41,8 @@ export class Predictor {
     this.body.vy = 0;
     this.yaw = yaw;
     this.bumpImpulse = 0;
+    this.visX = 0;
+    this.visZ = 0;
     this.ring = [];
   }
 
@@ -40,11 +50,15 @@ export class Predictor {
     return ++this.seq;
   }
 
-  /** Client-side estimate of the carry penalty (server remains authoritative). */
-  speedFor(state: RoomState, sid: string): number {
+  /** Client-side speed estimate mirroring the server's effectiveSpeed EXACTLY
+   *  (sprint gate + stamina + carry caps included — the old walk-only
+   *  under-prediction made every sprint rubber-band on reconcile). */
+  speedFor(state: RoomState, sid: string, input: { mx: number; mz: number; sprint?: boolean }): number {
     const me = state.players.get(sid);
     if (!me || me.downed || me.dead || me.seat > 0) return 0;
-    let speed = PLAYER.WALK;
+    const moving = Math.hypot(input.mx, input.mz) > 0.1;
+    let wantSprint = input.sprint === true && moving && me.stamina > 0.5;
+    let speed: number = wantSprint ? PLAYER.SPRINT : PLAYER.WALK;
     const carrying = me.carrying;
     if (carrying) {
       const it = state.items.get(carrying);
@@ -53,10 +67,13 @@ export class Predictor {
         if (def) {
           const carriers = (it.h0 ? 1 : 0) + (it.h1 ? 1 : 0) || 1;
           const w = def.weight * (def.twoHandle && state.players.size === 1 ? CARRY.SOLO_HEAVY_FACTOR : 1);
-          speed *= carrySpeedFactor(w / carriers);
+          const per = w / carriers;
+          speed *= carrySpeedFactor(per);
+          if (per >= CARRY.SPRINT_MAX_WEIGHT) wantSprint = false;
         }
       }
     }
+    if (!wantSprint) speed = Math.min(speed, PLAYER.WALK * carrySpeedFactor(0));
     if (me.hp < 30) speed *= 0.85;
     return speed;
   }
@@ -88,6 +105,12 @@ export class Predictor {
       this.body.vz = preVz * keep;
     }
     this.yaw = input.yaw;
+    // drain the reconciliation render offset (~170 ms to eye-invisible)
+    const visKeep = Math.exp(-14 * dt);
+    this.visX *= visKeep;
+    this.visZ *= visKeep;
+    if (Math.abs(this.visX) < 0.004) this.visX = 0;
+    if (Math.abs(this.visZ) < 0.004) this.visZ = 0;
     this.ring.push({ seq: this.seq, x: this.body.x, z: this.body.z });
     if (this.ring.length > 90) this.ring.shift();
   }
@@ -106,17 +129,37 @@ export class Predictor {
       // no history (just joined/restarted): hard sync
       this.body.x = serverX;
       this.body.z = serverZ;
+      this.visX = 0;
+      this.visZ = 0;
       return;
     }
     const ex = serverX - entry.x;
     const ez = serverZ - entry.z;
     const err = Math.hypot(ex, ez);
-    if (err > 0.6) {
-      this.body.x += ex;
-      this.body.z += ez;
-    } else if (err > 0.03) {
-      this.body.x += ex * 0.2;
-      this.body.z += ez * 0.2;
+    if (err > 3) {
+      // teleport-class jump (respawn/escape/hidden): hard cut, no glide
+      this.body.x = serverX;
+      this.body.z = serverZ;
+      this.visX = 0;
+      this.visZ = 0;
+      return;
     }
+    // the sim body corrects partially; the un-applied remainder becomes a
+    // decaying render offset so reconciliation reads as a drift to truth
+    // instead of the old hard snap (the sprint rubber-band)
+    const k = err > 0.6 ? 0.6 : err > 0.03 ? 0.2 : 0;
+    this.body.x += ex * k;
+    this.body.z += ez * k;
+    this.visX = clampVis(this.visX + ex * (1 - k));
+    this.visZ = clampVis(this.visZ + ez * (1 - k));
+  }
+
+  /** Render position: the sim body plus the decaying reconciliation offset. */
+  renderX(): number {
+    return this.body.x + this.visX;
+  }
+
+  renderZ(): number {
+    return this.body.z + this.visZ;
   }
 }

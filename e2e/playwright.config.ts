@@ -8,10 +8,11 @@ const root = process.cwd();
 export default defineConfig({
   testDir: "tests",
   timeout: 90000,
-  // one retry: these are full-mission browser runs on a box with ambient
-  // load — movement-precision assertions flake on timer starvation, while a
-  // real regression fails every attempt (the camera-180 bug did)
-  retries: 1,
+  // retries for the same reason as the vitest suite (see apps/server/vitest.config.ts):
+  // full-mission browser runs on a box with ambient load — movement/lobby
+  // assertions flake on timer starvation, while a real regression fails
+  // every attempt (the camera-180 bug did)
+  retries: 2,
   workers: 1,
   use: {
     headless: true,

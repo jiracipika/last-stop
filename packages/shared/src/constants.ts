@@ -2,7 +2,10 @@
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
-export const PATCH_MS = 50; // state broadcast rate (20 Hz)
+// state broadcast rate: match the tick (30 Hz). The old 20 Hz patches were the
+// stutter source — interpolation starves between 50 ms snapshots and the local
+// player's reconcile waits a full 50 ms for fresh truth. Patch bytes are tiny.
+export const PATCH_MS = 33;
 
 // ---- Player movement (kinematic, deliberately gentle) ----
 export const PLAYER = {

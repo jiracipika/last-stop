@@ -258,7 +258,9 @@ export class Engine {
   }
 
   private dynamicColliders(): AABB[] {
-    // static walls + closed doors (mirrors server player colliders)
+    // static walls + closed doors + the van hull (mirrors server
+    // playerColliders — the missing van AABB made the server stop the player
+    // where the client walked straight in, snapping back on every reconcile)
     const closed: AABB[] = [];
     const st = this.net.state;
     if (st) {
@@ -268,6 +270,11 @@ export class Engine {
           if (def) closed.push(doorAabb(def));
         }
       }
+      const c = Math.abs(Math.cos(st.van.yaw));
+      const s = Math.abs(Math.sin(st.van.yaw));
+      const hx = c * VAN.HALF_W + s * VAN.HALF_L;
+      const hz = s * VAN.HALF_W + c * VAN.HALF_L;
+      closed.push({ x0: st.van.x - hx, x1: st.van.x + hx, z0: st.van.z - hz, z1: st.van.z + hz });
     }
     return STATIC_COLLIDERS.concat(closed);
   }
@@ -651,8 +658,8 @@ export class Engine {
   // ------------------------------------------------------------------ targeting
   private scanTarget(st: RoomState, me: PlayerState): void {
     const fwd = { x: Math.sin(this.input.yaw), z: Math.cos(this.input.yaw) };
-    const px = this.predictor.body.x;
-    const pz = this.predictor.body.z;
+    const px = this.predictor.renderX();
+    const pz = this.predictor.renderZ();
     let best: (TargetInfo & { score: number; pos: { x: number; z: number } }) | null = null;
     const consider = (t: TargetInfo, x: number, z: number, range: number, weight = 1) => {
       const dx = x - px;
@@ -849,7 +856,7 @@ export class Engine {
       this.predictor.reset(me.x, me.z, me.yaw);
       this.input.jumpQueued = false;
     } else {
-      const speed = this.predictor.speedFor(st, this.net.sid);
+      const speed = this.predictor.speedFor(st, this.net.sid, fi);
       const seq = this.predictor.nextSeq();
       this.predictor.carrying = me.carrying; // gates the stop-slide (server parity)
       this.predictor.step(dt, fi, speed);
@@ -911,9 +918,10 @@ export class Engine {
         this.scene.add(av.group);
       }
       if (sid === this.net.sid) {
-        // own avatar follows prediction; hidden in first person (body visible edges)
-        const px = this.predictor.body.x;
-        const pz = this.predictor.body.z;
+        // own avatar follows the smoothed render position (body + reconciling
+        // drift); hidden in first person (body visible edges)
+        const px = this.predictor.renderX();
+        const pz = this.predictor.renderZ();
         av.group.position.set(px, p.y, pz);
         av.group.rotation.y = p.yaw;
         av.group.visible = !p.dead && p.seat === 0;
@@ -960,11 +968,11 @@ export class Engine {
         continue;
       }
       if (me && me.carrying === id) {
-        // render the item I'm carrying at MY predicted hold point (no lag)
+        // render the item I'm carrying at MY smoothed hold point (no lag)
         const fx = Math.sin(this.input.yaw);
         const fz = Math.cos(this.input.yaw);
-        showX = this.predictor.body.x + fx * CARRY.HOLD_DIST;
-        showZ = this.predictor.body.z + fz * CARRY.HOLD_DIST;
+        showX = this.predictor.renderX() + fx * CARRY.HOLD_DIST;
+        showZ = this.predictor.renderZ() + fz * CARRY.HOLD_DIST;
         showY = CARRY.HOLD_Y;
       } else {
         showX = view.group.position.x + (it.x - view.group.position.x) * k;
@@ -1172,8 +1180,8 @@ export class Engine {
 
     // Input reads live below the attract/lobby returns: at the title no
     // InputManager exists at all (see the input getter).
-    let cx = this.predictor.body.x;
-    let cz = this.predictor.body.z;
+    let cx = this.predictor.renderX();
+    let cz = this.predictor.renderZ();
     let cy: number = PLAYER.EYE;
     let yaw = this.input.yaw;
     let pitch = this.input.pitch;
