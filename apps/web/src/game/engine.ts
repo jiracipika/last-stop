@@ -439,16 +439,9 @@ export class Engine {
         }
         break;
       case "drop": {
-        // the server's drop event carries no position: resolve it from the
-        // dropper's state (item, then listener as fallback) so a teammate's
-        // drop lands where they stand instead of at my camera
-        const dropper = st?.players.get(String(e.by));
-        const dropped = st?.items.get(String(e.item));
-        const dx = Number(e.x ?? dropper?.x ?? dropped?.x ?? this.camera.position.x);
-        const dz = Number(e.z ?? dropper?.z ?? dropped?.z ?? this.camera.position.z);
-        // heavy = two-hand cargo; the server drops it with DROP_HEAVY noise
-        const heavy = ITEM_DEFS[String(e.def ?? dropped?.defId ?? "")]?.twoHandle === true;
-        audio.playEventAt(heavy ? "dropHeavy" : "drop", dx, dz, cam);
+        // the server stamps drops with position + weight class (x/z/heavy):
+        // play the cue at the item itself, no def-table or camera fallbacks
+        audio.playEventAt(e.heavy ? "dropHeavy" : "drop", Number(e.x ?? 0), Number(e.z ?? 0), cam);
         break;
       }
       case "ring":

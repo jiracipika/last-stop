@@ -2,7 +2,20 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish slices (2026-11-06/07)
+
+### Briefing sheet, drop enrichment, security audit (2026-11-06/07) — done
+
+- **Briefing screen authored**: night-shift sheet in the receipt voice (DUSTPAN letterhead,
+  FORM 2AM-A, "TONIGHT'S SITE CONDITIONS" chips, "THE NUMBERS", and a new "IF THE NIGHT GOES
+  WRONG" line pointing the crew at the junkers + dumpster). MOD_LABELS caught up with the new
+  modifiers — wired/fatquota/storm rendered as raw ids before. Root className "briefing"
+  preserved (e2e phaseOf reads it).
+- **Drop event enriched**: server stamps drops with x/z/heavy; the client's camera-position
+  fallback and def-table resolution deleted. Additive payload only.
+- **Security audit**: Mimosa full-repo scan — 0 findings, dependency risk 0, sealed
+  (scan-2026-11-07T01-21-19…, sha256:57d4ef8b…).
+- Verification: tsc ×3 clean; vitest + e2e below.
 
 ### Severity cap, spawn-in fix, benchmarks, personnel file (2026-11-06) — done
 

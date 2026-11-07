@@ -238,16 +238,43 @@ export function App(): React.ReactElement {
   );
 }
 
+// Night-shift briefing sheet: the same receipt voice as the results screen's
+// shift report, printed over the live lot. Root keeps className "briefing" —
+// e2e phaseOf() keys the briefing phase off it.
 function Briefing({ hud }: { hud: typeof initialHud }): React.ReactElement {
   return (
     <div className="briefing">
-      <h1>PALE LANTERN MOTEL — SHIFT BRIEFING</h1>
-      <ul>
-        {hud.modifiers.map((m) => (
-          <li key={m}>{MOD_LABELS[m] ?? m}</li>
-        ))}
-      </ul>
-      <p>Quota: ${hud.quota} of salvage. Find the distributor cap. Doors bang. Keep quiet.</p>
+      <div className="briefing-sheet">
+        <div className="report-head">
+          <span className="report-brand">DUSTPAN RECOVERY CO.</span>
+          <span className="report-motto">WE TOW REGRETS</span>
+        </div>
+        <h1>PALE LANTERN MOTEL — SHIFT BRIEFING</h1>
+        <div className="briefing-meta">FORM 2AM-A · ROOM {hud.roomCode || "-----"} · READ ONCE, THEN BURN</div>
+        <div className="report-sec">TONIGHT’S SITE CONDITIONS</div>
+        {hud.modifiers.length > 0 ? (
+          <ul>
+            {hud.modifiers.map((m) => {
+              const label = MOD_LABELS[m] ?? m.toUpperCase();
+              const cut = label.indexOf(" — ");
+              return (
+                <li key={m}>
+                  <span className="cond-tag">{cut > 0 ? label.slice(0, cut) : label}</span>
+                  {cut > 0 && <span className="cond-desc">{label.slice(cut + 3)}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p>Site conditions: quiet. Quiet is not the same as safe.</p>
+        )}
+        <div className="report-sec">THE NUMBERS</div>
+        <p className="briefing-quota">
+          Quota: <b className="quota-num">${hud.quota}</b> of salvage. Find the distributor cap. Doors bang. Keep quiet.
+        </p>
+        <div className="report-sec">IF THE NIGHT GOES WRONG</div>
+        <p className="briefing-hide">The junkers out front and the passage dumpster open if you need to disappear. (E)</p>
+      </div>
     </div>
   );
 }
@@ -258,6 +285,9 @@ const MOD_LABELS: Record<string, string> = {
   sensitive: "LIGHT SLEEPER — The Caretaker hears everything",
   shortclock: "SHORT SHIFT — 90 seconds less tonight",
   bells: "CURSED BELLS — all cargo rattles while carried",
+  wired: "AMPED UP — The Caretaker moves 20% faster (never faster than the end of a bad night)",
+  fatquota: "RAISED TARGETS — corporate raised the quota 15%. Corporate gets a bonus.",
+  storm: "STORM CELL — rain on the roof. The sky flashes. Nobody is coming either way.",
 };
 
 export { COLORS };

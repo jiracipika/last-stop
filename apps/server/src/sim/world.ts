@@ -509,7 +509,7 @@ export class World {
         it.body.vz = p.body.vz * 0.6;
         it.body.vy = 0.4;
       }
-      this.emit({ t: "drop", item: it.id, by: p.sid, def: it.defId, thrown });
+      this.emit({ t: "drop", item: it.id, by: p.sid, def: it.defId, thrown, x: it.body.x, z: it.body.z, heavy: this.itemDef(it).twoHandle });
     }
     return true;
   }

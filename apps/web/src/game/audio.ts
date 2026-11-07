@@ -484,8 +484,7 @@ export class GameAudio {
     const vol = atten * this.hiddenMuffle;
     switch (kind) {
       case "drop": this.drop(false, pan, vol); break;
-      // two-hand cargo: the server's drop event carries no heavy flag, the
-      // engine resolves it from the item def and picks this kind instead
+      // two-hand cargo: the server stamps drops with a heavy flag
       case "dropHeavy": this.drop(true, pan, vol); break;
       case "grab": this.grab(pan, vol); break;
       case "slip": this.slip(pan, vol); break;

@@ -747,35 +747,88 @@ body,
   font-size: 11px;
 }
 
-/* ---------- briefing ---------- */
+/* ---------- briefing (night-shift briefing sheet; same receipt voice as the
+   shift report, printed over the live lot) ---------- */
 .briefing {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   background: rgba(4, 6, 10, 0.72);
+}
+.briefing-sheet {
+  position: relative;
+  width: min(560px, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 16px 30px 24px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px),
+    rgba(9, 13, 19, 0.96);
+  border: 1px solid #2a3442;
+  border-radius: 4px;
   text-align: center;
+  animation: reportPrint 0.5s steps(6) both;
 }
 .briefing h1 {
+  margin: 14px 0 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #26313d;
   letter-spacing: 4px;
-  font-size: 24px;
+  font-size: 20px;
   color: #ffbe55;
-  margin: 0;
+}
+.briefing-meta {
+  margin: 6px 0 2px;
+  color: #5f6f81;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+}
+.briefing .report-sec {
+  text-align: left;
 }
 .briefing ul {
   list-style: none;
   padding: 0;
   margin: 0;
-  color: #ff9c6e;
-  font-size: 14px;
-  line-height: 1.9;
+  text-align: left;
+}
+.briefing ul li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px dotted #1d2530;
+}
+.cond-tag {
+  flex: none;
+  padding: 2px 8px 1px;
+  border: 1px solid rgba(230, 173, 97, 0.45);
+  border-radius: 3px;
+  color: #E6AD61;
+  font-size: 10px;
+  letter-spacing: 2px;
+  background: rgba(230, 173, 97, 0.07);
+}
+.cond-desc {
+  color: #C6B99B;
+  font-size: 12.5px;
+  line-height: 1.6;
+  letter-spacing: 0.4px;
 }
 .briefing p {
+  margin: 0;
+  text-align: left;
   color: #8a99ac;
-  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.briefing-quota .quota-num {
+  color: #ffd268;
+}
+.briefing-hide {
+  color: #C6B99B;
 }
 
 /* ---------- results (shift report) ---------- */
@@ -1023,6 +1076,7 @@ body,
 @media (prefers-reduced-motion: reduce) {
   .title-panel::before,
   .results-panel,
+  .briefing-sheet,
   .t-pale,
   .t-lantern,
   .t-dead,
