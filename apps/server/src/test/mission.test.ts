@@ -33,7 +33,7 @@ describe("mission arcs", () => {
     // 1) deliver one small item (>= 60 value)
     let pick: { id: string; x: number; z: number } | null = null;
     for (const [id, it] of st().items) {
-      if (it.state === 0 && it.value >= 60 && !["vending", "arcade", "freezer", "compressor", "fishtank", "clock", "distributor"].includes(it.defId)) {
+      if (it.state === 0 && it.value >= 60 && !["vending", "arcade", "freezer", "compressor", "fishtank", "clock", "payphone", "mattress", "distributor"].includes(it.defId)) {
         pick = { id, x: it.x, z: it.z };
         break;
       }

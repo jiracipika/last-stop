@@ -107,6 +107,26 @@ describe("carrying", () => {
     expect(stateOf(host).items.get(heavyId!)!.state).toBe(0);
   }, 60000);
 
+  // Grab with approach discipline: walk to the item's LIVE position (items
+  // have physics and roll after spawn), get adjacent (d < 0.8 skips the LOS
+  // check the right way — standing ON the loot, not 1 m away through a wall),
+  // and retry across re-reads. A walkTo timeout is caught, not fatal: the bot
+  // may already be inside grab range (2.6 m + radius) with clear LOS.
+  async function walkAndGrab(bot: Bot, itemId: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const it = stateOf(bot).items.get(itemId)!;
+      try {
+        await walkTo(bot, it.x, it.z, attempt === 0 ? 0.4 : 1.0, 12000);
+      } catch {
+        /* wedged somewhere — the grab below decides */
+      }
+      bot.room.send("act", { k: "grab", id: itemId });
+      await sleep(700);
+      if (me(bot).carrying === itemId) return true;
+    }
+    return false;
+  }
+
   it("delivering cargo credits salvage exactly once", async () => {
     // find a small item, bring it to the van's loading zone
     let small: { id: string; x: number; z: number } | null = null;
@@ -124,9 +144,8 @@ describe("carrying", () => {
     await walkTo(host, doorW.x, doorW.z + 1.2, 0.9);
     host.room.send("act", { k: "vanDoors" });
     await sleep(400);
-    await walkTo(host, s.x, s.z, 1.0);
-    host.room.send("act", { k: "grab", id: s.id });
-    await waitFor("carrying", () => me(host).carrying === s.id);
+    expect(await walkAndGrab(host, s.id)).toBe(true);
+    await waitFor("carrying", () => me(host).carrying === s.id, 4000);
     // stand in the loading zone behind the open doors and set it down
     await walkTo(host, VAN_START.x, VAN_START.z + 3.0, 0.7, 60000);
     host.room.send("act", { k: "release", thrown: false });
@@ -149,9 +168,8 @@ describe("carrying", () => {
     }
     expect(small).not.toBeNull();
     const s = small!;
-    await walkTo(mate, s.x, s.z, 0.9);
-    mate.room.send("act", { k: "grab", id: s.id });
-    await waitFor("mate carrying", () => me(mate).carrying === s.id);
+    expect(await walkAndGrab(mate, s.id)).toBe(true);
+    await waitFor("mate carrying", () => me(mate).carrying === s.id, 4000);
     mate.room.leave();
     await waitFor("item released", () => {
       const it = stateOf(host).items.get(s.id);
@@ -176,6 +194,17 @@ describe("carrying", () => {
     await sleep(500);
     expect(me(host).carrying).toBe("");
     const it = stateOf(host).items.get(far.id)!;
+    expect(it.state).toBe(0);
+    // a rejected grab used to leave h0 set with state 0 — bricking the item
+    // for the whole mission (tryGrab validated AFTER mutating). Pin the fix:
+    // the same item must still be grabbable up close.
+    expect(it.h0 ?? "").toBe("");
+    await walkTo(host, it.x, it.z, 0.4, 20000);
+    host.room.send("act", { k: "grab", id: far.id });
+    await sleep(600);
+    expect(me(host).carrying).toBe(far.id);
+    host.room.send("act", { k: "release", thrown: false });
+    await sleep(400);
     expect(it.state).toBe(0);
   }, 30000);
 

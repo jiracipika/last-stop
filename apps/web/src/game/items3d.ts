@@ -75,6 +75,15 @@ export class ItemView {
         const face = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.04), new THREE.MeshBasicMaterial({ color: 0x2a3d55 }));
         face.position.set(-0.1, 0.25, 0.39);
         add(face);
+        if (def.id === "payphone") {
+          // handset dangling off the left rail on its cord
+          const cord = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.34, 0.03), dark);
+          cord.position.set(-0.52, 0.55, 0.25);
+          add(cord);
+          const handset = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.08), dark);
+          handset.position.set(-0.52, 0.2, 0.25);
+          add(handset);
+        }
         break;
       }
       case "arcade": {
@@ -101,6 +110,21 @@ export class ItemView {
         const face = new THREE.Mesh(new THREE.CircleGeometry(0.16, 12), new THREE.MeshBasicMaterial({ color: 0xe8e0c8 }));
         face.position.set(0, 0.62, 0.19);
         add(face);
+        break;
+      }
+      case "cuckoo": {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.16), mat);
+        add(body);
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.16, 4), mat);
+        roof.rotation.y = Math.PI / 4;
+        roof.position.y = 0.25;
+        add(roof);
+        const face = new THREE.Mesh(new THREE.CircleGeometry(0.07, 10), new THREE.MeshBasicMaterial({ color: 0xe8e0c8 }));
+        face.position.set(0, 0.05, 0.085);
+        add(face);
+        const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.02), dark);
+        door.position.set(0, -0.08, 0.09);
+        add(door);
         break;
       }
       case "distributor": {

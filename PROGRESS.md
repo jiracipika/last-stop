@@ -2,7 +2,36 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance slices (2026-11-06)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot slices (2026-11-06)
+
+### Co-op presence + loot variety (2026-11-06) — done
+
+- **Remote crew is audible** (engine/audio): teammates now have positional footsteps
+  (`pstep`, cadence from their RENDERED positions so sound and sight agree, sprint-shaded,
+  ≤half the sting reference), and grab/drop/slip/store/ring events are positional for
+  everyone — previously drop sounds played at YOUR camera (server events carry no x/z), slip
+  had no sound at all, and a dead `bell` case never fired. Heavy drops get a heavier thud via
+  the item's twoHandle flag. All positional cues muffled while you're hidden.
+- **Remote smoothing verified, not rebuilt**: the engine already interpolated remotes through
+  the two-snapshot SnapBuf (same as the enemy) — the pass verified the plumbing end-to-end and
+  fixed the one gap: the dead-spectate camera followed raw 20 Hz positions and stuttered; it
+  now samples the same buffers (shared INTERP_DELAY_MS).
+- **5 new salvage items** (items.ts + items3d + loot.test.ts): Gumball Machine (fragile),
+  Velvet Painting (fragile panel), Cuckoo Clock (noisy+fragile, new mesh builder), Payphone
+  (twoHandle, dangling handset detail), Queen Mattress (twoHandle, deliberately low value —
+  the "why did we grab this" haul). Economy drift −1 to −3.8% planValue; quotas stay payable
+  by construction (300-seed sweep). mission.test's heavy-exclusion list extended.
+- **The loot change flushed out a REAL gameplay bug in tryGrab**: for one-handed items the
+  handle was assigned BEFORE the range/LOS checks — a grab from too far (or through a wall)
+  was rejected AFTER setting `h0`, bricking the item (`state=0` + `h0` occupied rejects
+  everyone forever). Grab-spam near a doorway bricked loot in real play. Fix: all rejection
+  checks run before any mutation; pinned by a new carry.test assertion (rejected grab leaves
+  h0 empty AND the item is still grabbable up close). The test harness also got a
+  `walkAndGrab` helper (live-position re-reads + adjacent approach + opportunistic grab) —
+  the old single-walk single-grab pattern was drift- and LOS-fragile.
+- Verification (2026-11-06): tsc ×3 clean; server vitest **47/47** (15 files, loot tests
+  included); full Playwright e2e **6/6**. Visual gate (new meshes) + audio balance need
+  human eyes/ears.
 
 ### In-engine title, quality presets, balance sweep (2026-11-06) — done
 

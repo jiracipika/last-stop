@@ -46,6 +46,8 @@ const FOV_EASE_RATE = 9; // exponential ease toward the sprint FOV target
 const BOB_AMPLITUDE = 0.045; // meters of view-bob at full walk speed
 const BUMP_MIN_IMPULSE = 2; // m/s of collision-stripped velocity that counts as a slam
 const BUMP_COOLDOWN = 0.4; // seconds between wall-thud sounds
+const REMOTE_STRIDE = 2.0; // meters of rendered travel per remote teammate footstep
+const INTERP_DELAY_MS = 120; // remote entities render this far behind the newest patch
 
 // ---- attract mode (title-screen cinematic) ---------------------------------
 // A closed loop of slow dolly moves past the lot's landmarks: the PALE
@@ -430,15 +432,43 @@ export class Engine {
           if (grabbed?.h1 === this.net.sid) {
             this.store.toast("You've got the other end — walk together", "good");
           }
+        } else {
+          // a teammate's grab is a world cue at their feet, not UI feedback
+          const grabber = st?.players.get(String(e.by));
+          if (grabber) audio.playEventAt("grab", grabber.x, grabber.z, cam);
         }
         break;
-      case "drop":
-        audio.playEventAt("drop", Number(e.x ?? this.camera.position.x), Number(e.z ?? this.camera.position.z), cam);
+      case "drop": {
+        // the server's drop event carries no position: resolve it from the
+        // dropper's state (item, then listener as fallback) so a teammate's
+        // drop lands where they stand instead of at my camera
+        const dropper = st?.players.get(String(e.by));
+        const dropped = st?.items.get(String(e.item));
+        const dx = Number(e.x ?? dropper?.x ?? dropped?.x ?? this.camera.position.x);
+        const dz = Number(e.z ?? dropper?.z ?? dropped?.z ?? this.camera.position.z);
+        // heavy = two-hand cargo; the server drops it with DROP_HEAVY noise
+        const heavy = ITEM_DEFS[String(e.def ?? dropped?.defId ?? "")]?.twoHandle === true;
+        audio.playEventAt(heavy ? "dropHeavy" : "drop", dx, dz, cam);
         break;
-      case "stored":
-        audio.stored();
+      }
+      case "ring":
+        // noisy cargo jingles while carried; the payload carries its position
+        audio.playEventAt("bell", Number(e.x ?? 0), Number(e.z ?? 0), cam);
+        break;
+      case "stored": {
+        // my own credit stays a non-positional UI ding; a teammate's store is
+        // a world cue at their position (one physical event, one sound)
+        const credited = Array.isArray(e.by) ? (e.by as string[]) : [];
+        const mate = credited.find((s) => s !== this.net.sid);
+        if (credited.includes(this.net.sid) || !mate) {
+          audio.stored();
+        } else {
+          const storer = st?.players.get(mate);
+          if (storer) audio.playEventAt("store", storer.x, storer.z, cam);
+        }
         if (Number(e.value) > 0) this.store.toast(`+$${e.value} secured`, "good");
         break;
+      }
       case "damage":
         audio.glass();
         if (Number(e.lost) > 0) this.store.toast(`-${Math.round(Number(e.lost))} ${e.cause === "bump" ? "(cargo banged up)" : "(broke something)"}`, "warn");
@@ -524,9 +554,14 @@ export class Engine {
         this.store.toast(`${st?.players.get(String(e.sid))?.nick ?? "?"}: ${e.msg}`, "info");
         if (e.sid !== this.net.sid) this.spawnBubble(String(e.sid), String(e.msg));
         break;
-      case "slip":
+      case "slip": {
         if (e.by === this.net.sid) this.store.toast("It slipped! Watch the leash", "warn");
+        // the yank-and-thud is a world cue for everyone; for the fumbler it
+        // fires at their own position, so it reads as full-volume feedback
+        const fumbler = st?.players.get(String(e.by));
+        if (fumbler) audio.playEventAt("slip", fumbler.x, fumbler.z, cam);
         break;
+      }
       case "seat":
         break;
       case "hide": {
@@ -788,7 +823,7 @@ export class Engine {
       this.world3d.cullLights(this.camera.position);
     }
 
-    this.updateCamera(dt, t, st);
+    this.updateCamera(dt, t, st, now);
     this.updateMarkers(dt);
 
     // decay UI flashes
@@ -864,7 +899,8 @@ export class Engine {
 
   private syncEntities(dt: number, st: RoomState, t: number, nowMs: number): void {
     const k = Math.min(1, 12 * dt); // smoothing toward authoritative state
-    const renderAt = nowMs - 120; // interpolation delay for remote entities
+    const renderAt = nowMs - INTERP_DELAY_MS; // interpolation delay for remote entities
+    const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
     // players
     const seen = new Set<string>();
     for (const [sid, p] of st.players) {
@@ -894,6 +930,7 @@ export class Engine {
         buf.push(this.lastPatchAt || nowMs, p.x, p.z, p.yaw);
         const s = buf.sample(renderAt) ?? { x: p.x, z: p.z, yaw: p.yaw };
         av.update(dt, { ...p, x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
+        this.updateRemoteAudio(sid, p, s.x, s.z, cam);
       }
     }
     for (const [sid, av] of this.avatars) {
@@ -901,6 +938,7 @@ export class Engine {
         this.scene.remove(av.group);
         this.avatars.delete(sid);
         this.remoteBufs.delete(sid);
+        this.remoteStride.delete(sid);
       }
     }
     // items
@@ -969,6 +1007,39 @@ export class Engine {
       if (ds && ds.open !== dv.open) {
         this.world3d.setDoor(this.world3d.doorViews.indexOf(dv), ds.open);
       }
+    }
+  }
+
+  /** Per-sid footstep cadence state for updateRemoteAudio. */
+  private remoteStride = new Map<string, { lx: number; lz: number; acc: number }>();
+
+  /**
+   * Teammate positional audio, mirroring the Caretaker's estep block: the
+   * cadence accumulates RENDERED distance (post-interpolation), so the 20 Hz
+   * patch cadence still yields a steady beat, and each cue lands where the
+   * eye already sees the avatar — sound and sight can never disagree because
+   * both read the same snapshot buffer.
+   */
+  private updateRemoteAudio(sid: string, p: PlayerState, rx: number, rz: number, cam: { x: number; z: number; yaw: number }): void {
+    let stride = this.remoteStride.get(sid);
+    if (!stride) {
+      stride = { lx: rx, lz: rz, acc: 0 };
+      this.remoteStride.set(sid, stride);
+    }
+    const moved = Math.hypot(rx - stride.lx, rz - stride.lz);
+    stride.lx = rx;
+    stride.lz = rz;
+    // legs only: van riders / downed / dead / hidden teammates make no steps,
+    // and a snap frame (render cut past the 2.5 m teleport guard) must not
+    // bank phantom travel into the accumulator
+    if (p.seat > 0 || p.downed || p.dead || p.hidden || moved >= 1.5) {
+      stride.acc = 0;
+      return;
+    }
+    stride.acc += moved;
+    if (stride.acc >= REMOTE_STRIDE) {
+      stride.acc = 0;
+      audio.playEventAt("pstep", rx, rz, cam, p.sprinting);
     }
   }
 
@@ -1062,7 +1133,7 @@ export class Engine {
     }
   }
 
-  private updateCamera(dt: number, t: number, st: RoomState | null): void {
+  private updateCamera(dt: number, t: number, st: RoomState | null, nowMs: number): void {
     if (this.frozenCam) {
       const f = this.frozenCam;
       this.camera.position.set(f.x, f.y, f.z);
@@ -1110,14 +1181,17 @@ export class Engine {
 
     if (me.dead) {
       // spectate: follow a living teammate
-      const living = [...st.players.entries()].filter(([sid2, p]) => !p.dead && sid2 !== this.net.sid).map(([, p]) => p);
+      const living = [...st.players.entries()].filter(([sid2, p]) => !p.dead && sid2 !== this.net.sid);
       let spectating = "";
       if (living.length) {
         this.spectateIdx %= living.length;
-        const p = living[this.spectateIdx]!;
+        const [specSid, p] = living[this.spectateIdx]!;
         spectating = p.nick;
-        cx = p.x;
-        cz = p.z;
+        // ride the same interpolated position the avatar renders — raw 20 Hz
+        // patches would make the spectate camera itself stutter
+        const s = this.remoteBufs.get(specSid)?.sample(nowMs - INTERP_DELAY_MS);
+        cx = s ? s.x : p.x;
+        cz = s ? s.z : p.z;
         cy = PLAYER.EYE + 1.2;
       } else {
         cy = 18;

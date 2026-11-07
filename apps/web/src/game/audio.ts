@@ -197,13 +197,13 @@ export class GameAudio {
     this.noise(sprint ? 0.05 : 0.03, 0.09, sprint ? 900 : 600);
   }
 
-  grab(): void {
-    this.tone(300, 0.08, 0.08, "triangle", 40);
+  grab(pan = 0, vol = 1): void {
+    this.tone(300, 0.08 * vol, 0.08, "triangle", 40, pan);
   }
 
-  drop(heavy: boolean, pan = 0): void {
-    this.tone(heavy ? 60 : 90, heavy ? 0.24 : 0.12, heavy ? 0.3 : 0.16, "sine");
-    this.noise(heavy ? 0.16 : 0.08, 0.14, 500, "lowpass", pan);
+  drop(heavy: boolean, pan = 0, vol = 1): void {
+    this.tone(heavy ? 60 : 90, (heavy ? 0.24 : 0.12) * vol, heavy ? 0.3 : 0.16, "sine", 0, pan);
+    this.noise((heavy ? 0.16 : 0.08) * vol, 0.14, 500, "lowpass", pan);
   }
 
   glass(pan = 0): void {
@@ -212,9 +212,9 @@ export class GameAudio {
     this.tone(3100, 0.04, 0.14, "triangle", 0, pan);
   }
 
-  bell(pan = 0): void {
-    this.tone(1760, 0.12, 0.9, "sine", 0, pan);
-    this.tone(2637, 0.05, 0.6, "sine", 0, pan);
+  bell(pan = 0, vol = 1): void {
+    this.tone(1760, 0.12 * vol, 0.9, "sine", 0, pan);
+    this.tone(2637, 0.05 * vol, 0.6, "sine", 0, pan);
   }
 
   door(pan = 0): void {
@@ -263,9 +263,9 @@ export class GameAudio {
     setTimeout(() => this.tone(780, 0.1, 0.4, "triangle"), 140);
   }
 
-  stored(): void {
-    this.tone(660, 0.09, 0.2, "triangle");
-    setTimeout(() => this.tone(880, 0.09, 0.3, "triangle"), 110);
+  stored(pan = 0, vol = 1): void {
+    this.tone(660, 0.09 * vol, 0.2, "triangle", 0, pan);
+    setTimeout(() => this.tone(880, 0.09 * vol, 0.3, "triangle", 0, pan), 110);
   }
 
   quotaDing(): void {
@@ -322,6 +322,22 @@ export class GameAudio {
     const f = 1900 + Math.random() * 600;
     this.tone(f, 0.05 * vol, 0.1, "triangle", 0, pan);
     this.tone(f * 1.62, 0.03 * vol, 0.07, "triangle", 0, pan);
+  }
+
+  /** Teammate footstep: the local footstep's gravel scuff plus a soft heel
+   *  tap. Deliberately far under the Caretaker's estep presence — the peak
+   *  stays at or below half the sting reference, so a full crew walking
+   *  together cannot stack over the hunt mix. */
+  private pstep(pan: number, vol: number, sprint: boolean): void {
+    this.tone(85 + Math.random() * 25, 0.05 * vol, 0.09, "sine", 0, pan);
+    this.noise(0.026 * vol, 0.09, sprint ? 900 : 600, "lowpass", pan);
+  }
+
+  /** Leash slip: the load is yanked out of a fumbler's hands and thuds down
+   *  beside them — a quicker, quieter cousin of the heavy drop. */
+  private slip(pan: number, vol: number): void {
+    this.tone(72, 0.05 * vol, 0.22, "sine", 0, pan);
+    this.noise(0.03 * vol, 0.18, 450, "lowpass", pan);
   }
 
   /** Busted: a body dragged out of a junker — muffled thump + scrape. */
@@ -460,29 +476,38 @@ export class GameAudio {
     }
   }
 
-  /** Play a world-positioned event by kind. */
-  playEventAt(kind: string, x: number, z: number, cam: { x: number; z: number; yaw: number }): void {
+  /** Play a world-positioned event by kind. `sprint` only shades "pstep"
+   *  (brighter, faster scuff for a sprinting teammate). */
+  playEventAt(kind: string, x: number, z: number, cam: { x: number; z: number; yaw: number }, sprint = false): void {
     const { pan, atten } = this.spatial(x, z, cam);
     if (atten < 0.03) return;
+    const vol = atten * this.hiddenMuffle;
     switch (kind) {
-      case "drop": this.drop(false, pan * atten * 2); break;
+      case "drop": this.drop(false, pan, vol); break;
+      // two-hand cargo: the server's drop event carries no heavy flag, the
+      // engine resolves it from the item def and picks this kind instead
+      case "dropHeavy": this.drop(true, pan, vol); break;
+      case "grab": this.grab(pan, vol); break;
+      case "slip": this.slip(pan, vol); break;
+      case "store": this.stored(pan, vol); break;
+      case "pstep": this.pstep(pan, vol, sprint); break;
       case "door": this.door(pan); break;
-      case "bell": this.bell(pan); break;
+      case "bell": this.bell(pan, vol); break;
       case "bang": this.bang(pan); break;
       case "horn": this.horn(); break;
       case "bump": this.bump(6); break;
-      case "estep": this.estep(pan, atten * this.hiddenMuffle); break;
-      case "clink": this.clink(pan, atten * this.hiddenMuffle); break;
+      case "estep": this.estep(pan, vol); break;
+      case "clink": this.clink(pan, vol); break;
       case "drag": this.drag(pan, atten); break;
-      case "spotted": this.spotted(pan, atten * this.hiddenMuffle); break;
-      case "lost": this.lost(pan, atten * this.hiddenMuffle); break;
+      case "spotted": this.spotted(pan, vol); break;
+      case "lost": this.lost(pan, vol); break;
       case "lostYou":
         // the exhale lands on its ex-target: attenuation is floored so it
         // reads personal, yet stays well under the spotted sting's peak
         this.lost(pan, Math.max(atten, 0.65) * this.hiddenMuffle);
         break;
-      case "itick": this.itick(pan, atten * this.hiddenMuffle); break;
-      case "windup": this.windup(pan, atten * this.hiddenMuffle); break;
+      case "itick": this.itick(pan, vol); break;
+      case "windup": this.windup(pan, vol); break;
       default: break;
     }
   }

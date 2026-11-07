@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-11-06T22:03:13.382Z",
+  "recordedAt": "2026-11-06T23:56:56.531Z",
   "sessionId": "sess_4b43d33a-eeb1-4207-93fb-707bf86f72ba",
   "event": "PostToolUse",
   "toolName": "Edit",
-  "file": "src/test/carry.test.ts",
+  "file": "/home/rs/.zcode/workspace/10acb159-2cfe-41fe-9bd4-f2298d9cd947/last-stop/PROGRESS.md",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 8,
+  "durationMs": 4,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }

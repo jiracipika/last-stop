@@ -31,19 +31,26 @@ export const ITEM_DEFS: Record<string, ItemDef> = {
   barsign: { id: "barsign", name: "Neon Bar Sign", weight: 2, value: 110, radius: 0.3, restY: 0.24, mesh: "panel", color: "#ff5c8a", fragile: true },
   bell: { id: "bell", name: "Antique Service Bell", weight: 1, value: 40, radius: 0.18, restY: 0.14, mesh: "bell", color: "#d8b544", noisy: true },
   chimes: { id: "chimes", name: "Wind Chime Set", weight: 1, value: 50, radius: 0.22, restY: 0.3, mesh: "chimes", color: "#9aa8b5", noisy: true, fragile: true },
+  gumball: { id: "gumball", name: "Gumball Machine", weight: 1, value: 40, radius: 0.2, restY: 0.2, mesh: "sphere", color: "#c94f42", fragile: true },
+  velvet: { id: "velvet", name: "Velvet Painting", weight: 2, value: 85, radius: 0.3, restY: 0.24, mesh: "panel", color: "#a34a2a", fragile: true },
+  cuckoo: { id: "cuckoo", name: "Cuckoo Clock", weight: 1, value: 75, radius: 0.22, restY: 0.18, mesh: "cuckoo", color: "#6e4a28", noisy: true, fragile: true },
   vending: { id: "vending", name: "Soda Vending Machine", weight: 5, value: 260, radius: 0.55, restY: 0.85, mesh: "vending", color: "#c23b3b", twoHandle: true },
   arcade: { id: "arcade", name: "Arcade Cabinet", weight: 4, value: 220, radius: 0.5, restY: 0.85, mesh: "arcade", color: "#3b62c2", twoHandle: true },
   compressor: { id: "compressor", name: "Air Compressor", weight: 4, value: 170, radius: 0.42, restY: 0.5, mesh: "canister", color: "#5c7a3d", twoHandle: true },
   freezer: { id: "freezer", name: "Chest Freezer", weight: 5, value: 200, radius: 0.55, restY: 0.45, mesh: "box", color: "#cfd6dd", twoHandle: true },
   fishtank: { id: "fishtank", name: "Office Fish Tank", weight: 4, value: 240, radius: 0.45, restY: 0.4, mesh: "tank", color: "#7fd4ff", twoHandle: true, fragile: true },
   clock: { id: "clock", name: "Grandfather Clock", weight: 4, value: 230, radius: 0.4, restY: 0.95, mesh: "clock", color: "#6b4a2c", twoHandle: true, fragile: true },
+  payphone: { id: "payphone", name: "Payphone", weight: 4, value: 190, radius: 0.45, restY: 0.85, mesh: "vending", color: "#3a5578", twoHandle: true },
+  // value deliberately sits below the heavy band: nobody pays for a used
+  // mattress; it ships because it is heavy, awkward, and already on the manifest
+  mattress: { id: "mattress", name: "Queen Mattress", weight: 3, value: 95, radius: 0.55, restY: 0.3, mesh: "box", color: "#cfc3a4", twoHandle: true },
   distributor: { id: "distributor", name: "Van Distributor Cap", weight: 2, value: 0, radius: 0.28, restY: 0.2, mesh: "distributor", color: "#c8a03c", part: true },
 };
 
 const SMALL_POOL = ["toolbox", "battery", "cooler", "radio", "raccoon"];
-const FRAGILE_POOL = ["cat", "globe", "barsign", "typewriter"];
-const NOISY_POOL = ["bell", "chimes"];
-const HEAVY_POOL = ["vending", "arcade", "compressor", "freezer", "fishtank", "clock"];
+const FRAGILE_POOL = ["cat", "globe", "barsign", "typewriter", "gumball", "velvet"];
+const NOISY_POOL = ["bell", "chimes", "cuckoo"];
+const HEAVY_POOL = ["vending", "arcade", "compressor", "freezer", "fishtank", "clock", "payphone", "mattress"];
 
 export interface PlannedItem {
   defId: string;

@@ -418,6 +418,15 @@ export class World {
     const it = this.items.get(itemId);
     if (!it) return false;
     const def = this.itemDef(it);
+    // ALL rejection checks run BEFORE any handle mutation: a rejected grab
+    // used to leave it.h0 set with state 0, permanently bricking the item
+    // (the "if (it.h0) return false" guard then rejected everyone forever).
+    const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
+    if (d > PLAYER.GRAB_RANGE + def.radius) return false;
+    // must not reach through walls (the van itself does NOT block grabs:
+    // loading happens at its open rear)
+    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
+    if (it.defId === "distributor" && this.partInstalled) return false;
     if (def.twoHandle) {
       // second handle can be grabbed while the item is already carried
       if (it.state !== 0 && it.state !== 1) return false;
@@ -429,12 +438,6 @@ export class World {
       if (it.h0) return false;
       it.h0 = p.sid;
     }
-    const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
-    if (d > PLAYER.GRAB_RANGE + def.radius) return false;
-    // must not reach through walls (the van itself does NOT block grabs:
-    // loading happens at its open rear)
-    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
-    if (it.defId === "distributor" && this.partInstalled) return false;
     it.state = 1;
     it.sleeping = false;
     it.lastH0 = it.h0;
