@@ -408,8 +408,9 @@ export interface HideSpot {
   lidY?: number;
 }
 export const HIDE_SPOTS: HideSpot[] = [
-  // dead sedan in the front yard — climb into the cabin
-  { id: "carA", kind: "car", standX: -8.1, standZ: 1.9, x: -9, z: 0.15, doorX: -8.15, doorZ: 0.95, doorYaw: 0.2 },
+  // dead sedan in the front yard — climb into the cabin (doorYaw ~flush: the
+  // rebuilt body has a real throat, the old 0.2 tilt read as stuck ajar)
+  { id: "carA", kind: "car", standX: -8.1, standZ: 1.9, x: -9, z: 0.15, doorX: -8.15, doorZ: 0.95, doorYaw: 0.03 },
   // sedan by the south fence — fold yourself into the trunk
   { id: "carB", kind: "trunk", standX: 21.6, standZ: 23.4, x: 22.3, z: 22.5, doorX: 21.95, doorZ: 22.85, doorYaw: -0.35 },
   // dumpster in the motel/garage passage — climb in under the tip-up lid

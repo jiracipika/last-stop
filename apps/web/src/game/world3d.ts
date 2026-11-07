@@ -681,11 +681,15 @@ export class World3D {
   }
 
   // -------------------------------------------------------- hide-spot doors
-  private hideDoors = new Map<string, { group: THREE.Group; open: boolean; kind: string; baseYaw: number }>();
+  private hideDoors = new Map<string, { group: THREE.Group; open: boolean; kind: string; baseYaw: number; dome: THREE.PointLight | null }>();
 
   private buildHideSpotDoors(): void {
     for (const s of HIDE_SPOTS) {
       const g = new THREE.Group();
+      // dome light: the whole point of a car door is the light that comes on
+      // when it swings — it lights the cabin/trunk for the hider AND makes
+      // the open door readable from outside at night
+      let dome: THREE.PointLight | null = null;
       if (s.kind === "car") {
         // driver door, hinged at its front edge, swings out; wears the
         // junker's body paint (see the sedan builders)
@@ -693,6 +697,9 @@ export class World3D {
         g.add(this.box(0.95, 0.8, 0.06, paint, 0.48, 0, 0));
         g.add(this.box(0.05, 0.05, 0.1, this.solid(0x14161a), 0.8, 0, 0.05));
         g.position.set(s.doorX, 0.85, s.doorZ);
+        dome = new THREE.PointLight(s.id === "carA" ? 0xE6AD61 : 0x9fc4d8, 0, 4.5, 1.6);
+        dome.position.set(s.x, 1.3, s.z);
+        this.group.add(dome);
       } else {
         // lid, hinged at the body edge, tips up; sized per spot so it
         // actually covers the tub it belongs to (dumpster >> sedan trunk)
@@ -703,10 +710,17 @@ export class World3D {
         g.add(this.box(lidW, 0.08, lidD, paint, 0, 0, lidD / 2 + 0.005));
         g.add(this.box(0.5, 0.05, 0.06, this.solid(0x14161a), 0, 0.03, lidD / 2 - 0.15));
         g.position.set(s.doorX, lidY, s.doorZ);
+        if (s.lidY === undefined) {
+          // carB's trunk tub is pitch black from inside — a cold trunk light
+          // (the dumpster stays dark; the passage bug-lamp already marks it)
+          dome = new THREE.PointLight(0x9fc4d8, 0, 3.5, 1.6);
+          dome.position.set(s.x, lidY + 0.4, s.z);
+          this.group.add(dome);
+        }
       }
       g.rotation.y = s.doorYaw;
       this.group.add(g);
-      this.hideDoors.set(s.id, { group: g, open: false, kind: s.kind, baseYaw: s.doorYaw });
+      this.hideDoors.set(s.id, { group: g, open: false, kind: s.kind, baseYaw: s.doorYaw, dome });
     }
   }
 
@@ -726,6 +740,8 @@ export class World3D {
         const target = d.open ? -1.25 : 0; // lid tips up around the hinge
         d.group.rotation.x += (target - d.group.rotation.x) * k;
       }
+      // dome light fades in with the door/lid and dies when it closes
+      if (d.dome) d.dome.intensity += ((d.open ? 3.2 : 0) - d.dome.intensity) * k;
     }
   }
 

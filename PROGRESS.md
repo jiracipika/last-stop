@@ -2,7 +2,31 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish slices (2026-11-06/07)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility slices (2026-11-06/07)
+
+### Netcode smoothing + hide-spot visibility (2026-11-06/07) — done
+
+Playtest feedback ("stuttery/rubber-bandy", "car doors don't open properly") drove two passes:
+
+- **Rubber-band killed at the root**: the client predictor only ever estimated WALK speed while
+  the server sprinted at 5.2 — every sprint accumulated reconcile error past the snap
+  threshold and yanked the camera. `speedFor` now mirrors the server's effectiveSpeed exactly
+  (sprint gate, stamina, carry caps, low-hp). Reconcile no longer hard-snaps: the sim body
+  corrects partially and the remainder is a clamped, decaying render offset (teleports still
+  cut). Client colliders gained the van hull (server stopped you where the client walked in).
+- **Patches 20 → 30 Hz** (match the tick; bytes are tiny). Note: raising the TICK was not the
+  lever — prediction parity + patch cadence were.
+- **Hide spots read now**: Playwright-driven hide runs (client-side walk bot + wire acts)
+  showed the door/lid animations were mechanically perfect but INVISIBLE — pitch-black
+  cabin/trunk interiors and a closed door sagging 11.5° (the old box-car's tilt kept for the
+  rebuilt body). Fixes: dome lights that fade in with the door (warm in carA's cabin, cold in
+  carB's trunk), carA doorYaw 0.2 → 0.03 (flush in the real throat). Verified in screenshots:
+  first-person hide views now show a lit interior, the open door reads from outside.
+- **Probe-infrastructure gotcha worth remembering**: manually booted vite needs
+  `VITE_GAME_SERVER_URL=ws://127.0.0.1:2667` or the page connects to the PRODUCTION server on
+  2567 (real Caretaker, room cap shared with players) — two probe sessions were corrupted by
+  exactly this before it was caught.
+- Verification: tsc ×3 clean; vitest + e2e below.
 
 ### Briefing sheet, drop enrichment, security audit (2026-11-06/07) — done
 
