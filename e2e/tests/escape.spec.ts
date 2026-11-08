@@ -47,6 +47,26 @@ test("escape-phase HUD: van compass and latency chip render", async ({ page, req
   await expect(page.locator(".compass")).toBeVisible({ timeout: 30000 });
   await expect(page.locator(".compass")).toContainText("VAN");
 
+  // direction regression: the rendered rotation must equal the derived screen
+  // angle to the van. Screen-right is world -X at yaw 0 (right-handed
+  // three.js), so screen angle = -(atan2(dx, dz) - yaw), wrapped.
+  const dirErr = await page.evaluate(() => {
+    const ls = (window as unknown as { __laststop?: { net: { state: { players: Map<string, { x: number; z: number; yaw: number }>; van: { x: number; z: number } }; sid: string } } }).__laststop;
+    if (!ls) return null;
+    const me = ls.net.state.players.get(ls.net.sid);
+    if (!me) return null;
+    const el = document.querySelector<HTMLElement>(".compass-arrow");
+    if (!el) return null;
+    const m = /rotate\((-?[\d.]+)rad\)/.exec(el.style.transform || "");
+    if (!m) return null;
+    let expect = -(Math.atan2(ls.net.state.van.x - me.x, ls.net.state.van.z - me.z) - me.yaw);
+    expect = Math.atan2(Math.sin(expect), Math.cos(expect));
+    const got = Math.atan2(Math.sin(Number(m[1])), Math.cos(Number(m[1])));
+    return Math.abs(expect - got);
+  });
+  expect(dirErr).not.toBeNull();
+  expect(dirErr as unknown as number).toBeLessThan(0.05);
+
   // latency chip: the first probe lands within seconds of connect
   await expect(page.locator(".lat-chip")).toBeVisible({ timeout: 15000 });
   await expect(page.locator(".lat-chip")).toContainText("ms");

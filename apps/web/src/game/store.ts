@@ -42,6 +42,10 @@ export interface HudState {
   vanSpeed: number;
   toasts: Toast[];
   damageFlash: number;
+  /** Signed SCREEN angle to the last damage source (rad, wrapped to
+   *  (-PI, PI]): positive = source to the right = clockwise CSS rotation.
+   *  -(atan2(dx, dz) - yaw); null = no recent source. */
+  dmgDir: number | null;
   leaveWarn: number; // count of teammates left behind, 0 = none
   spectating: string;
   fps: number;
@@ -85,6 +89,7 @@ export const initialHud: HudState = {
   vanSpeed: 0,
   toasts: [],
   damageFlash: 0,
+  dmgDir: null,
   leaveWarn: 0,
   spectating: "",
   fps: 60,

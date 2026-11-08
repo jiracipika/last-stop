@@ -797,6 +797,102 @@ body,
   filter: drop-shadow(0 0 4px rgba(120, 232, 255, 0.6));
   transition: transform 0.15s linear;
 }
+/* dimmer key tag prefix on interact prompts ("[E] " / "[HOLD E] ") */
+.p-key {
+  color: #b7c3d1;
+}
+/* directional damage indicator: rig centered on screen, wedge offset upward
+   and rotated by the bearing to the source (positive = clockwise = right) */
+.dmg-dir {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.dmg-dir-rot {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transition: transform 0.12s linear;
+}
+.dmg-dir-wedge {
+  position: absolute;
+  left: -13px;
+  top: -47px;
+  width: 0;
+  height: 0;
+  border-left: 13px solid transparent;
+  border-right: 13px solid transparent;
+  border-bottom: 17px solid #d95b4f;
+  filter: drop-shadow(0 0 5px rgba(182, 61, 53, 0.7));
+  opacity: 0;
+  transition: opacity 0.25s linear;
+}
+.dmg-dir.on .dmg-dir-wedge {
+  opacity: 1;
+}
+/* downed banner: mid-lower screen, clears the crosshair, toasts and bars */
+.downed-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 168px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 18px;
+  background: rgba(20, 8, 6, 0.82);
+  border: 1px solid #6e4030;
+  border-radius: 8px;
+  color: #ff6e5e;
+  letter-spacing: 1px;
+  text-align: center;
+  animation: chasePulse 2.6s infinite;
+}
+.downed-banner b {
+  letter-spacing: 3px;
+}
+.downed-helper {
+  font-size: 11.5px;
+  color: #ffb39c;
+}
+/* first-shift controls card: once per browser, auto-fades via .on */
+.controls-card {
+  position: absolute;
+  left: 16px;
+  bottom: 180px;
+  width: 250px;
+  padding: 10px 12px;
+  background: rgba(8, 12, 18, 0.82);
+  border: 1px solid #2a3442;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.8s;
+  pointer-events: none;
+}
+.controls-card.on {
+  opacity: 1;
+}
+.cc-head {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #ffbe55;
+  margin-bottom: 7px;
+}
+.cc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8a99ac;
+}
+.cc-grid b {
+  color: #e6eef7;
+  font-weight: 600;
+}
 
 /* ---------- briefing (night-shift briefing sheet; same receipt voice as the
    shift report, printed over the live lot) ---------- */
@@ -1131,7 +1227,8 @@ body,
   .t-pale,
   .t-lantern,
   .t-dead,
-  .vacancy-strip {
+  .vacancy-strip,
+  .downed-banner {
     animation: none;
   }
 }
@@ -1197,6 +1294,27 @@ body,
   display: flex;
   gap: 10px;
   margin-top: 18px;
+}
+.pause-controls {
+  margin-top: 14px;
+}
+.pc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 22px;
+  font-size: 12px;
+  color: #8a99ac;
+}
+.pc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dotted #1d2530;
+}
+.pc-row b {
+  color: #e6eef7;
+  font-weight: 600;
 }
 
 /* ---------- misc ---------- */

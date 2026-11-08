@@ -503,7 +503,19 @@ export class Engine {
       case "hurt":
         if (e.sid === this.net.sid) {
           audio.hurt();
-          this.store.set({ damageFlash: 1 });
+          // damage-direction wedge: bearing to the source in screen space.
+          // The camera's screen-right is world -X at yaw 0 (right-handed
+          // three.js), so the signed SCREEN angle is -(atan2(dx, dz) - yaw):
+          // positive = source to the right = clockwise CSS rotation.
+          // Positionless causes carry no sx/sz and leave dmgDir untouched.
+          if (typeof e.sx === "number" && typeof e.sz === "number") {
+            const dx = Number(e.sx) - this.predictor.body.x;
+            const dz = Number(e.sz) - this.predictor.body.z;
+            const rel = -(Math.atan2(dx, dz) - this.input.yaw);
+            this.store.set({ damageFlash: 1, dmgDir: Math.atan2(Math.sin(rel), Math.cos(rel)) });
+          } else {
+            this.store.set({ damageFlash: 1 });
+          }
           this.shake(0.5);
         }
         break;
@@ -746,7 +758,7 @@ export class Engine {
       if (carried?.defId === "distributor" && !van.partInstalled) {
         const d = dist2d(px, pz, enginePt.x, enginePt.z);
         if (d < PLAYER.INTERACT_RANGE + 1.2) {
-          this.target = { kind: "install", id: me.carrying, label: "Hold E — install distributor" };
+          this.target = { kind: "install", id: me.carrying, label: "Install distributor" };
           this.lastTargetPos = enginePt;
           return;
         }
@@ -756,7 +768,7 @@ export class Engine {
     // revive prompt
     for (const [sid2, p] of st.players) {
       if (p.downed && !p.dead && sid2 !== this.net.sid) {
-        consider({ kind: "revive", id: sid2, label: `Hold E — pick up ${p.nick}` }, p.x, p.z, PLAYER.INTERACT_RANGE, 1.4);
+        consider({ kind: "revive", id: sid2, label: `Pick up ${p.nick}` }, p.x, p.z, PLAYER.INTERACT_RANGE, 1.4);
       }
     }
 
@@ -830,7 +842,9 @@ export class Engine {
 
     // decay UI flashes
     if (this.store.state.damageFlash > 0) {
-      this.store.set({ damageFlash: Math.max(0, this.store.state.damageFlash - dt * 1.6) });
+      const flash = Math.max(0, this.store.state.damageFlash - dt * 1.6);
+      // the damage-direction wedge lives exactly as long as the flash
+      this.store.set(flash > 0 ? { damageFlash: flash } : { damageFlash: 0, dmgDir: null });
     }
     if (this.shakeAmount > 0) this.shakeAmount = Math.max(0, this.shakeAmount - dt * 2.4);
 
@@ -1308,6 +1322,14 @@ export class Engine {
     this.spectateIdx++;
   }
 
+  /** HUD prompt text: key hint + action label. Every targetable action is E:
+   *  taps fire instantly, revive/install hold to fill (progress bar). */
+  private promptFor(t: TargetInfo | null): string {
+    if (!t) return "";
+    if (t.kind === "revive" || t.kind === "install") return `[HOLD E] ${t.label}`;
+    return `[E] ${t.label}`;
+  }
+
   private pushHud(st: RoomState): void {
     const me = st.players.get(this.net.sid);
     if (!me) return;
@@ -1343,7 +1365,7 @@ export class Engine {
       carryingName: def?.name ?? "",
       carryingWeight: def?.weight ?? 0,
       twoHandle: def?.twoHandle ?? false,
-      prompt: this.target?.label ?? "",
+      prompt: this.promptFor(this.target),
       teammates,
       ping: this.net.rttMs,
       modifiers: [...st.modifiers],

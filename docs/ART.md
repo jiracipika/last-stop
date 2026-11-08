@@ -51,7 +51,10 @@ STORM CELL modifiers (rain, lightning, delayed thunder); in-engine attract-mode 
 quality presets + PERSONNEL FILE bests + briefing sheet; netcode smoothing (predictor
 parity, decaying reconcile, 30 Hz patches); hide-spot dome lights + flush doors;
 success pull-away end-beat + escape compass + latency chip; late crew (mid-shift joins,
-van-side spawn, ?code= invite links).
+van-side spawn, ?code= invite links); directional damage indicator + downed banner +
+first-shift controls card + pause controls reference; compass screen-angle mirror FIXED
+(screen-right is world -X at yaw 0 — the iteration-12 compass pointed the wrong way;
+direction now regression-tested in escape.spec).
 
 | # | Slice | Severity | Player impact | Effort | Acceptance |
 |---|---|---|---|---|---|
@@ -60,7 +63,10 @@ van-side spawn, ?code= invite links).
 | 3 | Progression/economy (shift streaks, van upgrades) | medium | retention | L | server tests + results-screen surfacing |
 | 4 | Modifier balance: DONE in first pass (SEVERITY_CAP 1.9 draw cap, docs/BALANCE.md) — residual: re-verify the guessed weights (blackout 1.1, fragile 1.25) against real play | low | fairness | S | playtest notes on hard stacks |
 | 5 | Remote-player smoothing residuals (pstep gains need ears) + per-preset bench rerun on a quiet box | medium | smooth others | M | route benchmark numbers per preset |
-| 6 | Full regression + balance pass | — | ship quality | M | all suites green |
+
+The backlog now lives as GitHub issues (jiracipika/last-stop #1-#8, filed 2026-11-08): this
+table's items plus loud loot, flake hardening, and touch/mobile. Keep this table for the art
+direction view and mirror status changes into the issues.
 
 Deferred (per direction): voice chat, progression economy details.
 

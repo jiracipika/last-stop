@@ -359,7 +359,7 @@ export class CaretakerAI {
         if (d > (p.hidden ? 2.9 : ENEMY.STRIKE_RANGE)) continue;
         const dot = (dx * fx + dz * fz) / (d || 1);
         if (dot > ENEMY.STRIKE_ARC_COS || d < 1.2) {
-          w.damagePlayer(p, ENEMY.HIT_DAMAGE, "caretaker");
+          w.damagePlayer(p, ENEMY.HIT_DAMAGE, "caretaker", this.x, this.z);
         }
       }
     }

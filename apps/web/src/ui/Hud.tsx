@@ -22,12 +22,44 @@ export function Hud({
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
   const danger = hud.timer < 120;
 
+  // Damage bearing (store contract: radians, (-PI, PI], positive = source to
+  // your right = clockwise, same convention as the escape compass).
+  const dmgDir = hud.dmgDir;
+  const dmgOn = dmgDir !== null && hud.damageFlash > 0;
+
+  // Prompts may lead with a key tag ("[E] " / "[HOLD E] "); render the
+  // bracketed prefix dimmer, remainder as-is.
+  const close = hud.prompt.indexOf("]");
+  const promptKey = hud.prompt.startsWith("[") && close > 0 ? hud.prompt.slice(0, close + 1) : null;
+
+  // Nearest crew member able to stabilize the local player.
+  const helper = hud.teammates.reduce<{ nick: string; dist: number } | null>((best, t) => {
+    if (!t.connected || t.downed || t.dead) return best;
+    return best === null || t.dist < best.dist ? { nick: t.nick, dist: t.dist } : best;
+  }, null);
+
+  // First-shift controls card: once per browser, on first scavenge entry.
+  const [controlsOn, setControlsOn] = React.useState(false);
+  const controlsArmedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (hud.phase !== "scavenge" || controlsArmedRef.current) return;
+    controlsArmedRef.current = true;
+    try {
+      if (window.localStorage.getItem("laststop.controlsSeen") === "1") return;
+      window.localStorage.setItem("laststop.controlsSeen", "1");
+    } catch {
+      // storage blocked: still show once this session
+    }
+    setControlsOn(true);
+    window.setTimeout(() => setControlsOn(false), 10000);
+  }, [hud.phase]);
+
   // Escape-phase van compass: bearing + distance from the local player's
   // authoritative state (no predictor import). The engine's yaw convention is
-  // forward = (sin yaw, cos yaw), so the relative bearing is
-  // atan2(dx, dz) - yaw; positive means the van sits to the right, which is
-  // exactly a clockwise CSS rotation. Recomputed per store sample (~12 Hz) —
-  // no second rAF loop.
+  // forward = (sin yaw, cos yaw), but the camera's screen-right is world -X
+  // at yaw 0 (right-handed three.js), so the signed SCREEN angle is
+  // -(atan2(dx, dz) - yaw): positive = van to the right = clockwise CSS
+  // rotation. Recomputed per store sample (~12 Hz) — no second rAF loop.
   let compass: { rot: number; dist: number } | null = null;
   if (hud.phase === "escape" && activeNet) {
     const st = activeNet.state;
@@ -37,7 +69,7 @@ export function Hud({
       const dz = st.van.z - me.z;
       const dist = Math.hypot(dx, dz);
       if (dist >= 4) {
-        let rel = Math.atan2(dx, dz) - me.yaw;
+        let rel = -(Math.atan2(dx, dz) - me.yaw);
         rel = Math.atan2(Math.sin(rel), Math.cos(rel)); // wrap to (-PI, PI]
         compass = { rot: rel, dist };
       }
@@ -50,7 +82,12 @@ export function Hud({
       {!hud.dead && (
         <div className="crosshair">
           <div className="dot" />
-          {hud.prompt && <div className="prompt">{hud.prompt}</div>}
+          {hud.prompt && (
+            <div className="prompt">
+              {promptKey !== null && <span className="p-key">{promptKey}</span>}
+              {promptKey !== null ? hud.prompt.slice(promptKey.length) : hud.prompt}
+            </div>
+          )}
           {hud.progress > 0 && hud.progress < 1 && (
             <div className="progress-wrap">
               <div className="progress-label">{hud.progressKind === "revive" ? "PICKING UP" : "INSTALLING"}</div>
@@ -63,6 +100,48 @@ export function Hud({
       {/* damage vignette */}
       {hud.damageFlash > 0 && <div className="vignette" style={{ opacity: hud.damageFlash * 0.7 }} />}
       {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && <div className="chase-vignette" />}
+
+      {/* directional damage indicator: wedge around the crosshair pointing at
+          the source; rotates clockwise for a positive bearing, opacity tracks
+          the damage flash fade. Stays mounted so CSS can fade it. */}
+      <div className={`dmg-dir ${dmgOn ? "on" : ""}`}>
+        <div
+          className="dmg-dir-rot"
+          style={{ transform: `rotate(${dmgDir ?? 0}rad)`, opacity: Math.max(0, hud.damageFlash) }}
+        >
+          <span className="dmg-dir-wedge" />
+        </div>
+      </div>
+
+      {/* downed banner: mid-lower screen, above the vitals bars */}
+      {hud.downed && !hud.dead && (hud.phase === "scavenge" || hud.phase === "escape") && (
+        <div className="downed-banner">
+          <b>DOWNED</b> - your crew can stabilize you
+          {helper && (
+            <span className="downed-helper">
+              Nearest: {helper.nick} - {Math.round(helper.dist)} m
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* first-shift controls card: bottom-left above the scanner */}
+      <div className={`controls-card ${controlsOn ? "on" : ""}`}>
+        <div className="cc-head">FIRST SHIFT - QUICK REFERENCE</div>
+        <div className="cc-grid">
+          <span><b>WASD</b> move</span>
+          <span><b>Shift</b> sprint</span>
+          <span><b>Mouse</b> look</span>
+          <span><b>LMB</b> grab/release</span>
+          <span><b>RMB</b> stabilize</span>
+          <span><b>E</b> interact</span>
+          <span><b>F</b> flashlight</span>
+          <span><b>Q</b> ping</span>
+          <span><b>1/2/3</b> quick chat</span>
+          <span><b>Space</b> jump/handbrake</span>
+          <span><b>H</b> horn</span>
+        </div>
+      </div>
 
       {/* latency chip */}
       {hud.ping >= 0 && hud.connStatus === "connected" && (

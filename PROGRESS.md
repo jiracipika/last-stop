@@ -2,7 +2,32 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL + late-crew slices (2026-11-06/07)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL + late-crew + playability slices (2026-11-06/08)
+
+### Playability pass + compass mirror fix (2026-11-08) — done
+
+Skills-driven pass (ui-ux-pro-max guidance + code audit) plus a real bug it flushed out:
+
+- **Compass was mirrored** (found by the damage-direction work): the shared bearing
+  `atan2(dx, dz) - yaw` is NOT the screen angle in a right-handed three.js camera —
+  screen-right is world -X at yaw 0, so signed screen angle = **-bearing**. The
+  iteration-12 escape compass pointed the wrong way (its e2e only asserted visibility).
+  Fixed at both computation sites (Hud compass + new dmgDir), convention documented in
+  store.ts, and a numeric direction regression now runs in escape.spec (rendered rotation
+  must match the derived angle within 0.05 rad).
+- **Directional damage indicator**: hurt events carry optional sx/sz (Caretaker melee
+  stamps its position; van bumps never damaged players — documented); the HUD renders a
+  warning-red wedge around the crosshair pointing at the source, fading with the damage
+  flash. dmgdir.test.ts pins the enemy stamp.
+- **Downed banner**: "DOWNED - your crew can stabilize you" + nearest-crew name/distance
+  when downed (state-driven, reduced-motion aware).
+- **First-shift controls card**: compact auto-fading card (10 s, once per browser via
+  localStorage) on first scavenge entry; CONTROLS reference added to the pause menu;
+  interact prompts now carry [E] / [HOLD E] key hints.
+- **GitHub passes**: backlog filed as issues #1-#8; first release tag v0.6.0.
+- Gate: tsc x3 clean; vitest 59/59 (18 files, zero flakes); e2e 9/9 (zero flakes,
+  direction assertion included); CJK scans clean; screenshot vision-checked (chevron now
+  points true).
 
 ### Late crew: mid-shift joins + invite links (2026-11-07) — done
 

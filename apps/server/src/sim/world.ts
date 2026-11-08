@@ -866,7 +866,9 @@ export class World {
   }
 
   // ---------------------------------------------------------------- damage
-  damagePlayer(p: RPlayer, dmg: number, source: string): void {
+  /** sx/sz: world-space position of the damage source when it has one
+   *  (Caretaker strike) so clients can point a damage-direction wedge at it. */
+  damagePlayer(p: RPlayer, dmg: number, source: string, sx?: number, sz?: number): void {
     if (p.dead) return;
     if (p.downed) {
       p.dead = true;
@@ -879,7 +881,12 @@ export class World {
     p.interactKind = "";
     p.interactT = 0;
     if (p.hidden) this.exitHide(p, true); // it found you — dragged out of the car
-    this.emit({ t: "hurt", sid: p.sid, hp: Math.max(0, Math.round(p.hp)), cause: source });
+    const hurt: GameEvent = { t: "hurt", sid: p.sid, hp: Math.max(0, Math.round(p.hp)), cause: source };
+    if (sx !== undefined && sz !== undefined) {
+      hurt.sx = sx;
+      hurt.sz = sz;
+    }
+    this.emit(hurt);
     if (p.hp <= 0) {
       p.hp = 0;
       p.downed = true;
