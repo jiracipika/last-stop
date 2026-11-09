@@ -5,7 +5,8 @@
 // camera from the attract path to the gameplay path (see setAttract).
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp, angleLerp,
+  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
+  SnapBuf,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -77,44 +78,9 @@ const ATTRACT_PATH: AttractPose[] = [
 ];
 const ATTRACT_LOOP_LEN = ATTRACT_PATH.reduce((s, p) => s + p.dur, 0); // 50 s
 
-/** Two-snapshot interpolation buffer for remote entities (~120 ms delay). */
-class SnapBuf {
-  private snaps: { at: number; x: number; z: number; yaw: number }[] = [];
-  private lastX = NaN;
-  private lastZ = NaN;
-
-  push(at: number, x: number, z: number, yaw: number): void {
-    // hard teleport: reset history so we don't smear across the map
-    if (Number.isFinite(this.lastX) && Math.hypot(x - this.lastX, z - this.lastZ) > 2.5) {
-      this.snaps = [];
-    }
-    this.lastX = x;
-    this.lastZ = z;
-    const prev = this.snaps[this.snaps.length - 1];
-    if (prev && Math.hypot(x - prev.x, z - prev.z) < 0.005 && Math.abs(x - prev.x) < 0.005) {
-      return; // unchanged; heartbeat below keeps the buffer fresh enough
-    }
-    this.snaps.push({ at, x, z, yaw });
-    if (this.snaps.length > 20) this.snaps.shift();
-  }
-
-  sample(renderAt: number): { x: number; z: number; yaw: number } | null {
-    const n = this.snaps.length;
-    if (n === 0) return null;
-    if (n === 1) return this.snaps[0]!;
-    for (let i = n - 1; i > 0; i--) {
-      const b = this.snaps[i]!;
-      const a = this.snaps[i - 1]!;
-      if (a.at <= renderAt && renderAt <= b.at) {
-        const span = b.at - a.at || 1;
-        const t = (renderAt - a.at) / span;
-        return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, yaw: angleLerp(a.yaw, b.yaw, t) };
-      }
-    }
-    return this.snaps[n - 1]!; // render time ahead of the newest snapshot
-  }
-}
-
+// The remote-entity interpolation buffer (SnapBuf) lives in shared now
+// (packages/shared/src/interp.ts): bounded extrapolation through jitter gaps
+// instead of freeze-then-fast-forward — the enemy/crew/van rubber-band fix.
 export class Engine {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
@@ -925,6 +891,7 @@ export class Engine {
     const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
     // players
     const seen = new Set<string>();
+    const renderedRemote = new Map<string, { x: number; z: number; yaw: number }>();
     for (const [sid, p] of st.players) {
       seen.add(sid);
       let av = this.avatars.get(sid);
@@ -952,6 +919,7 @@ export class Engine {
         }
         buf.push(this.lastPatchAt || nowMs, p.x, p.z, p.yaw);
         const s = buf.sample(renderAt) ?? { x: p.x, z: p.z, yaw: p.yaw };
+        renderedRemote.set(sid, s);
         av.update(dt, { ...p, x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
         this.updateRemoteAudio(sid, p, s.x, s.z, cam);
       }
@@ -983,12 +951,28 @@ export class Engine {
         view.group.visible = false;
         continue;
       }
+      // who is holding this item (if anyone)? players ≤ 4, scan is free
+      let holderSid = "";
+      for (const [sid, p] of st.players) {
+        if (p.carrying === id) { holderSid = sid; break; }
+      }
       if (me && me.carrying === id) {
         // render the item I'm carrying at MY smoothed hold point (no lag)
         const fx = Math.sin(this.input.yaw);
         const fz = Math.cos(this.input.yaw);
         showX = this.predictor.renderX() + fx * CARRY.HOLD_DIST;
         showZ = this.predictor.renderZ() + fz * CARRY.HOLD_DIST;
+        showY = CARRY.HOLD_Y;
+      } else if (holderSid && holderSid !== this.net.sid && renderedRemote.has(holderSid)) {
+        // carried by a REMOTE crewmate: track their interpolated hold point.
+        // The server places the item at the carrier's authoritative position
+        // (0 ms behind), so following it raw makes the cargo swim around a
+        // carrier that renders ~120 ms in the past.
+        const r = renderedRemote.get(holderSid)!;
+        const fx = Math.sin(r.yaw);
+        const fz = Math.cos(r.yaw);
+        showX = r.x + fx * CARRY.HOLD_DIST;
+        showZ = r.z + fz * CARRY.HOLD_DIST;
         showY = CARRY.HOLD_Y;
       } else {
         showX = view.group.position.x + (it.x - view.group.position.x) * k;

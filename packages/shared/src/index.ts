@@ -1,5 +1,6 @@
 export * from "./constants.js";
 export * from "./math.js";
+export * from "./interp.js";
 export * from "./map.js";
 export * from "./items.js";
 export * from "./mission.js";

@@ -2,7 +2,46 @@
 
 One complete, replayable mission first; then expand. This file is the resume point.
 
-## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL + late-crew + playability slices (2026-11-06/08)
+## Status: first release playable end-to-end (2026-11-05) — art slice 1 + hiding/customization + presence/content + feel/perf/debrief + debrief-data/audio-vocab/modifiers + chaseSid/storm + title/presets/balance + co-op-presence/loot + balance-cap/perf/personnel + briefing/polish + netcode-smoothing/hide-visibility + pull-away/QoL + late-crew + playability + remote-entity-interp slices (2026-11-06/09)
+
+### Remote-entity interpolation hardening — the rubber-band fix (2026-11-09) — done
+
+Playtest report: "enemies moving around still rubber banding". Systematic-debugging pass
+(skill-driven; red test before the fix) traced it to the client's snapshot buffer, not the
+server sim (Caretaker moves via per-tick moveToward at 30 Hz — smooth):
+
+- **Root cause (verified by code read + reproduction)**: SnapBuf.sample had no answer for
+  render time running AHEAD of the newest snapshot. When a patch arrived late (jitter >
+  the 120 ms interp delay), sample returned the stale raw position — the entity FROZE —
+  then fast-forwarded along the straddle when the late patch landed: freeze + rubber band,
+  exactly the reported symptom. The old push-dedupe (moved < 5 mm → skip) also let
+  timestamps go stale around pauses.
+- **Fix (per the standard entity-interpolation contract — the html5-canvas-game netcode
+  reference prescribes exactly this)**: SnapBuf moved to packages/shared/src/interp.ts;
+  sample() now EXTRAPOLATES along the final segment bounded to EXTRAP_MAX_MS = 120
+  (= the interp delay, so re-entry through a late patch is linearly continuous for stalls
+  up to 240 ms); pushes are one-per-patch with dense timestamps (unchanged values still
+  push; same-patch repeat pushes update in place so the 60 fps loop can't flood it);
+  history clamps at both ends; teleport reset (>2.5 m) unchanged.
+- **Carried-item swim fixed too**: an item held by a REMOTE crewmate used to track the
+  server position (0 ms behind) while its carrier rendered 120 ms in the past — the cargo
+  visibly swam around the carrier. Carried items now render at the carrier's interpolated
+  hold point (mirror of the local-player branch).
+- Consumers: enemy, remote players, the van (pull-away benefits), and the spectate camera —
+  all shared the same buffer, so one fix covers them.
+- Tests: interp.test.ts ×8, including a verbatim copy of the PRE-FIX algorithm as a legacy
+  fixture that reproduces the freeze (regression proof), jitter-gap ride (kept moving,
+  no fast-forward, no backward step), bounded dead-feed extrapolation, stationary
+  timestamp freshness, teleport reset, yaw wrap. Harness lessons learned mid-flight: the
+  dead-feed probe must skip the history seam (render time reaches the feed-stop one delay
+  after it); thresholds were not tuned blind.
+- Gate: tsc ×3 clean; vitest 19 files **67/67 zero flakes**; e2e **9/9 exit 0** (latejoin
+  used its retry — the known two-browser-under-SwiftShader family); CJK clean; refreshed
+  escape/latejoin screenshots vision-checked. Also: per-session Mimosa hook-state files
+  that had leaked into git untracked + ignored (repo hygiene).
+- Honest limit: smoothness itself is proven mathematically (continuity through ≤240 ms
+  stalls), not by a browser-frame probe — e2e can't measure feel under SwiftShader. The
+  ears/eyes check on real internet jitter is still the user's playtest.
 
 ### Playability pass + compass mirror fix (2026-11-08) — done
 

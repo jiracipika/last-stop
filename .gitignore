@@ -9,3 +9,6 @@ playwright-report/
 .mimosa/
 .vercel
 .env*
+
+# Mimosa per-session hook runtime state (never meaningful in git)
+apps/server/.mimosa/

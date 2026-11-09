@@ -54,7 +54,10 @@ success pull-away end-beat + escape compass + latency chip; late crew (mid-shift
 van-side spawn, ?code= invite links); directional damage indicator + downed banner +
 first-shift controls card + pause controls reference; compass screen-angle mirror FIXED
 (screen-right is world -X at yaw 0 — the iteration-12 compass pointed the wrong way;
-direction now regression-tested in escape.spec).
+direction now regression-tested in escape.spec); remote-entity interpolation hardened
+(SnapBuf moved to shared with bounded velocity extrapolation through jitter gaps — the
+pre-fix buffer froze on late patches then fast-forwarded: the reported "enemy rubber
+banding"; remote-carried items now track the carrier's interpolated hold point).
 
 | # | Slice | Severity | Player impact | Effort | Acceptance |
 |---|---|---|---|---|---|
@@ -62,7 +65,7 @@ direction now regression-tested in escape.spec).
 | 2 | Second enemy or second map | high | replay variety | L | mission-flow tests + e2e for the new content |
 | 3 | Progression/economy (shift streaks, van upgrades) | medium | retention | L | server tests + results-screen surfacing |
 | 4 | Modifier balance: DONE in first pass (SEVERITY_CAP 1.9 draw cap, docs/BALANCE.md) — residual: re-verify the guessed weights (blackout 1.1, fragile 1.25) against real play | low | fairness | S | playtest notes on hard stacks |
-| 5 | Remote-player smoothing residuals (pstep gains need ears) + per-preset bench rerun on a quiet box | medium | smooth others | M | route benchmark numbers per preset |
+| 5 | Remote-player smoothing: stall-jump FIXED (interp buffer extrapolates, jitter-tested in interp.test.ts); residuals: pstep gains need ears + per-preset bench rerun on a quiet box | medium | smooth others | M | route benchmark numbers per preset |
 
 The backlog now lives as GitHub issues (jiracipika/last-stop #1-#8, filed 2026-11-08): this
 table's items plus loud loot, flake hardening, and touch/mobile. Keep this table for the art
