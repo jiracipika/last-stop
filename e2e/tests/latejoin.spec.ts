@@ -39,6 +39,12 @@ const readMyBody = (page: Page): Promise<Body> =>
 test("a friend can clock in mid-shift", async ({ browser, request }) => {
   // Reserve a room that starts straight in the escape phase with a 90s clock.
   // Retry on the rare room-code collision.
+  // Finish the expensive title startup before reserving a seat.
+  const ctxA = await browser.newContext();
+  const pageA = await ctxA.newPage();
+  await gotoTitle(pageA);
+  await pageA.locator("input[maxlength='16']").fill("Host");
+
   let code = "";
   for (let i = 0; i < 3 && !code; i++) {
     const attempt = randomCode();
@@ -51,10 +57,6 @@ test("a friend can clock in mid-shift", async ({ browser, request }) => {
 
   // Host: join the reserved room, ready up, start. The testAt knob skips
   // briefing+scavenge, so the mission is live in escape right away.
-  const ctxA = await browser.newContext();
-  const pageA = await ctxA.newPage();
-  await gotoTitle(pageA);
-  await pageA.locator("input[maxlength='16']").fill("Host");
   await pageA.locator(".join-row input").fill(code);
   await pageA.getByRole("button", { name: "Join crew" }).click();
   await pageA.getByRole("button", { name: "Ready up" }).click();

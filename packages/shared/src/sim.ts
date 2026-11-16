@@ -284,15 +284,16 @@ export function moveToward(
   // slide along colliders with a generous radius (should rarely trigger: the
   // AI walks nav edges that are pre-cleared)
   const fake: Body = { x: nx, z: nz, y: 0, vx: 0, vy: 0, vz: 0, grounded: true };
-  const before = { x: fake.x, z: fake.z };
   resolveCircle(fake, 0.45, colliders);
-  const moved = Math.hypot(fake.x - before.x, fake.z - before.z);
+  // Measure progress from the start, not the collision correction. The old
+  // test called every unobstructed step "blocked", triggering stuck teleports.
+  const progress = ((fake.x - x) * dx + (fake.z - z) * dz) / d;
   return {
     x: fake.x,
     z: fake.z,
     yaw,
     arrived: d < 0.35,
-    blocked: moved < speed * dt * 0.25,
+    blocked: progress < speed * dt * 0.25,
   };
 }
 

@@ -1,6 +1,6 @@
 // Chunky recovery-crew characters with procedural waddle animation.
 import * as THREE from "three";
-import { COLORS } from "@last-stop/shared";
+import { COLORS, PLAYER } from "@last-stop/shared";
 import type { PlayerState } from "@last-stop/shared";
 
 function nameSprite(text: string, color: string): THREE.Sprite {
@@ -131,6 +131,27 @@ export class AvatarView {
     this.group.add(this.flashlight, this.flashlightTarget);
   }
 
+  /** Keep the owning flashlight alive while hiding first-person body geometry. */
+  hideBody(): void {
+    this.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh || (o as THREE.Sprite).isSprite) o.visible = false;
+    });
+  }
+
+  dispose(): void {
+    this.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose();
+      if (mesh.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of materials) {
+          (m as THREE.MeshBasicMaterial).map?.dispose();
+          m.dispose();
+        }
+      }
+    });
+  }
+
   update(dt: number, p: PlayerState, t: number): void {
     // tucked inside a junker: avatar + nametag vanish (the open door tells the story)
     if (p.hidden) {
@@ -140,12 +161,14 @@ export class AvatarView {
       return;
     }
     this.group.visible = true;
+    this.group.scale.setScalar(1);
     // estimate speed for the waddle
     const dx = p.x - this.lastX;
     const dz = p.z - this.lastZ;
     this.lastX = p.x;
     this.lastZ = p.z;
-    const inst = Math.hypot(dx, dz) / Math.max(dt, 1e-3);
+    const distance = Math.hypot(dx, dz);
+    const inst = distance > 1.5 || p.seat > 0 || p.downed || p.dead ? 0 : Math.min(PLAYER.SPRINT, distance / Math.max(dt, 1e-3));
     this.speed += (inst - this.speed) * Math.min(1, 8 * dt);
 
     this.group.position.set(p.x, p.y, p.z);
@@ -195,6 +218,6 @@ export class AvatarView {
 
     // flashlight
     this.flashlight.intensity = p.flashlight ? 26 : 0;
-    this.flashlightTarget.position.set(Math.sin(p.yaw) * 6, 1.4 - p.pitch * 3, Math.cos(p.yaw) * 6);
+    this.flashlightTarget.position.set(0, 1.4 - p.pitch * 3, 6);
   }
 }

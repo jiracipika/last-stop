@@ -718,17 +718,20 @@ export class World {
   }
 
   nearestSeatFree(): number {
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 2; i <= 4; i++) {
       if (![...this.players.values()].some((p) => p.seat === i)) return i;
     }
     return 0;
   }
 
   tryEnterVan(p: RPlayer, wantDriver: boolean): boolean {
-    if (p.downed || p.dead || p.seat > 0 || p.carrying) return false;
-    if (!this.vanDoorsOpen) return false;
+    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || Math.abs(this.van.speed) > 0.5) return false;
     const dp = this.vanPoint(VAN.DOOR_POINT);
-    if (dist2d(p.body.x, p.body.z, dp.x, dp.z) > PLAYER.INTERACT_RANGE + 0.7) return false;
+    const cab = this.vanPoint(VAN.DRIVER_POINT);
+    const nearRear = this.vanDoorsOpen && dist2d(p.body.x, p.body.z, dp.x, dp.z) <= VAN.INTERACT_RANGE;
+    const nearCab = dist2d(p.body.x, p.body.z, cab.x, cab.z) <= VAN.INTERACT_RANGE;
+    // Explicit driver requests from the open rear remain supported for older clients.
+    if (wantDriver ? !nearCab && !nearRear : !nearRear) return false;
     let seat: number;
     if (wantDriver) {
       if (this.vanDriver) return false;
@@ -757,6 +760,7 @@ export class World {
   }
 
   toggleVanDoors(p: RPlayer): boolean {
+    if (p.downed || p.dead || p.hidden || p.seat > 0 || Math.abs(this.van.speed) > 0.5) return false;
     const dp = this.vanPoint(VAN.DOOR_POINT);
     if (dist2d(p.body.x, p.body.z, dp.x, dp.z) > PLAYER.INTERACT_RANGE + 0.7) return false;
     this.vanDoorsOpen = !this.vanDoorsOpen;
@@ -825,6 +829,7 @@ export class World {
     const s = HIDE_SPOTS.find((h) => h.id === spotId);
     if (!s) return false;
     if (dist2d(p.body.x, p.body.z, s.standX, s.standZ) > HIDE.STAND_RANGE) return false;
+    if ([...this.players.values()].some((other) => other.hidden && other.hideSpot === spotId)) return false;
     p.hidden = true;
     p.hideSpot = spotId;
     p.body.x = s.x;

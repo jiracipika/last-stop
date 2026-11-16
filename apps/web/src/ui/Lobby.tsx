@@ -66,7 +66,7 @@ export function LobbyOverlay({
           ))}
         </ul>
         <div className="lobby-actions">
-          <button className="btn" onClick={() => net.act("ready")}>
+          <button className="btn" disabled={!me || net.status !== "connected"} onClick={() => net.act("ready")}>
             {me?.ready ? "Not ready" : "Ready up"}
           </button>
           {me?.host && (

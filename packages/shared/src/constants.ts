@@ -116,6 +116,8 @@ export const VAN = {
     { x: 0.42, z: 0.45 },
   ],
   ENGINE_POINT: { x: 0, z: 2.55 }, // local; install interaction (front)
+  DRIVER_POINT: { x: -1.35, z: 1.6 }, // cab entry, independent of cargo doors
+  INTERACT_RANGE: PLAYER.INTERACT_RANGE + 0.7,
   DOOR_POINT: { x: 0, z: -2.45 }, // local; rear doors interaction
   STRAP_POINT: { x: 1.15, z: -2.2 },
   BUMP_CARGO_DAMAGE: 14, // damage to unsecured cargo per significant bump

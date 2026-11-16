@@ -731,7 +731,7 @@ export class World3D {
   }
 
   private animateHideDoors(dt: number): void {
-    const k = Math.min(1, 8 * dt);
+    const k = 1 - Math.exp(-8 * dt);
     for (const d of this.hideDoors.values()) {
       if (d.kind === "car") {
         const target = d.baseYaw + (d.open ? -1.35 : 0);
