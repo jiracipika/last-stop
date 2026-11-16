@@ -1,9 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 
 async function start(page: Page) {
+  // Same cold-boot budget as gameplay.spec's enterSoloMission: on a
+  // software-rendered box the title and the first room state patch can both
+  // take seconds — gate the title, then the room code, before touching the
+  // roster (a 5s default here failed every attempt on slow hardware).
   await page.goto("http://127.0.0.1:5173");
+  await page.locator(".game-title").waitFor({ timeout: 15000 });
   await page.locator("input[maxlength='16']").fill("Mechanic");
   await page.getByRole("button", { name: "Start a new shift" }).click();
+  await page.locator(".invite .code").waitFor({ timeout: 15000 });
   await expect(page.locator(".roster .nick")).toContainText("Mechanic");
   await page.getByRole("button", { name: "Ready up" }).click();
   await page.getByRole("button", { name: /Start the shift/ }).click();

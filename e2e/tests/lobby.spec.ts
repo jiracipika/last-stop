@@ -17,6 +17,10 @@ async function phaseOf(page: Page): Promise<"briefing" | "mission" | "lobby" | "
 }
 
 test("two browsers join one room by code, ready up, and start the shift", async ({ browser }) => {
+  // Two fresh browser contexts on software-rendered WebGL each pay a cold
+  // boot; the global 90s budget was repeatedly spent before the briefing
+  // finished on slow boxes (the same flow passes comfortably in one browser).
+  test.setTimeout(150_000);
   const ctxA = await browser.newContext();
   const pageA = await ctxA.newPage();
   const pageBErrors: string[] = [];

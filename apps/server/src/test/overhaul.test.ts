@@ -98,6 +98,35 @@ describe("vehicle and entity regression cases", () => {
     expect(p.hp).toBe(hp);
   });
 
+  it("the struck player standing adjacent keeps priority through the recovery pause", () => {
+    // Regression: post-strike the enemy went blind, its recover exit detoured
+    // through nav nodes away from the victim, and the next vision scan
+    // retargeted a distant idle player — the wounded victim was forgotten.
+    const { w, p } = scene();
+    const medic = w.addPlayer("medic", "Medic", 1, false);
+    medic.body.x = 4.2;
+    medic.body.z = 10.2;
+    w.enemy.x = -0.2;
+    w.enemy.z = 6.1;
+    w.enemy.yaw = Math.atan2(0.2, -1.7); // squared away on the victim
+    Object.assign(p.body, { x: 0, z: 4.4 });
+    w.enemy.chaseSid = p.sid;
+    w.enemy.lastSeenX = p.body.x;
+    w.enemy.lastSeenZ = p.body.z;
+    strike(w);
+    expect(p.hp).toBe(100 - ENEMY.HIT_DAMAGE);
+    expect(w.enemy.ai).toBe("recover");
+    // through the pause and the follow-up re-engage: the victim goes down,
+    // the medic across the lot is never touched
+    for (let i = 0; i < Math.ceil((ENEMY.RECOVER_TIME + 4) / TICK_DT) && !p.downed; i++) {
+      w.enemy.step(TICK_DT);
+    }
+    expect(p.downed).toBe(true);
+    expect(p.hp).toBe(0);
+    expect(medic.hp).toBe(100);
+    expect(medic.downed).toBe(false);
+  });
+
   it("replaying clears enemy attack, navigation and sight timers", () => {
     const { w } = scene();
     Object.assign(w.enemy, { visT: 5, stuckT: 1, searchT: 4, lastSeenT: 99, windupT: 2, struck: true, recoverT: 2, forceT: 2, bangT: 1, routeDir: -1 });

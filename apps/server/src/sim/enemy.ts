@@ -177,7 +177,10 @@ export class CaretakerAI {
     if (this.visT <= 0) {
       this.visT = 0.2;
       const seen = this.ai === "windup" ? null : this.scanVision();
-      if (seen) {
+      // During the strike pause the struck player keeps priority: sightings of
+      // anyone else are dropped (no mid-recovery target swaps — it was
+      // hit-trading with this exact player a moment ago).
+      if (seen && (this.ai !== "recover" || seen.sid === this.chaseSid)) {
         this.chaseSid = seen.sid;
         this.lastSeenX = seen.x;
         this.lastSeenZ = seen.z;
@@ -384,8 +387,36 @@ export class CaretakerAI {
 
   private stepRecover(dt: number): void {
     this.recoverT += dt;
-    // slow shuffle toward last seen while vulnerable
+    // No chase, no hearing — the pause is the players' window. But it never
+    // takes its eyes off the one it just struck: tracking the gaze (only while
+    // they are actually visible) keeps an adjacent survivor the target when
+    // the pause ends, instead of about-facing to whoever else is in view.
+    const t = this.world.players.get(this.chaseSid);
+    let gazeX = this.lastSeenX;
+    let gazeZ = this.lastSeenZ;
+    let reengage = false;
+    if (t && t.connected && !t.dead && !t.downed && !t.hidden && (t.seat === 0 || this.world.vanDoorsOpen)) {
+      const d = dist2d(this.x, this.z, t.body.x, t.body.z);
+      if (d < ENEMY.VIEW_RANGE && this.world.hasLineOfSight(this.x, this.z, t.body.x, t.body.z)) {
+        gazeX = t.body.x;
+        gazeZ = t.body.z;
+        this.lastSeenX = gazeX;
+        this.lastSeenZ = gazeZ;
+        this.lastSeenT = this.world.t;
+        reengage = true;
+      }
+    }
+    const want = Math.atan2(gazeX - this.x, gazeZ - this.z);
+    this.yaw += angleDiff(this.yaw, want) * Math.min(1, 3.2 * dt);
     if (this.recoverT > ENEMY.RECOVER_TIME) {
+      if (reengage) {
+        // prey still standing in view: pick the fight back up directly.
+        // Falling to investigate here nav-snaps the first steps away from
+        // the target and rotates its back to them (the retarget bug).
+        this.ai = "chase";
+        this.repathT = 0;
+        return;
+      }
       this.ai = "investigate";
       this.investX = this.lastSeenX;
       this.investZ = this.lastSeenZ;
