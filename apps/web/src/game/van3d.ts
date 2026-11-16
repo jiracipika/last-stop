@@ -21,7 +21,7 @@ export class VanView {
   constructor(tex: Tex) {
     const paint = new THREE.MeshLambertMaterial({ map: tex.vanPaint });
     const dark = new THREE.MeshLambertMaterial({ color: 0x2a2c30 });
-    const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.85 });
+    const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.3 });
 
     const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -31,9 +31,22 @@ export class VanView {
     };
 
     // main body (local: +z forward)
-    box(2.1, 1.5, 4.8, paint, 0, 1.05, 0);
+    // Build a shell: opening the rear doors must reveal the cargo bay.
+    box(2.1, 0.18, 4.8, dark, 0, 0.4, 0);
+    box(0.1, 1.75, 3.25, paint, -1, 1.35, -0.775);
+    box(0.1, 1.75, 3.25, paint, 1, 1.35, -0.775);
+    box(2.1, 0.12, 4.4, paint, 0, 2.25, -0.2);
+    box(2.0, 0.85, 1.45, paint, 0, 0.9, 1.675);
+    // Cab lower side panels and seats leave space at the riders' eye height.
+    box(0.1, 0.7, 1.4, paint, -1, 1.15, 1.5);
+    box(0.1, 0.7, 1.4, paint, 1, 1.15, 1.5);
+    for (const seat of VAN.SEATS) {
+      box(0.55, 0.14, 0.5, dark, seat.x, 0.75, seat.z);
+      box(0.55, 0.6, 0.12, dark, seat.x, 1.0, seat.z - 0.25);
+    }
     // cab
-    box(2.0, 0.75, 1.15, paint, 0, 1.85, 1.55);
+    for (const side of [-1, 1]) box(0.1, 0.65, 0.1, paint, side, 1.88, 2.1);
+    box(2.0, 0.1, 1.15, paint, 0, 2.22, 1.55);
     // windshield + side windows
     const shield = box(1.7, 0.5, 0.06, glass, 0, 1.9, 2.14);
     shield.rotation.x = 0.22;
@@ -51,7 +64,7 @@ export class VanView {
     // spare tire on the back
     const spare = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.14, 8, 14), dark);
     spare.position.set(0, 1.1, -2.46);
-    this.group.add(spare);
+
 
     // livery: DUSTPAN RECOVERY CO. on both flanks + rear
     const liveryTex = tex.decal(512, (ctx, sz) => {
@@ -94,6 +107,16 @@ export class VanView {
     this.doorR.add(dr);
     this.doorL.position.set(-1.02, 1.15, -2.4);
     this.doorR.position.set(1.02, 1.15, -2.4);
+    this.doorL.name = "rear-door-left";
+    this.doorR.name = "rear-door-right";
+    spare.position.set(-0.48, -0.05, -0.12);
+    this.doorR.add(spare);
+    const handleMat = new THREE.MeshLambertMaterial({ color: 0x252b2e });
+    for (const [door, sign] of [[this.doorL, 1], [this.doorR, -1]] as const) {
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.25, 0.1), handleMat);
+      handle.position.set(sign * 0.78, 0, -0.08);
+      door.add(handle);
+    }
     this.group.add(this.doorL, this.doorR);
 
     // amber roof beacon
@@ -146,11 +169,10 @@ export class VanView {
     this.group.add(this.interiorLight);
 
     this.group.add(this.cargoGroup);
-    void VAN;
   }
 
   /** Cargo items get little strapped-in boxes inside the bay. */
-  syncCargo(count: number, strapped: boolean, t: number): void {
+  syncCargo(count: number, strapped: boolean, t: number, speed = 0): void {
     while (this.cargoGroup.children.length < count) {
       const crate = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.5, 0.55),
@@ -160,19 +182,25 @@ export class VanView {
       crate.position.set(((i % 2) - 0.5) * 0.7, 0.6 + Math.floor(i / 2) * 0.1, -1.6 + (i % 2) * 0.5);
       this.cargoGroup.add(crate);
     }
-    while (this.cargoGroup.children.length > count) this.cargoGroup.remove(this.cargoGroup.children[0]!);
+    while (this.cargoGroup.children.length > count) {
+      const crate = this.cargoGroup.children[0] as THREE.Mesh;
+      this.cargoGroup.remove(crate);
+      crate.geometry.dispose();
+      (crate.material as THREE.Material).dispose();
+    }
     this.cargoGroup.visible = count > 0;
     // unsecured cargo jiggles while driving
-    const jig = strapped ? 0 : Math.sin(t * 18) * 0.03;
-    this.cargoGroup.position.y = Math.abs(this.cargoGroup.position.y * 0) + jig;
+    const jig = strapped || Math.abs(speed) < 0.1 ? 0 : Math.sin(t * 18) * 0.03;
+    this.cargoGroup.position.y = jig;
   }
 
-  update(x: number, z: number, yaw: number, speed: number, doorsOpen: boolean, lightsOn: boolean, t: number): void {
+  update(x: number, z: number, yaw: number, speed: number, doorsOpen: boolean, lightsOn: boolean, t: number, dt = 1 / 60): void {
     this.group.position.set(x, 0, z);
     this.group.rotation.y = yaw;
-    const doorTarget = doorsOpen ? -1.9 : 0;
-    this.doorL.rotation.y += (doorTarget - this.doorL.rotation.y) * 0.15;
-    this.doorR.rotation.y += (-doorTarget - this.doorR.rotation.y) * 0.15;
+    const doorTarget = doorsOpen ? 1.9 : 0;
+    const ease = 1 - Math.exp(-10 * dt);
+    this.doorL.rotation.y += (doorTarget - this.doorL.rotation.y) * ease;
+    this.doorR.rotation.y += (-doorTarget - this.doorR.rotation.y) * ease;
     const lights = lightsOn;
     this.headL.intensity = lights ? 38 : 0;
     this.headR.intensity = lights ? 38 : 0;
@@ -182,8 +210,7 @@ export class VanView {
     for (const p of this.pools) p.visible = lights;
     this.beaconMat.color.set(lights ? PAL.tungsten : "#4a3418");
     // wheel spin
-    const spin = (speed * t) % (Math.PI * 2);
-    for (const w of this.wheels) w.rotation.x = spin;
+    for (const w of this.wheels) w.rotateY(speed * dt / 0.42);
   }
 
   dispose(): void {

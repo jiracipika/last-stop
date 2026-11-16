@@ -8,6 +8,9 @@ export class ItemView {
   defId: string;
   private highlight: THREE.Mesh;
   private inner: THREE.Group;
+  private damageMaterials: { mat: THREE.MeshLambertMaterial; base: THREE.Color }[] = [];
+  private lastDamage = -1;
+  private damageTint = new THREE.Color(0x191a1d);
 
   constructor(id: string, defId: string) {
     this.id = id;
@@ -152,6 +155,14 @@ export class ItemView {
       }
     }
     this.group.add(this.inner);
+    const seenMaterials = new Set<THREE.Material>();
+    this.inner.traverse((o) => {
+      const mat = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+      if (mat?.isMeshLambertMaterial && !mat.transparent && !seenMaterials.has(mat)) {
+        seenMaterials.add(mat);
+        this.damageMaterials.push({ mat, base: mat.color.clone() });
+      }
+    });
 
     // selection highlight ring
     this.highlight = new THREE.Mesh(
@@ -162,7 +173,18 @@ export class ItemView {
     this.group.add(this.highlight);
   }
 
-  update(it: ItemState, highlighted: boolean, t: number): void {
+  dispose(): void {
+    this.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose();
+      if (mesh.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((m) => m.dispose());
+      }
+    });
+  }
+
+  update(it: ItemState, highlighted: boolean, t: number, dt = 1 / 60): void {
     if (it.state === 3) {
       this.group.visible = false;
       return;
@@ -174,20 +196,15 @@ export class ItemView {
     let yawDelta = it.yaw - this.group.rotation.y;
     while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
     while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
-    this.group.rotation.y += yawDelta * 0.25;
+    this.group.rotation.y += yawDelta * (1 - Math.exp(-17 * dt));
 
-    // damage darkens the mesh
-    const dmg = Math.min(1, it.damage / WRECKED_AT);
-    const def = ITEM_DEFS[this.defId]!;
-    const base = new THREE.Color(def.color);
-    const target = base.clone().lerp(new THREE.Color(0x191a1d), dmg * 0.75);
-    this.inner.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      const mat = mesh.material as THREE.MeshLambertMaterial;
-      if (mat && mat.isMeshLambertMaterial && mat.transparent === false) {
-        mat.color.copy(target);
-      }
-    });
+    // Keep the authored paint/metal contrast; damage tints each original color.
+    // Only recompute when damage changes, rather than allocating colors per frame.
+    if (it.damage !== this.lastDamage) {
+      this.lastDamage = it.damage;
+      const dmg = Math.min(1, it.damage / WRECKED_AT);
+      for (const { mat, base } of this.damageMaterials) mat.color.copy(base).lerp(this.damageTint, dmg * 0.75);
+    }
 
     (this.highlight.material as THREE.MeshBasicMaterial).opacity = highlighted ? 0.55 + 0.3 * Math.sin(t * 6) : 0;
     this.highlight.position.y = 0.06 - it.y % 1;

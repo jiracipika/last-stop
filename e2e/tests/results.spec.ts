@@ -25,6 +25,11 @@ test("solo shift times out into the shift-report debrief", async ({ page, reques
   // testSeconds and shortens the shift to ~20s. The browser then joins by
   // code and becomes host (first player in an empty room). Retry on the rare
   // room-code collision.
+  // Warm the software-rendered title before taking a short-lived seat reservation.
+  await page.goto("http://127.0.0.1:5173");
+  await expect(page.locator(".game-title")).toBeVisible({ timeout: 20000 });
+  await page.locator("input[maxlength='16']").fill("Tester");
+
   let code = "";
   for (let i = 0; i < 3 && !code; i++) {
     const attempt = randomCode();
@@ -35,9 +40,6 @@ test("solo shift times out into the shift-report debrief", async ({ page, reques
   }
   expect(code, "room reserved via matchmake API").toBeTruthy();
 
-  await page.goto("http://127.0.0.1:5173");
-  await expect(page.locator(".game-title")).toBeVisible({ timeout: 20000 });
-  await page.locator("input[maxlength='16']").fill("Tester");
   await page.locator(".join-row input").fill(code);
   await page.getByRole("button", { name: "Join crew" }).click();
 

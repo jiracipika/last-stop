@@ -5,7 +5,7 @@
 // camera from the attract path to the gameplay path (see setAttract).
 import * as THREE from "three";
 import {
-  AABB, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
+  AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
   SnapBuf,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
@@ -302,6 +302,17 @@ export class Engine {
     if (on === this.attractMode) return;
     this.attractMode = on;
     if (on) {
+      // A new room must not inherit the previous crew, cargo or interpolation history.
+      for (const av of this.avatars.values()) { this.scene.remove(av.group); av.dispose(); }
+      for (const view of this.itemViews.values()) { this.scene.remove(view.group); view.dispose(); }
+      this.avatars.clear();
+      this.itemViews.clear();
+      this.remoteBufs.clear();
+      this.remoteStride.clear();
+      this.vanBuf = new SnapBuf();
+      this.enemyBuf = new SnapBuf();
+      this.vanView.syncCargo(0, true, 0);
+      for (const spot of HIDE_SPOTS) this.world3d.setHideOpen(spot.id, false);
       if (this.inputInstance) {
         this.input.exitLock();
         this.inputInstance.dispose();
@@ -321,6 +332,8 @@ export class Engine {
     this.world3d.dispose();
     this.vanView.dispose();
     this.enemyView.dispose();
+    for (const av of this.avatars.values()) av.dispose();
+    for (const view of this.itemViews.values()) view.dispose();
     this.renderer.dispose();
   }
 
@@ -682,9 +695,10 @@ export class Engine {
     // junker hiding spots
     if (!me.carrying) {
       for (const s of HIDE_SPOTS) {
+        if ([...st.players.values()].some((p) => p.hidden && Math.hypot(p.x - s.x, p.z - s.z) < 1)) continue;
         consider(
           { kind: "hide", id: s.id, label: s.kind === "trunk" ? "Fold yourself into the trunk" : "Hide in the sedan" },
-          s.standX, s.standZ, PLAYER.INTERACT_RANGE + 0.8, 0.8,
+          s.standX, s.standZ, HIDE.STAND_RANGE, 0.8,
         );
       }
     }
@@ -707,15 +721,17 @@ export class Engine {
     const rear = toWorld(VAN.DOOR_POINT.x, VAN.DOOR_POINT.z);
     const strap = toWorld(VAN.STRAP_POINT.x, VAN.STRAP_POINT.z);
     const enginePt = toWorld(VAN.ENGINE_POINT.x, VAN.ENGINE_POINT.z);
-    const driverDoor = toWorld(-VAN.HALF_W - 0.3, 1.6);
-    consider({ kind: "vanDoors", id: "van", label: van.doorsOpen ? "Close van doors" : "Open van doors" }, rear.x, rear.z, PLAYER.INTERACT_RANGE + 0.8, 1.1);
-    consider({ kind: "vanLights", id: "van", label: van.lightsOn ? "Kill headlights" : "Headlights on" }, driverDoor.x, driverDoor.z, PLAYER.INTERACT_RANGE + 0.6, 0.8);
+    const driverDoor = toWorld(VAN.DRIVER_POINT.x, VAN.DRIVER_POINT.z);
+    const doorLatch = van.doorsOpen ? toWorld(-1.02, -2.4) : rear;
+    consider({ kind: "vanDoors", id: "van", label: van.doorsOpen ? "Close van doors" : "Open van doors" }, doorLatch.x, doorLatch.z, VAN.INTERACT_RANGE, 1.0);
+    consider({ kind: "vanLights", id: "van", label: van.lightsOn ? "Kill headlights" : "Headlights on" }, enginePt.x, enginePt.z, PLAYER.INTERACT_RANGE + 0.6, 0.8);
     if (van.cargo.length > 0) {
-      consider({ kind: "straps", id: "van", label: van.strapped ? "Release cargo straps" : "Strap down cargo" }, strap.x, strap.z, PLAYER.INTERACT_RANGE + 0.8, 1.1);
+      consider({ kind: "straps", id: "van", label: van.strapped ? "Release cargo straps" : "Strap down cargo" }, strap.x, strap.z, VAN.INTERACT_RANGE, 0.95);
     }
-    if (!me.carrying) {
-      consider({ kind: "seatDriver", id: "van", label: van.driver ? "Driver seat taken" : "Take the wheel" }, driverDoor.x, driverDoor.z, PLAYER.INTERACT_RANGE + 0.6, 1.0);
-      consider({ kind: "seat", id: "van", label: "Ride shotgun" }, rear.x, rear.z, PLAYER.INTERACT_RANGE + 0.8, 0.7);
+    if (!me.carrying && Math.abs(van.speed) <= 0.5) {
+      if (!van.driver) consider({ kind: "seatDriver", id: "van", label: "Take the wheel" }, driverDoor.x, driverDoor.z, VAN.INTERACT_RANGE, 1.05);
+      const passengers = [...st.players.values()].filter((p) => p.seat > 1).length;
+      if (van.doorsOpen && passengers < 3) consider({ kind: "seat", id: "van", label: "Board van — passenger" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
     }
 
     // install prompt when carrying the part near the engine
@@ -797,7 +813,7 @@ export class Engine {
       // No room yet (attract mode + the join window): the lot runs its
       // ambient life — flicker, fan, sign sway — with no storm, no players
       // and no Caretaker. The van sits at its lot spawn, engine cold.
-      this.vanView.update(VAN_START.x, VAN_START.z, VAN_START.yaw, 0, false, false, t);
+      this.vanView.update(VAN_START.x, VAN_START.z, VAN_START.yaw, 0, false, false, t, dt);
       this.enemyView.group.visible = false;
       this.world3d.update(dt, t);
       this.world3d.cullLights(this.camera.position);
@@ -886,7 +902,7 @@ export class Engine {
   private bumpCd = 0;
 
   private syncEntities(dt: number, st: RoomState, t: number, nowMs: number): void {
-    const k = Math.min(1, 12 * dt); // smoothing toward authoritative state
+    const k = 1 - Math.exp(-12 * dt); // frame-rate independent item smoothing
     const renderAt = nowMs - INTERP_DELAY_MS; // interpolation delay for remote entities
     const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
     // players
@@ -901,15 +917,10 @@ export class Engine {
         this.scene.add(av.group);
       }
       if (sid === this.net.sid) {
-        // own avatar follows the smoothed render position (body + reconciling
-        // drift); hidden in first person (body visible edges)
         const px = this.predictor.renderX();
         const pz = this.predictor.renderZ();
-        av.group.position.set(px, p.y, pz);
-        av.group.rotation.y = p.yaw;
-        av.group.visible = !p.dead && p.seat === 0;
-        if (p.seat > 0 || p.downed) av.group.visible = true;
-        av.update(0.0001, { ...p, x: px, z: pz } as PlayerState, t);
+        av.update(dt, { ...p, x: px, z: pz } as PlayerState, t);
+        av.hideBody();
       } else {
         // buffered interpolation: render the remote player ~120 ms in the past
         let buf = this.remoteBufs.get(sid);
@@ -927,6 +938,7 @@ export class Engine {
     for (const [sid, av] of this.avatars) {
       if (!seen.has(sid)) {
         this.scene.remove(av.group);
+        av.dispose();
         this.avatars.delete(sid);
         this.remoteBufs.delete(sid);
         this.remoteStride.delete(sid);
@@ -938,9 +950,16 @@ export class Engine {
     for (const [id, it] of st.items) {
       seenItems.add(id);
       let view = this.itemViews.get(id);
+      if (view && view.defId !== it.defId) {
+        this.scene.remove(view.group);
+        view.dispose();
+        this.itemViews.delete(id);
+        view = undefined;
+      }
       if (!view) {
         view = new ItemView(id, it.defId);
         this.itemViews.set(id, view);
+        view.group.position.set(it.x, it.y, it.z);
         this.scene.add(view.group);
       }
       const highlighted = this.target?.kind === "item" && this.target.id === id;
@@ -956,7 +975,21 @@ export class Engine {
       for (const [sid, p] of st.players) {
         if (p.carrying === id) { holderSid = sid; break; }
       }
-      if (me && me.carrying === id) {
+      if (it.h0 && it.h1 && st.players.has(it.h0) && st.players.has(it.h1)) {
+        // A shared heavy belongs between both handles, not at either player's nose.
+        const hold = (sid: string) => {
+          const p = st.players.get(sid)!;
+          const pose = sid === this.net.sid
+            ? { x: this.predictor.renderX(), z: this.predictor.renderZ(), yaw: this.input.yaw }
+            : renderedRemote.get(sid) ?? p;
+          return { x: pose.x + Math.sin(pose.yaw) * CARRY.HOLD_DIST, z: pose.z + Math.cos(pose.yaw) * CARRY.HOLD_DIST };
+        };
+        const a = hold(it.h0);
+        const b = hold(it.h1);
+        showX = (a.x + b.x) / 2;
+        showZ = (a.z + b.z) / 2;
+        showY = CARRY.HOLD_Y;
+      } else if (me && me.carrying === id) {
         // render the item I'm carrying at MY smoothed hold point (no lag)
         const fx = Math.sin(this.input.yaw);
         const fz = Math.cos(this.input.yaw);
@@ -979,11 +1012,12 @@ export class Engine {
         showZ = view.group.position.z + (it.z - view.group.position.z) * k;
         showY = it.y;
       }
-      view.update({ ...it, x: showX, y: showY, z: showZ } as typeof it, highlighted, t);
+      view.update({ ...it, x: showX, y: showY, z: showZ } as typeof it, highlighted, t, dt);
     }
     for (const [id, view] of this.itemViews) {
       if (!seenItems.has(id)) {
         this.scene.remove(view.group);
+        view.dispose();
         this.itemViews.delete(id);
       }
     }
@@ -991,8 +1025,8 @@ export class Engine {
     const v = st.van;
     this.vanBuf.push(this.lastPatchAt || nowMs, v.x, v.z, v.yaw);
     const vs = this.vanBuf.sample(renderAt) ?? { x: v.x, z: v.z, yaw: v.yaw };
-    this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t);
-    this.vanView.syncCargo(v.cargo.length, v.strapped, t);
+    this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t, dt);
+    this.vanView.syncCargo(v.cargo.length, v.strapped, t, v.speed);
     // pull-away cue: the server eases van.pullT 0 -> 1 when a successful
     // mission starts the drive-off; the 0 crossing fires the engine-start
     // rumble once per mission (latch resets outside escape/results).
@@ -1227,12 +1261,12 @@ export class Engine {
     if (me.seat > 0) {
       // seated: camera rides the van
       const seat = VAN.SEATS[me.seat - 1]!;
-      const v = st.van;
+      const v = this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
       const c = Math.cos(v.yaw);
       const s = Math.sin(v.yaw);
       cx = v.x + seat.x * c + seat.z * s;
       cz = v.z - seat.x * s + seat.z * c;
-      cy = 1.42;
+      cy = 1.85;
     } else {
       cy = PLAYER.EYE + this.predictor.body.y;
       if (this.settings.headBob && !me.downed) {
@@ -1306,10 +1340,10 @@ export class Engine {
     this.spectateIdx++;
   }
 
-  /** HUD prompt text: key hint + action label. Every targetable action is E:
-   *  taps fire instantly, revive/install hold to fill (progress bar). */
+  /** HUD key hints mirror the actual input binding for each action. */
   private promptFor(t: TargetInfo | null): string {
     if (!t) return "";
+    if (t.kind === "item") return `[LMB] ${t.label}`;
     if (t.kind === "revive" || t.kind === "install") return `[HOLD E] ${t.label}`;
     return `[E] ${t.label}`;
   }

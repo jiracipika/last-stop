@@ -23,6 +23,11 @@ test("escape-phase HUD: van compass and latency chip render", async ({ page, req
   // matchmake API directly; testAt:"escape" makes the next mission start in
   // the escape phase (part installed, gate open). The browser joins by code
   // and becomes host of the solo room.
+  // Warm the software-rendered title before taking a short-lived seat reservation.
+  await page.goto("http://127.0.0.1:5173");
+  await expect(page.locator(".game-title")).toBeVisible({ timeout: 20000 });
+  await page.locator("input[maxlength='16']").fill("Scout");
+
   let code = "";
   for (let i = 0; i < 3 && !code; i++) {
     const attempt = randomCode();
@@ -33,9 +38,6 @@ test("escape-phase HUD: van compass and latency chip render", async ({ page, req
   }
   expect(code, "room reserved via matchmake API").toBeTruthy();
 
-  await page.goto("http://127.0.0.1:5173");
-  await expect(page.locator(".game-title")).toBeVisible({ timeout: 20000 });
-  await page.locator("input[maxlength='16']").fill("Scout");
   await page.locator(".join-row input").fill(code);
   await page.getByRole("button", { name: "Join crew" }).click();
 

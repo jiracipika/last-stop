@@ -122,6 +122,8 @@ export class EnemyView {
     // pin the decal to the floor while the body bobs
     this.pool.position.y = 0.02 - this.group.position.y;
 
+    this.coat.rotation.x = 0;
+    this.head.rotation.z = 0;
     // windup telegraph: arms rise, head tracks
     if (e.ai === 3) {
       this.armL.rotation.x = -2.4;

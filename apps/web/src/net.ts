@@ -53,7 +53,10 @@ export class Net {
   }
 
   get state(): RoomState | null {
-    return this.room?.state ?? null;
+    const state = this.room?.state;
+    // The SDK resolves joining before its first full state can arrive. Rendering
+    // that empty schema can throw on van/enemy and permanently stop the frame loop.
+    return state?.van && state.enemy && state.players?.has(this.sid) ? state : null;
   }
 
   get sid(): string {

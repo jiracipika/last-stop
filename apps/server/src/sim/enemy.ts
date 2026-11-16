@@ -69,6 +69,17 @@ export class CaretakerAI {
     this.chaseSid = "";
     this.forcingDoor = "";
     this.huntT = 0;
+    this.routeDir = 1;
+    this.stuckT = 0;
+    this.investX = this.lastSeenX = this.x;
+    this.investZ = this.lastSeenZ = this.z;
+    this.searchT = 0;
+    this.lastSeenT = -99;
+    this.repathT = 0;
+    this.windupT = 0;
+    this.struck = false;
+    this.recoverT = 0;
+    this.forceT = this.bangT = this.visT = 0;
   }
 
   get aiCode(): number {
@@ -88,7 +99,7 @@ export class CaretakerAI {
 
   /** Noise heard at (x,z) with effective radius r. */
   hear(x: number, z: number, r: number, kind: string): void {
-    if (this.ai === "chase" || this.ai === "windup" || this.ai === "forcedoor") return;
+    if (this.ai === "chase" || this.ai === "windup" || this.ai === "recover" || this.ai === "forcedoor") return;
     const d = dist2d(this.x, this.z, x, z);
     const range = r * this.hearingMul();
     if (d <= range) {
@@ -165,13 +176,13 @@ export class CaretakerAI {
     this.visT -= dt;
     if (this.visT <= 0) {
       this.visT = 0.2;
-      const seen = this.scanVision();
+      const seen = this.ai === "windup" ? null : this.scanVision();
       if (seen) {
         this.chaseSid = seen.sid;
         this.lastSeenX = seen.x;
         this.lastSeenZ = seen.z;
         this.lastSeenT = w.t;
-        if (this.ai === "patrol" || this.ai === "investigate" || this.ai === "recover") {
+        if (this.ai === "patrol" || this.ai === "investigate") {
           this.ai = "chase";
           this.repathT = 0;
         }
@@ -295,7 +306,7 @@ export class CaretakerAI {
     const d = dist2d(this.x, this.z, target.body.x, target.body.z);
 
     // strike? (a busted hider gets reached INTO the car — no infinite standoff)
-    if (d < (target.hidden ? 2.4 : ENEMY.ATTACK_RANGE)) {
+    if (d < (target.hidden ? 2.4 : ENEMY.ATTACK_RANGE) && w.hasLineOfSight(this.x, this.z, target.body.x, target.body.z)) {
       this.ai = "windup";
       this.windupT = 0;
       this.struck = false;
@@ -357,13 +368,15 @@ export class CaretakerAI {
         const dz = p.body.z - this.z;
         const d = Math.hypot(dx, dz);
         if (d > (p.hidden ? 2.9 : ENEMY.STRIKE_RANGE)) continue;
+        if (p.hidden && p.sid !== this.chaseSid) continue;
+        if (!w.hasLineOfSight(this.x, this.z, p.body.x, p.body.z)) continue;
         const dot = (dx * fx + dz * fz) / (d || 1);
         if (dot > ENEMY.STRIKE_ARC_COS || d < 1.2) {
           w.damagePlayer(p, ENEMY.HIT_DAMAGE, "caretaker", this.x, this.z);
         }
       }
     }
-    if (this.windupT >= ENEMY.WINDUP_TIME + ENEMY.RECOVER_TIME) {
+    if (this.struck) {
       this.ai = "recover";
       this.recoverT = 0;
     }
@@ -403,7 +416,7 @@ export class CaretakerAI {
     // approach the door
     const d = dist2d(this.x, this.z, cx, cz);
     if (d > 1.15) {
-      const r = moveToward(this.x, this.z, this.yaw, cx, cz, ENEMY.ATTACK_SPEED * this.speedMul(), dt, []);
+      const r = moveToward(this.x, this.z, this.yaw, cx, cz, ENEMY.ATTACK_SPEED * this.speedMul(), dt, w.playerColliders());
       this.x = r.x;
       this.z = r.z;
       this.yaw = r.yaw;

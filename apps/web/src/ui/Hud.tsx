@@ -21,6 +21,17 @@ export function Hud({
 }): React.ReactElement {
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
   const danger = hud.timer < 120;
+  const quotaMet = hud.salvage >= hud.quota;
+  const directive = hud.phase === "escape"
+    ? (hud.seat > 0 ? "Head west. Bring everyone home." : "Return to the van. Time to leave.")
+    : !hud.partInstalled && quotaMet ? "Find the distributor cap. Repair the van."
+    : hud.partInstalled ? "Load the van to meet your salvage quota."
+    : "Recover valuables. Find the distributor cap.";
+  const threat = hud.enemyDist < 12 && !hud.dead && !hud.downed
+    ? hud.enemyAi === 3 ? "STRIKE INCOMING · back away"
+    : hud.enemyAi === 5 ? "FORCING A DOOR · hold it or run"
+    : hud.enemyAi === 2 ? "CHASE · break sight, then stay quiet"
+    : null : null;
 
   // Damage bearing (store contract: radians, (-PI, PI], positive = source to
   // your right = clockwise, same convention as the escape compass).
@@ -78,6 +89,14 @@ export function Hud({
 
   return (
     <div className="hud">
+      <div className={`shift-directive ${hud.phase === "escape" ? "escape" : ""}`}>
+        <span>{hud.phase === "escape" ? "03 / CLOCK OUT" : quotaMet || hud.partInstalled ? "02 / FINISH THE JOB" : "01 / RECOVERY SHIFT"}</span>
+        <b>{directive}</b>
+        <small>{hud.phase === "escape" ? "Driver: cab side · Passengers: open rear doors"
+          : hud.carrying ? "Open rear doors to load · RMB steadies fragile cargo"
+          : "LMB grabs cargo · E uses doors · Q marks a find"}</small>
+      </div>
+      {threat && <div className={`threat-cue ${hud.enemyAi === 3 ? "strike" : ""}`} role="status">{threat}</div>}
       {/* crosshair + prompt */}
       {!hud.dead && (
         <div className="crosshair">
@@ -235,7 +254,7 @@ export function Hud({
             </>
           ) : (
             <>
-              <b>RIDING SHOTGUN</b> · E to hop out (when stopped)
+              <b>PASSENGER</b> · E to hop out (when stopped)
             </>
           )}
           {hud.leaveWarn > 0 && <span className="leave-warn">⚠ {hud.leaveWarn} left behind — press W again to abandon them</span>}
