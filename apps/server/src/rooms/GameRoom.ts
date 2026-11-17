@@ -156,8 +156,7 @@ export class GameRoom extends Room {
       case "replay": {
         if (w.phase !== "results") return;
         if (!this.rateOk(client, "replay", 3)) return;
-        for (const o of w.players.values()) o.ready = false;
-        w.startMission();
+        w.returnToLobby();
         return;
       }
       case "grab": {
@@ -391,3 +390,4 @@ export class GameRoom extends Room {
 }
 
 export default defineRoom(GameRoom);
+

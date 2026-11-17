@@ -122,6 +122,14 @@ describe("mission arcs", () => {
     // 6) replay resets everything
     const oldItemIds = new Set([...st().items.keys()]);
     bot.room.send("act", { k: "replay" });
+    await waitFor("gas stop again", () => st().phase === "lobby");
+    expect(me(bot).hasFlashlight).toBe(false);
+    expect(me(bot).ready).toBe(false);
+    bot.room.send("act", { k: "shop", item: "flashlight" });
+    await waitFor("restocked flashlight", () => me(bot).hasFlashlight);
+    bot.room.send("act", { k: "ready" });
+    await waitFor("ready again", () => me(bot).ready);
+    bot.room.send("act", { k: "start" });
     await waitFor("briefing again", () => st().phase === "briefing");
     await waitFor("scavenge again", () => st().phase === "scavenge", 12000);
     expect(st().salvage).toBe(0);
@@ -226,3 +234,4 @@ describe("mission arcs", () => {
     void dist2d;
   });
 });
+

@@ -132,6 +132,7 @@ export class World {
   cartNoiseT = 0;
   extractWarnUntil = 0;
   extractConfirmed = false;
+  extractReleased = false;
   // success end-beat: the van pulls away before results (finish/stepPull)
   pulling = false;
   pullElapsed = 0;
@@ -438,6 +439,7 @@ export class World {
     this.state.resultsJson = "";
     this.extractWarnUntil = 0;
     this.extractConfirmed = false;
+    this.extractReleased = false;
     this.pulling = false;
     this.pullElapsed = 0;
     this.pullT = 0;
@@ -529,12 +531,12 @@ export class World {
     if (p.downed || p.dead || p.seat > 0) return 0;
     const moving = Math.hypot(p.input.mx, p.input.mz) > 0.1;
     const wantSprint = p.input.sprint && moving && p.stamina > 0.5;
-    let speed: number = wantSprint ? PLAYER.SPRINT : PLAYER.WALK;
+    let factor = 1;
     let sprintAllowed = true;
     if (p.carryBody) {
       // hauling a coworker reads as a fixed heavy load (mirrored EXACTLY in
       // predict.ts speedFor — one constant, both ends)
-      speed *= carrySpeedFactor(CARRY.BODY_WEIGHT);
+      factor *= carrySpeedFactor(CARRY.BODY_WEIGHT);
       sprintAllowed = false;
     } else if (p.carrying) {
       const it = this.items.get(p.carrying);
@@ -544,16 +546,12 @@ export class World {
         let w = def.weight;
         if (this.soloMode && def.twoHandle) w *= CARRY.SOLO_HEAVY_FACTOR;
         const per = w / carriers;
-        speed *= carrySpeedFactor(per);
+        factor *= carrySpeedFactor(per);
         if (per >= CARRY.SPRINT_MAX_WEIGHT) sprintAllowed = false;
       }
     }
-    if (wantSprint && sprintAllowed) {
-      p.sprinting = true;
-    } else {
-      p.sprinting = false;
-      if (!wantSprint) speed = Math.min(speed, PLAYER.WALK * carrySpeedFactor(0));
-    }
+    p.sprinting = wantSprint && sprintAllowed;
+    let speed = (p.sprinting ? PLAYER.SPRINT : PLAYER.WALK) * factor;
     if (p.hp < 30) speed *= 0.85;
     return speed;
   }
@@ -572,7 +570,7 @@ export class World {
     if (d > PLAYER.GRAB_RANGE + def.radius) return false;
     // must not reach through walls (the van itself does NOT block grabs:
     // loading happens at its open rear)
-    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
+    if (!this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
     if (it.defId === "distributor" && this.partInstalled) return false;
     if (def.twoHandle) {
       // second handle can be grabbed while the item is already carried
@@ -673,7 +671,7 @@ export class World {
     if (!stowable(def)) return false;
     const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
     if (d > PLAYER.GRAB_RANGE + def.radius) return false;
-    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
+    if (!this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
     // active slot first, then the first empty one
     let slot = p.slots[p.slotSel] === "" ? p.slotSel : p.slots.indexOf("");
     if (slot < 0) {
@@ -795,7 +793,7 @@ export class World {
     if (this.bodyCarrier(targetSid)) return false; // someone's already hauling them
     const d = dist2d(p.body.x, p.body.z, target.body.x, target.body.z);
     if (d > PLAYER.INTERACT_RANGE + 0.2) return false;
-    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, target.body.x, target.body.z)) return false;
+    if (!this.losWallsOnly(p.body.x, p.body.z, target.body.x, target.body.z)) return false;
     p.carryBody = targetSid;
     this.emit({ t: "bodyLift", sid: targetSid, by: p.sid });
     this.noise(target.body.x, target.body.z, NOISE.DROP_LIGHT, "body", p.sid);
@@ -1260,6 +1258,9 @@ export class World {
       p.bleedAt = this.t + PLAYER.DOWNED_BLEEDOUT;
       this.releaseCarries(p.sid, "drop");
       if (p.carryBody) this.dropBody(p);
+      // An open cart cannot keep an incapacitated rider in a seated branch
+      // that skips bleedout, nor reserve its driver's seat indefinitely.
+      if (SEAT.isCart(p.seat)) this.leaveSeat(p);
       this.emit({ t: "down", sid: p.sid });
     }
   }
@@ -1584,7 +1585,7 @@ export class World {
       steer = -clamp(i.mx, -1, 1); // D steers right on screen (yaw decreases)
       handbrake = i.jump;
 
-      if (this.phase === "escape" && throttle > 0.5) {
+      if (this.phase === "escape" && Math.abs(throttle) > 0.05) {
         // hard gate first: the van does not leave without its exit driver —
         // no double-press abandon can confirm past a downed driver or an
         // unrecovered body
@@ -1595,6 +1596,9 @@ export class World {
             this.extractWarnUntil = this.t + 6;
           }
           throttle = 0;
+          handbrake = true;
+          this.extractConfirmed = false;
+          this.extractReleased = false;
         } else {
           // leaving living teammates behind needs a confirming second press
           const outside = this.playersHaveLivingOutside();
@@ -1603,9 +1607,10 @@ export class World {
               this.emit({ t: "leaveWarn", outside });
               this.extractWarnUntil = this.t + 6;
               this.extractConfirmed = false;
+              this.extractReleased = false;
             }
             if (!this.extractConfirmed) {
-              if (this.t < this.extractWarnUntil && this.extractWarnUntil - this.t < 5.9) {
+              if (this.extractReleased && this.t < this.extractWarnUntil) {
                 // second press inside the window confirms
                 this.extractConfirmed = true;
               } else {
@@ -1615,6 +1620,9 @@ export class World {
           }
         }
       }
+      // A held throttle is one press. Confirm only after a release/repress,
+      // in either direction, within the warning window.
+      if (this.phase === "escape" && Math.abs(i.mz) <= 0.1 && this.t < this.extractWarnUntil && !this.exitDriverBlock()) this.extractReleased = true;
     }
 
     const r = stepVan(this.van, { throttle, steer, handbrake }, dt, this.vanColliders());
@@ -1637,7 +1645,7 @@ export class World {
       }
     }
 
-    if (this.phase === "escape" && this.van.x < FINISH_X) {
+    if (this.phase === "escape" && this.van.x < FINISH_X && !this.exitDriverBlock()) {
       this.finish("escaped");
     }
   }
@@ -1678,8 +1686,8 @@ export class World {
   playersHaveLivingOutside(): number {
     let n = 0;
     for (const p of this.players.values()) {
-      if (!p.connected || p.dead || p.seat > 0) continue;
-      if (p.downed || dist2d(p.body.x, p.body.z, this.van.x, this.van.z) > 4.5) n++;
+      if (!p.connected || p.dead || SEAT.isVan(p.seat)) continue;
+      if (SEAT.isCart(p.seat) || p.downed || dist2d(p.body.x, p.body.z, this.van.x, this.van.z) > 4.5) n++;
     }
     return n;
   }
@@ -1706,7 +1714,7 @@ export class World {
         p.body.z = w.z;
         continue;
       }
-      if (p.dead || p.seat === 0) continue;
+      if (p.dead || !SEAT.isVan(p.seat)) continue;
       const w = this.vanPoint(VAN.SEATS[p.seat - 1]!);
       p.body.x = w.x;
       p.body.z = w.z;
@@ -1780,7 +1788,7 @@ export class World {
     }
     if (outcome === "escaped") {
       for (const p of this.players.values()) {
-        if (!p.dead && p.seat === 0) {
+        if (!p.dead && !SEAT.isVan(p.seat)) {
           p.dead = true;
           p.downed = false;
         }
@@ -1805,7 +1813,7 @@ export class World {
       recovered: p.dead && p.bodyVan,
       status:
         outcome === "escaped"
-          ? p.seat > 0
+          ? SEAT.isVan(p.seat)
             ? "escaped"
             : "down"
           : outcome === "timeout"
@@ -1829,6 +1837,20 @@ export class World {
     };
     this.state.resultsJson = JSON.stringify(results);
     this.emit({ t: "results", outcome });
+  }
+
+  /** Every shift gets a supply stop before ready-up and the next drive-in. */
+  returnToLobby(): void {
+    if (this.phase !== "results") return;
+    for (const p of this.players.values()) {
+      p.ready = false;
+      Object.assign(p.input, { mx: 0, mz: 0, jump: false, sprint: false, interact: false });
+    }
+    this.endsAt = 0;
+    this.state.outcome = "";
+    this.state.resultsJson = "";
+    this.setPhase("lobby");
+    this.syncAll();
   }
 
   // ---------------------------------------------------------------- sync
@@ -1964,3 +1986,4 @@ export class World {
     while (arr.length > 12) arr.shift();
   }
 }
+

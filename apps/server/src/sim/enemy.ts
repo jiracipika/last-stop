@@ -3,7 +3,7 @@
 // Closed doors must be forced; players standing near a door slow it down.
 
 import {
-  ENEMY, NAV_NODES, NAV_INDEX, NAV_ADJ, navPath, nearestNavNode, PATROL_ROUTES,
+  ENEMY, SEAT, NAV_NODES, NAV_INDEX, NAV_ADJ, navPath, nearestNavNode, PATROL_ROUTES,
   doorAabb, moveToward, segHitsAabb, dist2d, angleDiff, mulberry32,
 } from "@last-stop/shared";
 import type { World } from "./world.js";
@@ -128,7 +128,7 @@ export class CaretakerAI {
     const range = ENEMY.VIEW_RANGE * (w.modifiers.includes("blackout") ? 0.85 : 1) * (w.escalation === 3 ? 1.15 : 1);
     for (const p of w.players.values()) {
       if (!p.connected || p.dead || p.downed) continue;
-      if (p.seat > 0 && !w.vanDoorsOpen) continue; // hidden inside the van
+      if (SEAT.isVan(p.seat) && !w.vanDoorsOpen) continue; // hidden inside the van
       if (p.hidden) {
         // tucked in a junker — invisible, UNLESS it watched you climb in
         // (chasing you with a fresh sighting: the bust window)
@@ -293,7 +293,7 @@ export class CaretakerAI {
     const targetBusted = target?.hidden && w.t - this.lastSeenT < ENEMY.LOSE_SIGHT_GRACE;
     if (
       !target || !target.connected || target.dead || target.downed ||
-      (target.seat > 0 && !w.vanDoorsOpen) ||
+      (SEAT.isVan(target.seat) && !w.vanDoorsOpen) ||
       (target.hidden && !targetBusted) // vanished into a car it didn't see you enter
     ) {
       // target invalid: investigate last known position. The chase is over —
@@ -366,7 +366,7 @@ export class CaretakerAI {
       const fx = Math.sin(this.yaw);
       const fz = Math.cos(this.yaw);
       for (const p of w.players.values()) {
-        if (!p.connected || p.dead || p.seat > 0) continue;
+        if (!p.connected || p.dead || SEAT.isVan(p.seat)) continue;
         const dx = p.body.x - this.x;
         const dz = p.body.z - this.z;
         const d = Math.hypot(dx, dz);
@@ -395,7 +395,7 @@ export class CaretakerAI {
     let gazeX = this.lastSeenX;
     let gazeZ = this.lastSeenZ;
     let reengage = false;
-    if (t && t.connected && !t.dead && !t.downed && !t.hidden && (t.seat === 0 || this.world.vanDoorsOpen)) {
+    if (t && t.connected && !t.dead && !t.downed && !t.hidden && (!SEAT.isVan(t.seat) || this.world.vanDoorsOpen)) {
       const d = dist2d(this.x, this.z, t.body.x, t.body.z);
       if (d < ENEMY.VIEW_RANGE && this.world.hasLineOfSight(this.x, this.z, t.body.x, t.body.z)) {
         gazeX = t.body.x;
@@ -491,3 +491,4 @@ export class CaretakerAI {
     }
   }
 }
+

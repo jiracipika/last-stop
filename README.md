@@ -113,7 +113,7 @@ shown on touch layouts.
    (a recovered body rides out with the crew and is listed as *brought home* on the report).
 8. Shared debrief: salvage vs quota, cargo damage, per-crew stats, **Loudest Employee**,
    **Most Expensive Mistake**, top hauler, rescuer of the night. One click to run it back
-   (fresh seed, same room).
+   (same room → gas stop → ready up → fresh seed).
 
 Failure states are explicit: **timeout** (shift ran out), **wipe** (everyone down), or winning
 without the quota is impossible — the gate needs both. Downed players bleed out in 60 s unless a
@@ -295,3 +295,4 @@ controller support, and a WebGL-landing page for sharing rooms.
 ## License
 
 All original work. © 2026 — do what you like privately; ask before anything commercial.
+
