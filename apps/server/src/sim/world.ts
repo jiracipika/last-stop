@@ -8,10 +8,10 @@ import {
   stepVehicle, VAN_CFG, CART_CFG, CART, CART_START, SEAT, SLOTS, SHOP,
   PLAYER, CARRY, NOISE, VAN, MISSION, FRAGILE_IMPACT_V, FRAGILE_DPS, WRECKED_AT, WRECKED_VALUE_FACTOR,
   ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers, stowable,
-  STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE,
+  STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE, COURSE,
   HIDE_SPOTS, HIDE,
   mulberry32, clamp, dist2d, hasLineOfSight,
-  PlayerState, ItemState, EnemyState, VanState, CartState, MarkerState, DoorState, RoomState,
+  PlayerState, ItemState, EnemyState, VanState, CartState, CourseState, MarkerState, DoorState, RoomState,
   ArraySchema, computeAwards, type ItemDef, type MissionAwardRow,
 } from "@last-stop/shared";
 import { CaretakerAI } from "./enemy.js";
@@ -51,6 +51,10 @@ export interface RPlayer {
   seat: number;
   hidden: boolean;
   hideSpot: string;
+  /** sid of the dead teammate whose body this player is hauling ("" = none) */
+  carryBody: string;
+  /** this (dead) player's body has been loaded into the van */
+  bodyVan: boolean;
   hat: number;
   stabilize: boolean;
   interactKind: "" | "revive" | "install";
@@ -94,7 +98,7 @@ export interface RDoor {
   open: boolean;
 }
 
-export type Phase = "lobby" | "briefing" | "scavenge" | "escape" | "results";
+export type Phase = "lobby" | "briefing" | "arrive" | "scavenge" | "escape" | "results";
 
 export class World {
   state: RoomState;
@@ -132,6 +136,19 @@ export class World {
   pulling = false;
   pullElapsed = 0;
   pullT = 0;
+  // ---- drive-in course ----
+  /** Production rooms run the drive-in (GameRoom flips this on); the test
+   *  server defaults it off so existing suites opt in per-room. */
+  arriveEnabled = false;
+  /** gates threaded so far (0..3; 3 = course complete, park reached) */
+  courseStage = 0;
+  /** seconds since the last gate was threaded -> stall failsafe */
+  courseStall = 0;
+  /** stall/dc failsafe: the server steers the van in itself */
+  courseAuto = false;
+  /** designated EXIT driver — the wheel-holder when the course completes;
+   *  the van may not leave without them (or their recovered body) aboard */
+  exitDriver = "";
 
   enemy: CaretakerAI;
   events: GameEvent[] = [];
@@ -158,6 +175,7 @@ export class World {
     this.state.van = new VanState();
     this.state.van.cargo = new ArraySchema<string>() as never;
     this.state.cart = new CartState();
+    this.state.course = new CourseState();
     this.state.enemy = new EnemyState();
     this.enemy = new CaretakerAI(this);
     for (const d of DOORS) {
@@ -217,7 +235,9 @@ export class World {
   }
 
   gateCollider(): AABB | null {
-    if (this.gateOpen || this.phase === "results") return null;
+    // the drive-in pulls through the gate before the shift locks it behind
+    // the crew — it swings open for the arrival and again once quota is met
+    if (this.gateOpen || this.phase === "results" || this.phase === "arrive") return null;
     return { x0: GATE.x - 0.2, x1: GATE.x + 0.2, z0: GATE.z0, z1: GATE.z1 };
   }
 
@@ -263,7 +283,7 @@ export class World {
       hp: 100, downed: false, dead: false, bleedAt: 0,
       carrying: "", slots: ["", "", ""], slotSel: 0,
       budget: SHOP.BUDGET, hasFlashlight: false, caffeinated: false,
-      seat: 0, hidden: false, hideSpot: "", stabilize: false,
+      seat: 0, hidden: false, hideSpot: "", carryBody: "", bodyVan: false, stabilize: false,
       interactKind: "", interactTarget: "", interactT: 0,
       stepAcc: 0, noiseScore: 0, deliveredValue: 0, deliveredCount: 0,
       rescues: 0, biggestLoss: 0, lossItem: "", downedCount: 0, grabCd: 0, spawn: 0,
@@ -280,6 +300,14 @@ export class World {
     this.releaseCarries(sid, "leave");
     const p = this.players.get(sid);
     if (p) {
+      // their hauled body stays where they stood; and if THEY were the body
+      // being hauled, the carrier's hands come free
+      if (p.carryBody) this.dropBody(p);
+      const carrier = this.bodyCarrier(sid);
+      if (carrier) {
+        const c = this.players.get(carrier);
+        if (c) c.carryBody = "";
+      }
       this.dropSlots(p, "leave");
       if (p.seat > 0) {
         if (p.seat === 1) this.vanDriver = "";
@@ -347,6 +375,8 @@ export class World {
       p.dead = false;
       p.bleedAt = 0;
       p.carrying = "";
+      p.carryBody = "";
+      p.bodyVan = false;
       // gas-station purchases (budget/hasFlashlight/caffeinated) carry INTO the
       // shift; finalize() restocks the budget and clears them for the next stop
       p.slots = ["", "", ""];
@@ -412,9 +442,34 @@ export class World {
     this.pullElapsed = 0;
     this.pullT = 0;
 
+    // drive-in course state; the crew boards right away (below) so briefing
+    // plays over the parked van on the old road
+    this.courseStage = 0;
+    this.courseStall = 0;
+    this.courseAuto = false;
+    this.exitDriver = "";
+
     this.phase = "briefing";
     this.briefUntil = this.t + 5;
     this.endsAt = this.t + 5 + (this.testSeconds > 0 ? this.testSeconds : missionSeconds(this.modifiers));
+
+    if (this.arriveEnabled && !this.testAtEscape) {
+      // the van waits on the old road west of the gate, doors shut; the crew
+      // is already aboard — ONE RANDOM member takes the wheel and drives in
+      this.van = { x: COURSE.START.x, z: COURSE.START.z, yaw: COURSE.START.yaw, speed: 0 };
+      const crew = [...this.players.values()];
+      for (let c = crew.length - 1; c > 0; c--) {
+        const j = Math.floor(rng() * (c + 1));
+        [crew[c], crew[j]] = [crew[j]!, crew[c]!];
+      }
+      crew.forEach((p, idx) => {
+        p.seat = idx === 0 ? 1 : idx + 1;
+        if (idx === 0) this.vanDriver = p.sid;
+      });
+      const driver = crew[0]!;
+      this.exitDriver = driver.sid;
+      this.say(`${driver.nick} has the wheel — drive us in through the gates`);
+    }
 
     this.enemy.reset(rng);
     if (this.testEnemyAt) {
@@ -476,7 +531,12 @@ export class World {
     const wantSprint = p.input.sprint && moving && p.stamina > 0.5;
     let speed: number = wantSprint ? PLAYER.SPRINT : PLAYER.WALK;
     let sprintAllowed = true;
-    if (p.carrying) {
+    if (p.carryBody) {
+      // hauling a coworker reads as a fixed heavy load (mirrored EXACTLY in
+      // predict.ts speedFor — one constant, both ends)
+      speed *= carrySpeedFactor(CARRY.BODY_WEIGHT);
+      sprintAllowed = false;
+    } else if (p.carrying) {
       const it = this.items.get(p.carrying);
       if (it) {
         const def = this.itemDef(it);
@@ -500,7 +560,8 @@ export class World {
 
   // ---------------------------------------------------------------- carrying
   tryGrab(p: RPlayer, itemId: string): boolean {
-    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.carrying || p.grabCd > 0) return false;
+    if (this.phase !== "scavenge" && this.phase !== "escape") return false;
+    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.carrying || p.carryBody || p.grabCd > 0) return false;
     const it = this.items.get(itemId);
     if (!it) return false;
     const def = this.itemDef(it);
@@ -604,7 +665,8 @@ export class World {
   /** Stow a small item into a body slot (E pickup). Same reachability rules
    *  as tryGrab: range + no reaching through walls. */
   tryStow(p: RPlayer, itemId: string): boolean {
-    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.grabCd > 0) return false;
+    if (this.phase !== "scavenge" && this.phase !== "escape") return false;
+    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.carryBody || p.grabCd > 0) return false;
     const it = this.items.get(itemId);
     if (!it || it.state !== 0) return false;
     const def = this.itemDef(it);
@@ -719,6 +781,84 @@ export class World {
     if (entry.id === "coffee") p.caffeinated = true;
     this.emit({ t: "bought", sid: p.sid, item: entry.id, price: entry.price, budget: p.budget });
     return true;
+  }
+
+  // ---------------------------------------------------------------- body recovery
+  /** Pick up a dead teammate's body (E). Two hands, no loot, no sprinting —
+   *  a heavy, loud mercy. Reviving the downed is always the better option. */
+  tryLiftBody(p: RPlayer, targetSid: string): boolean {
+    if (this.phase !== "scavenge" && this.phase !== "escape") return false;
+    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.grabCd > 0) return false;
+    if (p.carrying || p.carryBody) return false; // hands full
+    const target = this.players.get(targetSid);
+    if (!target || !target.dead || target.bodyVan) return false;
+    if (this.bodyCarrier(targetSid)) return false; // someone's already hauling them
+    const d = dist2d(p.body.x, p.body.z, target.body.x, target.body.z);
+    if (d > PLAYER.INTERACT_RANGE + 0.2) return false;
+    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, target.body.x, target.body.z)) return false;
+    p.carryBody = targetSid;
+    this.emit({ t: "bodyLift", sid: targetSid, by: p.sid });
+    this.noise(target.body.x, target.body.z, NOISE.DROP_LIGHT, "body", p.sid);
+    return true;
+  }
+
+  bodyCarrier(sid: string): string {
+    for (const o of this.players.values()) if (o.carryBody === sid) return o.sid;
+    return "";
+  }
+
+  /** Set the hauled body down where its carrier stands (G). */
+  dropBody(p: RPlayer, emitEvent = true): void {
+    const target = this.players.get(p.carryBody);
+    p.carryBody = "";
+    if (!target) return;
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    target.body.x = p.body.x + fx * 0.9;
+    target.body.z = p.body.z + fz * 0.9;
+    target.body.y = 0;
+    if (emitEvent) this.emit({ t: "bodyDrop", sid: target.sid, by: p.sid });
+  }
+
+  /** Load the hauled body into the van's cargo bay (E at the open rear). */
+  loadBody(p: RPlayer): boolean {
+    if (this.phase !== "scavenge" && this.phase !== "escape") return false;
+    if (p.downed || p.dead || p.seat > 0 || !p.carryBody) return false;
+    if (!this.vanDoorsOpen) return false;
+    const dp = this.vanPoint(VAN.DOOR_POINT);
+    if (dist2d(p.body.x, p.body.z, dp.x, dp.z) > VAN.INTERACT_RANGE + 0.4) return false;
+    const target = this.players.get(p.carryBody);
+    p.carryBody = "";
+    if (!target || !target.dead) return false;
+    target.bodyVan = true;
+    this.emit({ t: "bodyLoaded", sid: target.sid, by: p.sid });
+    this.noise(this.van.x, this.van.z, NOISE.DROP_HEAVY, "body", p.sid);
+    return true;
+  }
+
+  /** Carried bodies ride their carrier's front; a carrier who sits, drops,
+   *  dies or leaves sets the body down where they stand. */
+  private stepBodyCarried(): void {
+    for (const p of this.players.values()) {
+      if (!p.carryBody) continue;
+      const ok = p.connected && !p.downed && !p.dead && p.seat === 0;
+      const target = this.players.get(p.carryBody);
+      if (!ok || !target || !target.dead) {
+        this.dropBody(p, ok);
+        continue;
+      }
+      if (target.bodyVan) {
+        // loaded out from under the carrier (shouldn't happen; be safe)
+        p.carryBody = "";
+        continue;
+      }
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      target.body.x = p.body.x + fx * CARRY.BODY_HOLD_DIST;
+      target.body.z = p.body.z + fz * CARRY.BODY_HOLD_DIST;
+      target.body.y = 0.4; // held off the ground, lying
+      target.yaw = p.yaw;
+    }
   }
 
   private stepCarried(dt: number): void {
@@ -896,7 +1036,7 @@ export class World {
   }
 
   tryEnterVan(p: RPlayer, wantDriver: boolean): boolean {
-    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || Math.abs(this.van.speed) > 0.5) return false;
+    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || p.carryBody || Math.abs(this.van.speed) > 0.5) return false;
     const dp = this.vanPoint(VAN.DOOR_POINT);
     const cab = this.vanPoint(VAN.DRIVER_POINT);
     const nearRear = this.vanDoorsOpen && dist2d(p.body.x, p.body.z, dp.x, dp.z) <= VAN.INTERACT_RANGE;
@@ -951,7 +1091,7 @@ export class World {
   /** Board the golf cart. Open buggy: step up from either side while it is
    *  (nearly) stopped. Hands must be empty — pack slots are fine. */
   tryEnterCart(p: RPlayer, wantDriver: boolean): boolean {
-    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || Math.abs(this.cart.speed) > 0.5) return false;
+    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || p.carryBody || Math.abs(this.cart.speed) > 0.5) return false;
     const nearBody = dist2d(p.body.x, p.body.z, this.cart.x, this.cart.z) <= CART.INTERACT_RANGE;
     const nearSeat = CART.SEATS.some((s) => {
       const w = this.cartPoint(s);
@@ -1044,7 +1184,7 @@ export class World {
   tryHide(p: RPlayer, spotId: string): boolean {
     if (this.phase !== "scavenge" && this.phase !== "escape") return false;
     if (p.downed || p.dead || p.seat > 0 || p.hidden) return false;
-    if (p.carrying) return false; // hands full — stow the cargo first
+    if (p.carrying || p.carryBody) return false; // hands full — stow the cargo first
     const s = HIDE_SPOTS.find((h) => h.id === spotId);
     if (!s) return false;
     if (dist2d(p.body.x, p.body.z, s.standX, s.standZ) > HIDE.STAND_RANGE) return false;
@@ -1098,6 +1238,7 @@ export class World {
       p.dead = true;
       p.downed = false;
       this.releaseCarries(p.sid, "drop");
+      if (p.carryBody) this.dropBody(p);
       this.dropSlots(p, "die");
       this.emit({ t: "die", sid: p.sid, cause: source });
       return;
@@ -1118,6 +1259,7 @@ export class World {
       p.downedCount += 1;
       p.bleedAt = this.t + PLAYER.DOWNED_BLEEDOUT;
       this.releaseCarries(p.sid, "drop");
+      if (p.carryBody) this.dropBody(p);
       this.emit({ t: "down", sid: p.sid });
     }
   }
@@ -1136,8 +1278,9 @@ export class World {
     this.state.now = this.t;
 
     if (this.phase === "briefing" && this.t >= this.briefUntil) {
-      this.setPhase("scavenge");
+      this.setPhase(this.arriveEnabled ? "arrive" : "scavenge");
     }
+    if (this.phase === "arrive") this.stepArrive(dt);
     if (this.pulling) {
       // success end-beat: the world holds still while the van pulls away
       this.stepPull(dt);
@@ -1151,6 +1294,7 @@ export class World {
     const colliders = this.playerColliders();
     this.stepPlayers(dt, colliders);
     this.stepCarried(dt);
+    this.stepBodyCarried();
     this.stepFree(dt, colliders);
     this.stepVanSim(dt);
     this.stepCartSim(dt);
@@ -1174,6 +1318,16 @@ export class World {
       if (p.dead) {
         p.input.mx = 0;
         p.input.mz = 0;
+        // a recovered body rides the cargo bay floor (spot order = Map order)
+        if (p.bodyVan) {
+          const idx = [...this.players.values()].filter((o) => o.dead && o.bodyVan).indexOf(p);
+          const spot = VAN.BODY_SPOTS[Math.max(0, Math.min(idx, VAN.BODY_SPOTS.length - 1))]!;
+          const w = this.vanPoint(spot);
+          p.body.x = w.x;
+          p.body.z = w.z;
+          p.body.y = 0.35;
+          p.yaw = this.van.yaw + Math.PI / 2; // lying across the bay
+        }
         continue;
       }
       if (p.seat > 0) {
@@ -1237,11 +1391,11 @@ export class World {
       // stop-slide: with the input fully released, replace stepPlayer's fast
       // approach-damping with a gentle exponential decay so letting go of W
       // coasts a fraction of a meter instead of dead-stopping. NOT while
-      // carrying: hauling already slows you, and the extra drift strains the
-      // two-handle leash into unfair slips. Grounded only (air control is
-      // unchanged) and unreachable while hidden/seated/downed — those
-      // branches continue above. Mirrored EXACTLY in predict.ts.
-      if (speed > 0 && !p.carrying && Math.hypot(p.input.mx, p.input.mz) <= 1e-4 && p.body.grounded) {
+      // carrying (items or a body): hauling already slows you, and the extra
+      // drift strains the two-handle leash into unfair slips. Grounded only
+      // (air control is unchanged) and unreachable while hidden/seated/downed
+      // — those branches continue above. Mirrored EXACTLY in predict.ts.
+      if (speed > 0 && !p.carrying && !p.carryBody && Math.hypot(p.input.mx, p.input.mz) <= 1e-4 && p.body.grounded) {
         const keep = Math.exp(-PLAYER.STOP_SLIDE_RATE * dt);
         p.body.vx = preVx * keep;
         p.body.vz = preVz * keep;
@@ -1327,35 +1481,136 @@ export class World {
     }
   }
 
+  // ---------------------------------------------------------------- arrive
+  /** Drive-in tick: driver promotion on disconnect, stall failsafe -> server
+   *  autopilot, ordered checkpoint gating, then the park -> scavenge flip. */
+  private stepArrive(dt: number): void {
+    // driver gone (left or dropped): the next connected rider inherits the
+    // wheel — and with it, the exit-driver designation on completion
+    const driver = this.vanDriver ? this.players.get(this.vanDriver) : undefined;
+    if (!driver || !driver.connected) {
+      const next = [...this.players.values()].find((p) => p.connected && p.seat >= 2 && p.seat <= 4);
+      if (next) {
+        if (driver) driver.seat = next.seat;
+        next.seat = 1;
+        this.vanDriver = next.sid;
+        this.exitDriver = next.sid;
+        this.say(`${next.nick} takes the wheel`);
+        this.emit({ t: "courseDriver", sid: next.sid });
+      }
+    }
+
+    // AFK/stuck failsafe: no checkpoint progress for STALL_S -> autopilot
+    this.courseStall += dt;
+    if (!this.courseAuto && this.courseStall > COURSE.STALL_S) {
+      this.courseAuto = true;
+      this.say("Nobody driving — the van's bringing itself in. Hang on.");
+      this.emit({ t: "courseAuto" });
+    }
+
+    if (this.courseStage < 3) {
+      const cp = COURSE.STAGES[this.courseStage]!;
+      if (dist2d(this.van.x, this.van.z, cp.x, cp.z) < cp.r) {
+        this.courseStage += 1;
+        this.courseStall = 0;
+        this.emit({ t: "course", stage: this.courseStage });
+      }
+    } else if (dist2d(this.van.x, this.van.z, COURSE.PARK.x, COURSE.PARK.z) < COURSE.PARK.r) {
+      this.completeArrival();
+    }
+  }
+
+  private completeArrival(): void {
+    // the wheel-holder at park time is the EXIT DRIVER for the escape phase
+    const d = this.players.get(this.vanDriver);
+    this.exitDriver = d && d.connected ? d.sid : "";
+    this.courseAuto = false;
+    // the shift clock starts NOW: re-base endsAt so the drive-in never eats
+    // mission time, and briefUntil stays the "scavenge started" timestamp
+    this.briefUntil = this.t;
+    this.endsAt = this.t + (this.testSeconds > 0 ? this.testSeconds : missionSeconds(this.modifiers));
+    this.setPhase("scavenge");
+    this.emit({ t: "arrived", driver: this.exitDriver });
+    this.say("Parked — and the distributor cap just gave out. Find a replacement.");
+  }
+
+  /** A late joiner during the drive-in rides along: any free van seat. */
+  seatLateArrival(p: RPlayer): boolean {
+    if (this.phase !== "arrive" || p.seat > 0) return false;
+    for (let s = 2; s <= 4; s++) {
+      if (![...this.players.values()].some((o) => o.seat === s)) {
+        p.seat = s;
+        this.emit({ t: "seat", sid: p.sid, seat: s });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The escape-phase leave gate: null = free to go; "down" = the exit driver
+   *  needs stabilizing; "body" = their body is still out on the lot. A
+   *  designated driver who has left the room lifts the constraint entirely. */
+  exitDriverBlock(): null | "down" | "body" {
+    if (this.phase !== "escape" || !this.exitDriver) return null;
+    const d = this.players.get(this.exitDriver);
+    if (!d || !d.connected) return null;
+    if (d.dead) return d.bodyVan ? null : "body";
+    if (d.downed) return "down";
+    return null;
+  }
+
   private stepVanSim(dt: number): void {
     if (this.phase === "results") return;
-    const drivable = this.phase === "escape";
+    const drivable = this.phase === "escape" || this.phase === "arrive";
     const driver = this.vanDriver ? this.players.get(this.vanDriver) : undefined;
     let throttle = 0;
     let steer = 0;
     let handbrake = true;
 
-    if (drivable && driver && driver.connected && driver.seat === 1 && !driver.dead && !driver.downed) {
+    if (this.phase === "arrive" && this.courseAuto) {
+      // stall failsafe: pure-pursuit toward the next checkpoint (or the park).
+      // stepVehicle's steer ADDS to yaw (v.yaw += steer * ...), so a positive
+      // heading error wants positive steer — the opposite sign of the player
+      // mapping (steer = -mx) above.
+      const tgt = this.courseStage < 3 ? COURSE.STAGES[this.courseStage]! : COURSE.PARK;
+      const want = Math.atan2(tgt.x - this.van.x, tgt.z - this.van.z);
+      const dyaw = Math.atan2(Math.sin(want - this.van.yaw), Math.cos(want - this.van.yaw));
+      steer = clamp(dyaw * 1.8, -1, 1);
+      throttle = Math.abs(dyaw) > 1.1 && Math.abs(this.van.speed) > 3 ? 0.15 : 0.72;
+      handbrake = false;
+    } else if (drivable && driver && driver.connected && driver.seat === 1 && !driver.dead && !driver.downed) {
       const i = driver.input;
       throttle = clamp(i.mz, -1, 1);
       steer = -clamp(i.mx, -1, 1); // D steers right on screen (yaw decreases)
       handbrake = i.jump;
 
-      // leaving living teammates behind needs a confirming second press
-      if (throttle > 0.5) {
-        const outside = this.playersHaveLivingOutside();
-        if (outside > 0) {
+      if (this.phase === "escape" && throttle > 0.5) {
+        // hard gate first: the van does not leave without its exit driver —
+        // no double-press abandon can confirm past a downed driver or an
+        // unrecovered body
+        const block = this.exitDriverBlock();
+        if (block) {
           if (this.t >= this.extractWarnUntil) {
-            this.emit({ t: "leaveWarn", outside });
+            this.emit({ t: "leaveBlock", k: block, sid: this.exitDriver });
             this.extractWarnUntil = this.t + 6;
-            this.extractConfirmed = false;
           }
-          if (!this.extractConfirmed) {
-            if (this.t < this.extractWarnUntil && this.extractWarnUntil - this.t < 5.9) {
-              // second press inside the window confirms
-              this.extractConfirmed = true;
-            } else {
-              throttle = 0;
+          throttle = 0;
+        } else {
+          // leaving living teammates behind needs a confirming second press
+          const outside = this.playersHaveLivingOutside();
+          if (outside > 0) {
+            if (this.t >= this.extractWarnUntil) {
+              this.emit({ t: "leaveWarn", outside });
+              this.extractWarnUntil = this.t + 6;
+              this.extractConfirmed = false;
+            }
+            if (!this.extractConfirmed) {
+              if (this.t < this.extractWarnUntil && this.extractWarnUntil - this.t < 5.9) {
+                // second press inside the window confirms
+                this.extractConfirmed = true;
+              } else {
+                throttle = 0;
+              }
             }
           }
         }
@@ -1442,6 +1697,15 @@ export class World {
     this.van.x = clamp(this.van.x + Math.sin(this.van.yaw) * v * dt, -68.5, 33);
     this.van.z = clamp(this.van.z + Math.cos(this.van.yaw) * v * dt, -25, 25);
     for (const p of this.players.values()) {
+      if (p.dead && p.bodyVan) {
+        // recovered bodies ride out with the crew
+        const idx = [...this.players.values()].filter((o) => o.dead && o.bodyVan).indexOf(p);
+        const spot = VAN.BODY_SPOTS[Math.max(0, Math.min(idx, VAN.BODY_SPOTS.length - 1))]!;
+        const w = this.vanPoint(spot);
+        p.body.x = w.x;
+        p.body.z = w.z;
+        continue;
+      }
       if (p.dead || p.seat === 0) continue;
       const w = this.vanPoint(VAN.SEATS[p.seat - 1]!);
       p.body.x = w.x;
@@ -1538,6 +1802,7 @@ export class World {
       biggestLoss: Math.round(p.biggestLoss),
       lossItem: p.lossItem,
       downed: p.downedCount,
+      recovered: p.dead && p.bodyVan,
       status:
         outcome === "escaped"
           ? p.seat > 0
@@ -1606,6 +1871,8 @@ export class World {
     sp.budget = p.budget;
     sp.hasFlashlight = p.hasFlashlight;
     sp.caffeinated = p.caffeinated;
+    sp.carryBody = p.carryBody;
+    sp.bodyVan = p.bodyVan;
     sp.seat = p.seat;
     sp.hidden = p.hidden;
     sp.hat = p.hat;
@@ -1669,6 +1936,10 @@ export class World {
     st.cart.yaw = this.cart.yaw;
     st.cart.speed = this.cart.speed;
     st.cart.driver = this.cartDriver;
+
+    st.course.stage = this.courseStage;
+    st.course.driver = this.exitDriver;
+    st.course.autopilot = this.courseAuto;
 
     st.enemy.x = this.enemy.x;
     st.enemy.z = this.enemy.z;

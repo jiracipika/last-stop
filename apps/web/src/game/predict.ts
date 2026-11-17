@@ -60,17 +60,24 @@ export class Predictor {
     const moving = Math.hypot(input.mx, input.mz) > 0.1;
     let wantSprint = input.sprint === true && moving && me.stamina > 0.5;
     let speed: number = wantSprint ? PLAYER.SPRINT : PLAYER.WALK;
-    const carrying = me.carrying;
-    if (carrying) {
-      const it = state.items.get(carrying);
-      if (it) {
-        const def = ITEM_DEFS[it.defId];
-        if (def) {
-          const carriers = (it.h0 ? 1 : 0) + (it.h1 ? 1 : 0) || 1;
-          const w = def.weight * (def.twoHandle && state.players.size === 1 ? CARRY.SOLO_HEAVY_FACTOR : 1);
-          const per = w / carriers;
-          speed *= carrySpeedFactor(per);
-          if (per >= CARRY.SPRINT_MAX_WEIGHT) wantSprint = false;
+    if (me.carryBody) {
+      // hauling a coworker's body: fixed heavy load, no sprint — mirrors the
+      // server's effectiveSpeed body branch EXACTLY (same constant)
+      speed *= carrySpeedFactor(CARRY.BODY_WEIGHT);
+      wantSprint = false;
+    } else {
+      const carrying = me.carrying;
+      if (carrying) {
+        const it = state.items.get(carrying);
+        if (it) {
+          const def = ITEM_DEFS[it.defId];
+          if (def) {
+            const carriers = (it.h0 ? 1 : 0) + (it.h1 ? 1 : 0) || 1;
+            const w = def.weight * (def.twoHandle && state.players.size === 1 ? CARRY.SOLO_HEAVY_FACTOR : 1);
+            const per = w / carriers;
+            speed *= carrySpeedFactor(per);
+            if (per >= CARRY.SPRINT_MAX_WEIGHT) wantSprint = false;
+          }
         }
       }
     }

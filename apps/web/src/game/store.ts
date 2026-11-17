@@ -31,7 +31,7 @@ export interface HudState {
   prompt: string;
   progress: number; // 0..1 hold-interact bar
   progressKind: string;
-  teammates: { sid: string; nick: string; color: number; hp: number; downed: boolean; dead: boolean; dist: number; seat: number; connected: boolean }[];
+  teammates: { sid: string; nick: string; color: number; hp: number; downed: boolean; dead: boolean; bodyVan: boolean; dist: number; seat: number; connected: boolean }[];
   ping: number;
   connStatus: string;
   connDetail: string;
@@ -48,6 +48,16 @@ export interface HudState {
   vanSpeed: number;
   cartSpeed: number;
   cartTaken: boolean;
+  /** drive-in course: gates threaded (0..3) + autopilot failsafe flag */
+  courseStage: number;
+  courseAuto: boolean;
+  /** designated exit driver: sid + display nick ("" until the drive-in ends) */
+  exitDriver: string;
+  exitDriverNick: string;
+  /** "" | "down" | "body" — why the van may not leave during escape */
+  exitBlock: string;
+  /** nick of the teammate whose body the local player is hauling */
+  carryBodyNick: string;
   toasts: Toast[];
   damageFlash: number;
   /** Signed SCREEN angle to the last damage source (rad, wrapped to
@@ -106,6 +116,12 @@ export const initialHud: HudState = {
   vanSpeed: 0,
   cartSpeed: 0,
   cartTaken: false,
+  courseStage: 0,
+  courseAuto: false,
+  exitDriver: "",
+  exitDriverNick: "",
+  exitBlock: "",
+  carryBodyNick: "",
   toasts: [],
   damageFlash: 0,
   dmgDir: null,

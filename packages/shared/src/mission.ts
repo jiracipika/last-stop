@@ -1,7 +1,7 @@
 // Mission configuration: phases, modifiers, quota scaling, escalation,
 // results. Server owns all of this; the client renders it.
 
-export type Phase = "lobby" | "briefing" | "scavenge" | "escape" | "results";
+export type Phase = "lobby" | "briefing" | "arrive" | "scavenge" | "escape" | "results";
 
 export interface ModifierDef {
   id: string;
@@ -169,6 +169,8 @@ export interface MissionAwardRow {
   lossItem: string;
   downed: number;
   status: CrewStatus;
+  /** dead player whose body was hauled back and loaded into the van */
+  recovered?: boolean;
 }
 
 export interface MissionResults {
@@ -207,6 +209,7 @@ export function computeAwards(rows: MissionAwardRow[]): MissionResults["awards"]
 export const PHASE_LABEL: Record<Phase, string> = {
   lobby: "Crew Room",
   briefing: "Arrival",
+  arrive: "Drive-In",
   scavenge: "Recovery Shift",
   escape: "GET OUT",
   results: "Debrief",

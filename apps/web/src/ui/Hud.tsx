@@ -22,9 +22,14 @@ export function Hud({
   reduceFlash?: boolean;
 }): React.ReactElement {
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
-  const danger = hud.timer < 120;
+  const danger = hud.phase !== "arrive" && hud.timer < 120;
   const quotaMet = hud.salvage >= hud.quota;
-  const directive = hud.phase === "escape"
+  const iDrive = hud.phase === "arrive" && hud.seat === 1;
+  const directive = hud.phase === "arrive"
+    ? (iDrive
+      ? "You drew the wheel — thread the three gates, park at the ring."
+      : `${hud.exitDriverNick || "The driver"} has the wheel — ride in.`)
+    : hud.phase === "escape"
     ? (hud.seat > 0 ? "Head west. Bring everyone home." : "Return to the van. Time to leave.")
     : !hud.partInstalled && quotaMet ? "Find the distributor cap. Repair the van."
     : hud.partInstalled ? "Load the van to meet your salvage quota."
@@ -44,6 +49,10 @@ export function Hud({
   // bracketed prefix dimmer, remainder as-is.
   const close = hud.prompt.indexOf("]");
   const promptKey = hud.prompt.startsWith("[") && close > 0 ? hud.prompt.slice(0, close + 1) : null;
+
+  // Am I the designated exit driver? (teammates list excludes the local
+  // player, so the self-check goes through the live net session)
+  const iAmExitDriver = activeNet != null && activeNet.sid === hud.exitDriver;
 
   // Nearest crew member able to stabilize the local player.
   const helper = hud.teammates.reduce<{ nick: string; dist: number } | null>((best, t) => {
@@ -92,12 +101,40 @@ export function Hud({
   return (
     <div className="hud">
       <div className={`shift-directive ${hud.phase === "escape" ? "escape" : ""}`}>
-        <span>{hud.phase === "escape" ? "03 / CLOCK OUT" : quotaMet || hud.partInstalled ? "02 / FINISH THE JOB" : "01 / RECOVERY SHIFT"}</span>
+        <span>{hud.phase === "arrive" ? "00 / DRIVE-IN" : hud.phase === "escape" ? "03 / CLOCK OUT" : quotaMet || hud.partInstalled ? "02 / FINISH THE JOB" : "01 / RECOVERY SHIFT"}</span>
         <b>{directive}</b>
-        <small>{hud.phase === "escape" ? "Driver: cab side · Passengers: open rear doors"
+        <small>{hud.phase === "arrive"
+          ? iDrive ? "W/S throttle · A/D steer · Space brake · the clock starts when we park"
+            : "Hold tight · E hops out once we've parked"
+          : hud.phase === "escape" ? "Driver: cab side · Passengers: open rear doors"
+          : hud.carryBodyNick ? "Bodies ride the van: open rear doors, E to load"
           : hud.carrying ? "Open rear doors to load · RMB steadies fragile cargo"
           : "E stows small loot · LMB hauls cargo · Q marks a find"}</small>
       </div>
+
+      {/* drive-in course tracker: three gate pips + park note */}
+      {hud.phase === "arrive" && (
+        <div className="course-track" role="status">
+          <span className="ct-label">{hud.courseAuto ? "AUTOPILOT" : "DRIVE-IN COURSE"}</span>
+          <span className="ct-pips">
+            {[0, 1, 2].map((i) => (
+              <i key={i} className={hud.courseStage > i ? "on" : ""} />
+            ))}
+          </span>
+          <span className="ct-note">
+            {hud.courseStage >= 3 ? "PARK AT THE RING" : `GATE ${hud.courseStage + 1} OF 3`}
+          </span>
+        </div>
+      )}
+
+      {/* escape leave-gate: the van will not leave without the exit driver */}
+      {hud.phase === "escape" && hud.exitBlock && (
+        <div className="exit-block" role="alert">
+          {hud.exitBlock === "down"
+            ? `⚠ ${hud.exitDriverNick} (exit driver) is DOWN — stabilize them before leaving`
+            : `⚠ ${hud.exitDriverNick}'s body is still on the lot — bring it back to the van`}
+        </div>
+      )}
       {threat && <div className={`threat-cue ${hud.enemyAi === 3 ? "strike" : ""}`} role="status">{threat}</div>}
       {/* crosshair + prompt */}
       {!hud.dead && (
@@ -162,6 +199,7 @@ export function Hud({
           <span><b>Q</b> ping</span>
           <span><b>1/2/3</b> pack slots</span>
           <span><b>G</b> drop held/stowed</span>
+          <span><b>E</b> haul a fallen body</span>
           <span><b>Z/X/C</b> quick chat</span>
           <span><b>Space</b> jump/handbrake</span>
           <span><b>H</b> horn</span>
@@ -221,11 +259,11 @@ export function Hud({
           <div className="scanner-head">
             <span className="scanner-led" /> DUSTPAN RECOVERY SCANNER
           </div>
-          <div className="scanner-row"><span>CARGO</span><b>{hud.carrying ? hud.carryingName : "—"}</b></div>
+          <div className="scanner-row"><span>CARGO</span><b>{hud.carrying ? hud.carryingName : hud.carryBodyNick ? `${hud.carryBodyNick} — BODY` : "—"}</b></div>
           <div className="scanner-row">
             <span>WEIGHT</span>
             <b>
-              {hud.carrying ? `${hud.carryingWeight}/5${hud.twoHandle ? " · 2-HANDLE" : ""}` : "—"}
+              {hud.carrying ? `${hud.carryingWeight}/5${hud.twoHandle ? " · 2-HANDLE" : ""}` : hud.carryBodyNick ? "HEAVY · NO SPRINT" : "—"}
               {hud.twoHandle && " (slow alone)"}
             </b>
           </div>
@@ -254,7 +292,17 @@ export function Hud({
       {/* driving strip */}
       {hud.seat > 0 && (
         <div className="drive-strip">
-          {hud.seat >= 5 ? (
+          {hud.phase === "arrive" ? (
+            iDrive ? (
+              <>
+                <b>DRIVING THE COURSE</b> · thread the 3 gates, park at the ring · Space brake · H horn
+              </>
+            ) : (
+              <>
+                <b>RIDING IN</b> · {hud.exitDriverNick} is driving · E hops out once we've parked
+              </>
+            )
+          ) : hud.seat >= 5 ? (
             hud.driving ? (
               <>
                 <b>DRIVING THE CART</b> · W/S throttle · A/D steer · Space brake · E to hop out (stopped)
@@ -267,6 +315,7 @@ export function Hud({
           ) : hud.driving ? (
             <>
               <b>DRIVING</b> · W/S throttle · A/D steer · Space handbrake · H horn · E to get out (stopped)
+              {iAmExitDriver && " · you're the exit driver — they can't leave without you"}
             </>
           ) : (
             <>
@@ -319,8 +368,9 @@ export function Hud({
             {t.seat > 0 && <span className="m-seat">🚐</span>}
             {!t.connected && <span className="dc-tag">dc</span>}
             <div className="m-hp"><div style={{ width: `${t.hp}%` }} /></div>
+            {t.sid === hud.exitDriver && !t.dead && <span className="m-flag drive">DRIVE</span>}
             {t.downed && !t.dead && <span className="m-flag">DOWN</span>}
-            {t.dead && <span className="m-flag">LOST</span>}
+            {t.dead && <span className="m-flag">{t.bodyVan ? "HOME" : "LOST"}</span>}
             {!t.downed && !t.dead && <span className="m-dist">{t.dist}m</span>}
           </div>
         ))}

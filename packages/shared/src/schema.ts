@@ -40,6 +40,10 @@ export const PlayerState = schema(
     caffeinated: t.boolean(), // truck-stop coffee: faster stamina regen
     seat: t.uint8(), // 0 = on foot, 1..4 van seats (1 = driver), 5/6 cart driver/passenger
     driving: t.boolean(),
+    // dead-body recovery: sid of the body this player is hauling ("" = none)
+    // and, on the corpse itself, whether it has been loaded into the van
+    carryBody: t.string(),
+    bodyVan: t.boolean(),
     // stats
     noiseScore: t.float64(),
     deliveredValue: t.float64(),
@@ -131,6 +135,20 @@ export const MarkerState = schema(
 );
 export type MarkerState = SchemaType<typeof MarkerState>;
 
+// Drive-in course + exit-driver designation. `stage` counts threaded gates
+// (0..3; 3 = course complete). `driver` is the player currently holding the
+// wheel during the drive-in and FREEZES at completion as the designated exit
+// driver — the van may not leave without them (or their body) aboard.
+export const CourseState = schema(
+  {
+    stage: t.uint8(),
+    driver: t.string(), // "" = nobody designated
+    autopilot: t.boolean(), // stall failsafe: the van is bringing itself in
+  },
+  "CourseState",
+);
+export type CourseState = SchemaType<typeof CourseState>;
+
 export const DoorState = schema(
   {
     id: t.string(),
@@ -161,6 +179,7 @@ export const RoomState = schema(
     enemy: EnemyState,
     van: VanState,
     cart: CartState,
+    course: CourseState,
     markers: t.array(MarkerState),
   },
   "RoomState",

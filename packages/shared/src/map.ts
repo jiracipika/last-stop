@@ -360,6 +360,26 @@ export const PLAYER_SPAWNS = [
 
 export const VAN_START = { x: 2, z: 13.5, yaw: Math.PI }; // facing north (-Z)
 
+// ---------------------------------------------------------------------------
+// Drive-in course: the shift opens with the whole crew already in the van on
+// the old road, one random driver threading three checkpoint gates east into
+// the lot and parking at the usual spot. ~70 m of road ≈ 20 s at van pace.
+// The driver at completion becomes the EXIT DRIVER for the escape phase.
+// ---------------------------------------------------------------------------
+export const COURSE = {
+  START: { x: -66, z: 11, yaw: Math.PI / 2 }, // on the road, facing the gate
+  STAGES: [
+    { x: -58, z: 11, r: 4.2 },
+    { x: -46, z: 11, r: 4.2 },
+    { x: GATE.x, z: 11, r: 4.6 }, // through the lot gate itself
+  ],
+  // threading the last gate clears stage 3; the course completes when the van
+  // reaches the usual parking spot (radius covers a lazy final approach)
+  PARK: { x: VAN_START.x, z: VAN_START.z, r: 3.4 },
+  /** no checkpoint progress for this long -> the van brings itself in */
+  STALL_S: 45,
+} as const;
+
 // The crew's golf cart parks by the gas-station pumps, facing east into the lot
 export const CART_START = { x: -23.6, z: 19.6, yaw: Math.PI / 2 };
 

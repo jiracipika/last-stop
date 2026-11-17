@@ -29,6 +29,11 @@ export class GameRoom extends Room {
     }
     liveRooms.add(this);
     this.world = new World();
+    // Production rooms always run the drive-in course (crew boards the van on
+    // the old road, one random driver threads three gates in). The vitest
+    // harness and the e2e server set LS_TEST_MODE, where rooms default to the
+    // classic scavenge start and opt in via the testArrive create option.
+    this.world.arriveEnabled = process.env.LS_TEST_MODE !== "1";
     this.state = this.world.state as never;
     // Test-only knobs (CI speed). Gated by server env so a hostile client
     // cannot shorten timers or lower quotas on a production server.
@@ -47,6 +52,9 @@ export class GameRoom extends Room {
       if (_options.testAt === "escape") this.world.testAtEscape = true;
       // test knob: spawn a toolbox beside the van for stow/pack probes
       if (_options.testItemAt === true) this.world.testItemAt = true;
+      // e2e opts IN to the drive-in course per room (the test server defaults
+      // it off so the rest of the suite keeps the direct scavenge start)
+      if (_options.testArrive === true) this.world.arriveEnabled = true;
     }
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);
@@ -253,6 +261,24 @@ export class GameRoom extends Room {
         w.exitSeat(p);
         return;
       }
+      case "liftBody": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "liftBody", 0.6)) return;
+        const sid = typeof data.sid === "string" ? data.sid : "";
+        w.tryLiftBody(p, sid);
+        return;
+      }
+      case "dropBody": {
+        if (!this.rateOk(client, "dropBody", 0.4)) return;
+        if (p.carryBody) w.dropBody(p);
+        return;
+      }
+      case "loadBody": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "loadBody", 0.5)) return;
+        w.loadBody(p);
+        return;
+      }
       case "straps": {
         if (w.phase === "results" || w.phase === "lobby") return;
         if (!this.rateOk(client, "straps", 0.5)) return;
@@ -290,8 +316,8 @@ export class GameRoom extends Room {
     if (seated >= MISSION.MAX_PLAYERS) {
       throw new Error("Room is full");
     }
-    // late join: clock in mid-shift (briefing/scavenge/escape, pull-away included)
-    const late = w.phase === "briefing" || w.phase === "scavenge" || w.phase === "escape";
+    // late join: clock in mid-shift (briefing/arrive/scavenge/escape, pull-away included)
+    const late = w.phase === "briefing" || w.phase === "arrive" || w.phase === "scavenge" || w.phase === "escape";
     const nick = typeof options?.nick === "string" && options.nick.trim()
       ? options.nick.trim().slice(0, 16)
       : `Rookie${Math.floor(Math.random() * 90 + 10)}`;
@@ -299,6 +325,11 @@ export class GameRoom extends Room {
     const hat = typeof options?.hat === "number" ? Math.max(0, Math.min(4, Math.round(options.hat))) : 0;
     const host = w.players.size === 0;
     const p = w.addPlayer(client.sessionId, nick, color, host, hat, late);
+    // during the drive-in a late joiner rides along in a free van seat; if the
+    // van is full they wait on the road beside it (addPlayer's atVan spot)
+    if (w.phase === "arrive" && !w.seatLateArrival(p)) {
+      w.say(`${p.nick} clocked in late - wait by the road.`);
+    }
     this.broadcast("ev", { t: "join", sid: client.sessionId, nick: p.nick });
     if (w.phase === "scavenge" || w.phase === "escape") {
       w.say(`${p.nick} clocked in late - get to work.`);

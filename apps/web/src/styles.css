@@ -1795,3 +1795,64 @@ input:focus-visible {
     transform: none;
   }
 }
+
+/* ---- HUD: drive-in course tracker + exit-driver leave gate ---- */
+.course-track {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: rgba(4, 6, 10, 0.72);
+  border: 1px solid #2a3442;
+  border-radius: 5px;
+  color: #cfe0f0;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+}
+.ct-label {
+  color: var(--amber, #ffb347);
+  font-weight: bold;
+}
+.ct-pips {
+  display: inline-flex;
+  gap: 6px;
+}
+.ct-pips i {
+  width: 14px;
+  height: 5px;
+  border-radius: 2px;
+  background: #2a3442;
+  transition: background 0.25s ease;
+}
+.ct-pips i.on {
+  background: #9dff8f;
+  box-shadow: 0 0 8px rgba(157, 255, 143, 0.5);
+}
+.ct-note {
+  color: #8fa4bb;
+}
+.exit-block {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  background: rgba(64, 12, 12, 0.85);
+  border: 1px solid #a33;
+  border-radius: 5px;
+  color: #ffd9d9;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  animation: captionIn 0.18s ease-out;
+  pointer-events: none;
+}
+.m-flag.drive {
+  color: var(--amber, #ffb347);
+  border-color: var(--amber, #ffb347);
+}

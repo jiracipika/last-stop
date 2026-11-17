@@ -88,7 +88,11 @@ function rowStatus(outcome: string, r: MissionAwardRow): { label: string; left: 
     if (r.delivered <= 0) return { label: "clocked out (empty-handed)", left: false };
     return { label: "clocked out", left: false };
   }
-  if (r.status === "down") return { label: "did not clock out", left: true };
+  if (r.status === "down") {
+    // dead, but the crew hauled the body home — a different kind of kept promise
+    if (r.recovered) return { label: "brought home", left: false };
+    return { label: "did not clock out", left: true };
+  }
   if (r.status === "left") {
     return { label: r.downed > 0 ? "left on site (limping)" : "left on site", left: true };
   }
