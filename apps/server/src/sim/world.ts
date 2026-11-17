@@ -875,9 +875,9 @@ export class World {
           p.deliveredCount += 1;
         }
       }
-      this.emit({ t: "stored", item: it.id, def: it.defId, value, by: [...credited] });
+      this.emit({ t: "stored", item: it.id, def: it.defId, value, by: [...credited], x: it.body.x, z: it.body.z });
     } else {
-      this.emit({ t: "stored", item: it.id, def: it.defId, value: 0, by: [] });
+      this.emit({ t: "stored", item: it.id, def: it.defId, value: 0, by: [], x: it.body.x, z: it.body.z });
     }
     this.releaseCarries(it.lastH0, "store", it.id);
     this.releaseCarries(it.lastH1, "store", it.id);

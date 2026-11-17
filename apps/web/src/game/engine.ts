@@ -19,6 +19,7 @@ import { ItemView } from "./items3d.js";
 import { Predictor } from "./predict.js";
 import { InputManager, type ActionKind } from "./input.js";
 import { audio } from "./audio.js";
+import { paletteMode } from "./palette.js";
 import type { Net, Ev } from "../net.js";
 import type { HudStore } from "./store.js";
 
@@ -27,6 +28,10 @@ export interface QualitySettings {
   headBob: boolean;
   shake: boolean;
   sensitivity: number;
+  /** accessibility: caption critical audio cues as text */
+  captions: boolean;
+  /** accessibility: damp sudden flashes (damage vignette, lightning) */
+  reduceFlash: boolean;
 }
 
 interface Marker3D {
@@ -98,6 +103,25 @@ export class Engine {
   store: HudStore;
   net: Net;
   settings: QualitySettings;
+
+  /** Swap quality/accessibility settings live (pause-menu toggles). */
+  setSettings(s: QualitySettings): void {
+    this.settings = s;
+    if (this.inputInstance) this.inputInstance.sensitivity = s.sensitivity;
+    this.world3d.setReduceFlash(s.reduceFlash);
+    // palette swap: rebuild the crew's 3D avatars under the new colors (HUD
+    // dots resolve through crewHex live; avatar suits bake color at build)
+    if (paletteMode() !== this.lastPaletteMode) {
+      this.lastPaletteMode = paletteMode();
+      for (const av of this.avatars.values()) {
+        this.scene.remove(av.group);
+        av.dispose();
+      }
+      this.avatars.clear();
+    }
+    this.applyQuality();
+  }
+  private lastPaletteMode = false;
   /** True while the title cinematic owns the camera (no room joined). */
   private attractMode = true;
   /** Wired by App: drops the title back to its static backdrop if the
@@ -126,6 +150,21 @@ export class Engine {
   private sendSeq = 0;
   private target: TargetInfo | null = null;
   private shakeAmount = 0;
+  // ---- impact feel (game-feel pass) ----
+  /** hit-stop: while now < hitstopUntil, interpolated entities render at the
+   *  pinned patch time (the world visibly lurches to a halt for ~90 ms on a
+   *  Caretaker strike). Input/prediction keep running on real time. */
+  private hitstopUntil = 0;
+  private hitstopPinAt = 0;
+  /** FOV punch decays 1→0 after a strike; zooms the lens IN briefly */
+  private fovPunch = 0;
+  /** scale-pop timers per item view: id -> performance.now() until */
+  private itemPops = new Map<string, number>();
+  /** floating "+$X secured" labels (screen-space, projected at spawn) */
+  private floaters = new Map<number, { text: string; x: number; y: number; until: number }>();
+  private floaterId = 1;
+  private floatersRev = 0;
+  private floatersPushed = 0;
   private bobPhase = 0;
   private lastEnemyAi = 0;
   private lastEnemyChaseSid = ""; // previous frame's chase target, for the lost-you cue
@@ -178,6 +217,7 @@ export class Engine {
     const mods: string[] = net.state ? [...net.state.modifiers] : [];
     const blackout = mods.includes("blackout");
     this.world3d = new World3D(blackout);
+    this.world3d.setReduceFlash(settings.reduceFlash);
     this.scene.add(this.world3d.group);
     this.vanView = new VanView(this.world3d.textureKit);
     this.scene.add(this.vanView.group);
@@ -454,6 +494,7 @@ export class Engine {
           const grabber = st?.players.get(String(e.by));
           if (grabber) audio.playEventAt("grab", grabber.x, grabber.z, cam);
         }
+        this.popItem(String(e.item));
         break;
       case "drop": {
         // the server stamps drops with position + weight class (x/z/heavy):
@@ -469,10 +510,12 @@ export class Engine {
           const p = st?.players.get(String(e.by));
           if (p) audio.playEventAt("grab", p.x, p.z, cam);
         }
+        this.popItem(String(e.item));
         break;
       }
       case "unstow": {
         if (e.by === this.net.sid) audio.grab();
+        this.popItem(String(e.item));
         break;
       }
       case "bought": {
@@ -505,7 +548,10 @@ export class Engine {
           const storer = st?.players.get(mate);
           if (storer) audio.playEventAt("store", storer.x, storer.z, cam);
         }
-        if (Number(e.value) > 0) this.store.toast(`+$${e.value} secured`, "good");
+        if (Number(e.value) > 0) {
+          this.store.toast(`+$${e.value} secured`, "good");
+          this.spawnFloater(`+$${e.value}`, Number(e.x ?? 0) || this.camera.position.x, Number(e.z ?? 0) || this.camera.position.z);
+        }
         break;
       }
       case "damage":
@@ -535,6 +581,7 @@ export class Engine {
           this.bangToastCd = 4;
           this.store.toast("IT'S FORCING A DOOR — hold it or run!", "warn");
         }
+        this.caption("(BANG — a door is being forced open)");
         break;
       }
       case "hurt":
@@ -559,11 +606,14 @@ export class Engine {
       case "strike":
         this.shake(0.8);
         audio.bump(9);
+        this.impactHitStop();
+        this.caption("(heavy impact — something was hit)");
         break;
       case "down":
         audio.down();
         if (e.sid === this.net.sid) this.store.toast("You are DOWN — a teammate can help you up", "warn");
         else this.store.toast("Teammate down!", "warn");
+        this.caption(e.sid === this.net.sid ? "(you are down — breathing hard)" : "(a coworker just went down)");
         break;
       case "die":
         if (e.sid === this.net.sid) this.store.toast("You did not make it. Spectating…", "warn");
@@ -579,10 +629,12 @@ export class Engine {
       case "gate":
         audio.gate();
         this.store.toast("EXIT GATE OPEN — get everyone to the van", "good");
+        this.caption("(the exit gate grinds open)");
         break;
       case "escalate":
         audio.escalate();
         this.store.toast("Something out there is getting bolder…", "warn");
+        this.caption("(something out there is getting bolder)");
         break;
       case "bump":
         audio.bump(Number(e.v ?? 5));
@@ -704,6 +756,59 @@ export class Engine {
 
   shake(amount: number): void {
     if (this.settings.shake) this.shakeAmount = Math.min(1, this.shakeAmount + amount);
+  }
+
+  // ------------------------------------------------------------ feel helpers
+  /** Caretaker strike: 90 ms of hit-stop + a lens punch. The world's
+   *  interpolated entities freeze on the pinned patch time while input and
+   *  prediction keep flowing — the hit READS before the hurt. */
+  impactHitStop(): void {
+    const now = performance.now();
+    this.hitstopUntil = now + 90;
+    this.hitstopPinAt = now - INTERP_DELAY_MS;
+    this.fovPunch = 1;
+  }
+
+  /** Queue a scale-pop on an item view (grab/stow/drop feedback). */
+  popItem(id: string): void {
+    this.itemPops.set(id, performance.now() + 220);
+  }
+
+  /** Accessibility caption for a critical audio cue (rendered by the HUD). */
+  caption(text: string): void {
+    if (this.settings.captions) this.store.caption(text);
+  }
+
+  /** World → screen for floating value labels; falls back to the crosshair. */
+  private spawnFloater(text: string, wx: number, wz: number): void {
+    const v = new THREE.Vector3(wx, 1.4, wz).project(this.camera);
+    if (v.z > 1) return; // behind the camera — skip rather than mirror
+    const w = this.renderer.domElement.clientWidth || window.innerWidth;
+    const h = this.renderer.domElement.clientHeight || window.innerHeight;
+    const x = (v.x * 0.5 + 0.5) * w;
+    const y = (-v.y * 0.5 + 0.5) * h;
+    const id = this.floaterId++;
+    this.floaters.set(id, { text, x, y, until: performance.now() + 1500 });
+    this.floatersRev++;
+    this.pushFloaters();
+  }
+
+  private pushFloaters(): void {
+    const now = performance.now();
+    for (const [id, f] of this.floaters) {
+      if (now > f.until) {
+        this.floaters.delete(id);
+        this.floatersRev++;
+      }
+    }
+    // React must not re-render every frame for these: only push on an actual
+    // change (spawn or expiry), the CSS animation owns the motion in between
+    if (this.floatersRev !== this.floatersPushed) {
+      this.floatersPushed = this.floatersRev;
+      this.store.setFloaters(
+        [...this.floaters.entries()].map(([id, f]) => ({ id, text: f.text, x: f.x, y: f.y })),
+      );
+    }
   }
 
   // ------------------------------------------------------------------ targeting
@@ -932,6 +1037,8 @@ export class Engine {
       this.store.set(flash > 0 ? { damageFlash: flash } : { damageFlash: 0, dmgDir: null });
     }
     if (this.shakeAmount > 0) this.shakeAmount = Math.max(0, this.shakeAmount - dt * 2.4);
+    if (this.fovPunch > 0) this.fovPunch = Math.max(0, this.fovPunch - dt * 4.5);
+    this.pushFloaters();
 
     this.renderer.render(this.scene, this.camera);
 
@@ -1011,7 +1118,9 @@ export class Engine {
 
   private syncEntities(dt: number, st: RoomState, t: number, nowMs: number): void {
     const k = 1 - Math.exp(-12 * dt); // frame-rate independent item smoothing
-    const renderAt = nowMs - INTERP_DELAY_MS; // interpolation delay for remote entities
+    // hit-stop pins the interpolation clock: remote crew, the enemy, the van
+    // and the cart all hold their last patch pose for the freeze window
+    const renderAt = performance.now() < this.hitstopUntil ? this.hitstopPinAt : nowMs - INTERP_DELAY_MS;
     const cam = { x: this.camera.position.x, z: this.camera.position.z, yaw: this.input.yaw };
     // players
     const seen = new Set<string>();
@@ -1122,6 +1231,19 @@ export class Engine {
         showY = it.y;
       }
       view.update({ ...it, x: showX, y: showY, z: showZ } as typeof it, highlighted, t, dt);
+      // grab/stow pop: overshoot to 1.3, ease back to 1
+      const popUntil = this.itemPops.get(id);
+      if (popUntil !== undefined) {
+        const now = performance.now();
+        if (now > popUntil) {
+          this.itemPops.delete(id);
+          view.group.scale.setScalar(1);
+        } else {
+          const u = (popUntil - now) / 220; // 1 → 0
+          const s = 1 + 0.3 * (u < 0.35 ? u / 0.35 : (1 - u) / 0.65);
+          view.group.scale.setScalar(s);
+        }
+      }
     }
     for (const [id, view] of this.itemViews) {
       if (!seenItems.has(id)) {
@@ -1236,6 +1358,7 @@ export class Engine {
           this.youSpottedCd = 3;
           audio.sting();
           this.store.toast("IT'S SEEN YOU. RUN.", "warn");
+          this.caption("(shrill sting — IT HAS SEEN YOU)");
         } else if (e.chaseSid !== this.net.sid && this.spottedCd <= 0) {
           this.spottedCd = 6;
           audio.playEventAt("spotted", ex, ez, cam);
@@ -1319,7 +1442,10 @@ export class Engine {
     // rests on a narrower cinematic lens; the same ease hands it back on join,
     // which reads as a subtle push-in when the shift starts.
     const sprinting = !!me && me.sprinting && !me.downed && !me.dead && me.seat === 0 && !me.hidden;
-    const targetFov = attract ? ATTRACT_FOV : BASE_FOV + (sprinting ? SPRINT_FOV_KICK : 0);
+    // strike punch: a quick zoom-IN that eases back alongside the hit-stop
+    const targetFov = attract
+      ? ATTRACT_FOV
+      : BASE_FOV + (sprinting ? SPRINT_FOV_KICK : 0) - 7 * this.fovPunch * this.fovPunch;
     const nextFov = this.camera.fov + (targetFov - this.camera.fov) * (1 - Math.exp(-FOV_EASE_RATE * dt));
     if (Math.abs(nextFov - this.camera.fov) > 0.001) {
       this.camera.fov = nextFov;

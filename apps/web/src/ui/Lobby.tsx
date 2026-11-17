@@ -1,7 +1,8 @@
 // Crew room overlay: roster, ready-up, invite code, host start + the
 // gas-station stop (per-player pre-shift shop).
 import React, { useState } from "react";
-import { COLORS, SHOP } from "@last-stop/shared";
+import { SHOP } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
 import type { Prefs } from "../App.js";
@@ -33,6 +34,7 @@ export function LobbyOverlay({
       {/* gas-station stop: last chance before the lot. Personal budget; the
           coffee and the flashlight cost 4+7 of a $10 allowance — pick one. */}
       <div className="lobby-panel gas-stop">
+        <div className="panel-kicker">LAST STOP BEFORE THE LOT</div>
         <h2>PALE LANTERN GAS &amp; SIPS</h2>
         <div className="gas-budget">
           POCKET MONEY <b>${me?.budget ?? SHOP.BUDGET}</b>
@@ -61,6 +63,7 @@ export function LobbyOverlay({
         <p className="hint">One of each per stop. Spend it before the van rolls in.</p>
       </div>
       <div className="lobby-panel">
+        <div className="panel-kicker">SHIFT SETUP</div>
         <h2>Crew Room</h2>
         <div className="invite">
           <span>
@@ -84,7 +87,7 @@ export function LobbyOverlay({
         <ul className="roster">
           {players.map(({ sid, p }) => (
             <li key={sid} className={p.connected ? "" : "dc"}>
-              <span className="dot" style={{ background: COLORS[p.color % COLORS.length] }} />
+              <span className="dot" style={{ background: crewHex(p.color) }} />
               <span className="nick">{p.nick}{sid === net.sid ? " (you)" : ""}</span>
               {p.host && <span className="host-tag">host</span>}
               <span className={`ready ${p.ready ? "on" : ""}`}>{p.ready ? "READY" : "warming up"}</span>

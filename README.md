@@ -77,7 +77,12 @@ pnpm e2e           # Playwright: two real browsers, one room, join-by-code, full
 | Esc | pause + settings (releases mouse) | same |
 
 Settings: mouse sensitivity, volume, quality (low/medium/high), head-bob toggle, camera-shake
-toggle. Desktop-only: a notice is shown on touch layouts.
+toggle — plus an **accessibility** section (Esc → pause): **caption sound cues** renders critical
+noises as text (door bangs, the spotted sting, going down), **reduce flashes** softens the storm
+lightning to a steady glow and damps the damage pulse, and **colorblind-safe colors** swaps the
+8-way crew palette for one distinguishable under every common color-vision deficiency (HUD dots,
+roster, results table, title swatches and the 3D suits all follow it). Desktop-only: a notice is
+shown on touch layouts.
 
 ## The shift (mission loop)
 

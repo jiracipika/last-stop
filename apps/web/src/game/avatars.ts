@@ -1,7 +1,8 @@
 // Chunky recovery-crew characters with procedural waddle animation.
 import * as THREE from "three";
-import { COLORS, PLAYER } from "@last-stop/shared";
+import { PLAYER } from "@last-stop/shared";
 import type { PlayerState } from "@last-stop/shared";
+import { crewHex } from "./palette.js";
 
 function nameSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement("canvas");
@@ -41,7 +42,7 @@ export class AvatarView {
 
   constructor(sid: string, colorIdx: number, nick: string, hat = 0) {
     this.sid = sid;
-    const color = new THREE.Color(COLORS[colorIdx % COLORS.length] ?? "#ffb347");
+    const color = new THREE.Color(crewHex(colorIdx));
     const uniform = new THREE.MeshLambertMaterial({ color: 0x3d4652 });
     const suit = new THREE.MeshLambertMaterial({ color });
     const skin = new THREE.MeshLambertMaterial({ color: 0xc9a07a });
@@ -122,7 +123,7 @@ export class AvatarView {
     this.legR.position.set(0.16, 0.38, 0);
     this.group.add(this.legL, this.legR);
 
-    this.name = nameSprite(nick, COLORS[colorIdx % COLORS.length] ?? "#ffb347");
+    this.name = nameSprite(nick, crewHex(colorIdx));
     this.group.add(this.name);
 
     this.flashlight = new THREE.SpotLight(0xfff2cc, 0, 16, 0.45, 0.5, 1.2);

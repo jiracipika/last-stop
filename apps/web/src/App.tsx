@@ -12,6 +12,7 @@ import { Hud } from "./ui/Hud.js";
 import { ResultsOverlay } from "./ui/Results.js";
 import { PauseOverlay } from "./ui/Pause.js";
 import { COLORS } from "@last-stop/shared";
+import { setPaletteMode } from "./game/palette.js";
 
 export interface Prefs {
   nick: string;
@@ -22,6 +23,9 @@ export interface Prefs {
   shake: boolean;
   sensitivity: number;
   volume: number;
+  captions: boolean;
+  reduceFlash: boolean;
+  colorblind: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -33,6 +37,9 @@ const DEFAULT_PREFS: Prefs = {
   shake: true,
   sensitivity: 1,
   volume: 0.8,
+  captions: false,
+  reduceFlash: false,
+  colorblind: false,
 };
 
 function loadPrefs(): Prefs {
@@ -70,6 +77,21 @@ export function App(): React.ReactElement {
     audio.setVolume(prefs.volume);
   }, [prefs.volume]);
 
+  // Accessibility switches apply live (pause-menu toggles mid-shift included):
+  // the palette remap is a module-level flag every render site resolves
+  // through, and the engine reads captions/reduce-flash from its settings.
+  useEffect(() => {
+    setPaletteMode(prefs.colorblind);
+    engineRef.current?.setSettings({
+      quality: prefs.quality,
+      headBob: prefs.headBob,
+      shake: prefs.shake,
+      sensitivity: prefs.sensitivity,
+      captions: prefs.captions,
+      reduceFlash: prefs.reduceFlash,
+    });
+  }, [prefs.colorblind, prefs.captions, prefs.reduceFlash, prefs.quality, prefs.headBob, prefs.shake, prefs.sensitivity]);
+
   // Engine lifecycle. The engine boots ONCE — at the title, in ATTRACT MODE —
   // and the same canvas / WebGL context / World3D instance then serves the
   // whole session (title cinematic -> lobby -> mission). Rebuilding on join
@@ -84,6 +106,8 @@ export function App(): React.ReactElement {
         headBob: prefs.headBob,
         shake: prefs.shake,
         sensitivity: prefs.sensitivity,
+        captions: prefs.captions,
+        reduceFlash: prefs.reduceFlash,
       });
       engineRef.current = engine;
       // a thrown attract frame drops the title back to its static backdrop
@@ -111,6 +135,8 @@ export function App(): React.ReactElement {
         headBob: prefs.headBob,
         shake: prefs.shake,
         sensitivity: prefs.sensitivity,
+        captions: prefs.captions,
+        reduceFlash: prefs.reduceFlash,
       });
       engineRef.current = engine;
       engine.setAttract(false);
@@ -211,7 +237,12 @@ export function App(): React.ReactElement {
           {hud.phase === "lobby" && <LobbyOverlay net={net} hud={hud} prefs={prefs} onLeave={leaveRoom} />}
           {hud.phase === "briefing" && <Briefing hud={hud} />}
           {(hud.phase === "scavenge" || hud.phase === "escape") && (
-            <Hud hud={hud} paused={paused} onSpectateNext={() => engineRef.current?.cycleSpectate()} />
+            <Hud
+              hud={hud}
+              paused={paused}
+              reduceFlash={prefs.reduceFlash}
+              onSpectateNext={() => engineRef.current?.cycleSpectate()}
+            />
           )}
           {hud.phase === "results" && <ResultsOverlay hud={hud} net={net} />}
           {paused && hud.phase !== "lobby" && hud.phase !== "results" && (

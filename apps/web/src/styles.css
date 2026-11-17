@@ -1,4 +1,23 @@
 /* LAST STOP — underpaid night-shift aesthetic */
+:root {
+  /* design tokens (v2): one place for the palette the whole UI agrees on */
+  --bg: #07090d;
+  --panel: rgba(10, 14, 20, 0.88);
+  --panel-solid: #0c1119;
+  --line: #2a3442;
+  --line-soft: #1d2530;
+  --ink: #cfd8e3;
+  --ink-dim: #8a99ac;
+  --ink-faint: #5f6f81;
+  --paper: #c6b99b; /* receipt-tint form labels */
+  --amber: #ffbe55;
+  --amber-deep: #b8792f;
+  --cyan: #78e8ff;
+  --danger: #ff6e5e;
+  --good: #8fd3a6;
+  --money: #ffe66d;
+  --focus: 0 0 0 2px rgba(120, 232, 255, 0.55);
+}
 * {
   box-sizing: border-box;
 }
@@ -7,8 +26,8 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  background: #07090d;
-  color: #cfd8e3;
+  background: var(--bg);
+  color: var(--ink);
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   overflow: hidden;
 }
@@ -274,18 +293,33 @@ body,
   border: 1px solid #33415286;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.05s ease, box-shadow 0.14s ease;
 }
 .btn:hover:not(:disabled) {
   background: #1f2b39;
   border-color: #46586e;
 }
+/* keyboard users get a crisp ring; the pointer path stays clean */
+.btn:focus-visible,
+.swatch:focus-visible,
+.hat-btn:focus-visible,
+.q-btn:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
 .btn.primary {
   background: #7a4d1d;
   border-color: #b8792f;
   color: #ffe9c4;
+  box-shadow: 0 0 18px rgba(184, 121, 47, 0.18);
 }
 .btn.primary:hover:not(:disabled) {
   background: #96601f;
+  box-shadow: 0 0 26px rgba(184, 121, 47, 0.3);
 }
 .btn.ghost {
   background: transparent;
@@ -1567,4 +1601,197 @@ body,
 }
 .caffe-tag {
   color: #ffe66d;
+}
+
+/* ==========================================================================
+   MENU REDESIGN v2 — sharper hierarchy on the same night-shift identity.
+   Everything here layers ON TOP of the original rules (later wins); the
+   receipt/noir palette comes from the :root tokens above.
+   ========================================================================== */
+
+/* ---- title: compact sign-in ---- */
+.field-row {
+  display: flex;
+  gap: 18px;
+}
+.field-row .field {
+  flex: 1;
+  margin: 14px 0 0;
+}
+.field-row .field + .field {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 18px;
+}
+.controls-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+}
+.controls-hint .ch-row {
+  color: var(--ink-faint);
+}
+.controls-hint .ch-foot {
+  margin-top: 6px;
+  color: #46536a;
+  letter-spacing: 1px;
+  border-top: 1px dashed var(--line-soft);
+  padding-top: 8px;
+}
+.swatch,
+.hat-btn {
+  transition: transform 0.1s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+.swatch:hover {
+  transform: scale(1.14);
+}
+.hat-btn:hover {
+  border-color: var(--cyan);
+}
+.hat-btn.sel {
+  background: #10222c;
+}
+.title-actions {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 18px;
+}
+.title-actions .btn.primary {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* ---- shared panel chrome ---- */
+.panel-kicker {
+  font-size: 9.5px;
+  letter-spacing: 3px;
+  color: #55697f;
+  margin-bottom: 4px;
+}
+.panel-kicker::before {
+  content: "▪ ";
+  color: var(--amber-deep);
+}
+
+/* ---- lobby: two-panel stand-up ---- */
+.lobby {
+  gap: 18px;
+  padding: 20px;
+}
+.lobby-panel {
+  transition: border-color 0.2s ease;
+}
+.lobby-panel h2 {
+  position: relative;
+  padding-bottom: 10px;
+}
+.lobby-panel h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 42px;
+  height: 2px;
+  background: var(--amber);
+  opacity: 0.7;
+}
+.gas-stop h2::after {
+  background: #9fd8a8;
+}
+.gas-stop {
+  background:
+    radial-gradient(240px 120px at 85% 0%, rgba(80, 160, 110, 0.08), transparent 70%),
+    var(--panel);
+}
+.roster li {
+  transition: background 0.14s ease;
+}
+.roster li:not(.empty):hover {
+  background: rgba(120, 232, 255, 0.04);
+}
+.ready {
+  letter-spacing: 1px;
+}
+.ready.on {
+  text-shadow: 0 0 8px rgba(143, 211, 166, 0.5);
+}
+.gas-shelf li {
+  transition: border-color 0.14s ease, transform 0.1s ease;
+}
+.gas-shelf li:not(.owned):hover {
+  border-color: #3d6d4a;
+  transform: translateY(-1px);
+}
+@media (max-width: 960px) {
+  .lobby {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+}
+
+/* ---- pause: sectioned ---- */
+.pause-panel h2 {
+  letter-spacing: 2px;
+}
+.pause-controls .report-sec,
+.pause-controls.access .report-sec {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.access-note {
+  margin: 8px 0 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ---- HUD: accessibility captions + floaters ---- */
+.caption-bar {
+  position: absolute;
+  bottom: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 16px;
+  background: rgba(4, 6, 10, 0.82);
+  border: 1px solid #2a3442;
+  border-radius: 5px;
+  color: #d8e6f2;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  animation: captionIn 0.18s ease-out;
+  pointer-events: none;
+}
+@keyframes captionIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.floaters {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.floater {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: var(--money);
+  font-weight: bold;
+  font-size: 15px;
+  text-shadow: 0 0 10px rgba(255, 230, 109, 0.45), 0 2px 4px rgba(0, 0, 0, 0.8);
+  animation: floaterRise 1.5s ease-out forwards;
+}
+@keyframes floaterRise {
+  0% { opacity: 0; margin-top: 6px; }
+  12% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; margin-top: -46px; }
+}
+
+/* reduced-motion courtesy for menu animations */
+@media (prefers-reduced-motion: reduce) {
+  .swatch:hover,
+  .gas-shelf li:not(.owned):hover {
+    transform: none;
+  }
 }

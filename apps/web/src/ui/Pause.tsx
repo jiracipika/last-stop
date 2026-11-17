@@ -3,6 +3,7 @@ import React from "react";
 import type { Prefs } from "../App.js";
 import type { Engine } from "../game/engine.js";
 import { audio } from "../game/audio.js";
+import { setPaletteMode } from "../game/palette.js";
 
 // Graphics tiers: applied instantly via Engine.applyQuality (renderer pixel
 // ratio, fog) + World3D.setQuality (dust, flicker, light-cull radius) and
@@ -29,11 +30,15 @@ export function PauseOverlay({
   const apply = (p: Prefs) => {
     savePrefs(p);
     audio.setVolume(p.volume);
-    if (engine) {
-      engine.settings = { quality: p.quality, headBob: p.headBob, shake: p.shake, sensitivity: p.sensitivity };
-      engine.input.sensitivity = p.sensitivity;
-      engine.applyQuality();
-    }
+    setPaletteMode(p.colorblind);
+    engine?.setSettings({
+      quality: p.quality,
+      headBob: p.headBob,
+      shake: p.shake,
+      sensitivity: p.sensitivity,
+      captions: p.captions,
+      reduceFlash: p.reduceFlash,
+    });
   };
 
   return (
@@ -95,6 +100,40 @@ export function PauseOverlay({
             />{" "}
             Camera shake
           </label>
+        </div>
+        <div className="pause-controls access">
+          <div className="report-sec">ACCESSIBILITY</div>
+          <div className="setting row">
+            <label>
+              <input
+                type="checkbox"
+                checked={prefs.captions}
+                onChange={(e) => apply({ ...prefs, captions: e.target.checked })}
+              />{" "}
+              Caption sound cues
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={prefs.reduceFlash}
+                onChange={(e) => apply({ ...prefs, reduceFlash: e.target.checked })}
+              />{" "}
+              Reduce flashes
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={prefs.colorblind}
+                onChange={(e) => apply({ ...prefs, colorblind: e.target.checked })}
+              />{" "}
+              Colorblind-safe colors
+            </label>
+          </div>
+          <p className="access-note">
+            Captions text critical noises (door bangs, the sting). Reduce flashes softens lightning and
+            the damage pulse. Colorblind mode swaps the crew palette for one every set of eyes can tell
+            apart.
+          </p>
         </div>
         <div className="pause-controls">
           <div className="report-sec">CONTROLS</div>

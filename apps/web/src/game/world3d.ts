@@ -77,6 +77,9 @@ export class World3D {
   private stormFramesLeft = 0;
   /** Wired by the engine to the thunder cue; fired when a flash begins. */
   onFlash: (() => void) | null = null;
+  /** accessibility: reduceFlash softens the lightning spikes to a steady,
+   *  dim glow — the storm stays audible and visible without the strobe. */
+  private reduceFlash = false;
   private disposables: { geo?: THREE.BufferGeometry; mat?: THREE.Material; tex?: THREE.Texture }[] = [];
   /** static scenery tagged during the build; bakeStatic() merges it per material family */
   private staticParts: THREE.Mesh[] = [];
@@ -1117,6 +1120,11 @@ export class World3D {
     }
   }
 
+  /** Accessibility toggle for the lightning strobe (engine settings). */
+  setReduceFlash(on: boolean): void {
+    this.reduceFlash = on;
+  }
+
   // ------------------------------------------------------------------ update
   update(dt: number, t: number): void {
     // door swing
@@ -1153,7 +1161,15 @@ export class World3D {
     }
     // storm lightning: cold sky flash, 8-25 s apart, 2-4 frame spike
     if (this.stormOn && this.stormLight) {
-      if (this.stormFlashAt < 0) {
+      if (this.reduceFlash) {
+        // soft mode: a calm, steady sky glow — no strobe, thunder still fires
+        this.stormLight.intensity = STORM_FLASH_PEAK * 0.18;
+        this.stormFramesLeft = 0;
+        if (this.stormFlashAt < 0 || t >= this.stormFlashAt) {
+          this.stormFlashAt = t + STORM_FLASH_GAP_MIN + Math.random() * (STORM_FLASH_GAP_MAX - STORM_FLASH_GAP_MIN);
+          this.onFlash?.();
+        }
+      } else if (this.stormFlashAt < 0) {
         this.stormFlashAt = t + STORM_FLASH_GAP_MIN + Math.random() * (STORM_FLASH_GAP_MAX - STORM_FLASH_GAP_MIN);
       } else if (this.stormFramesLeft > 0) {
         // each spike frame re-jitters so the flash stutters like real sky light

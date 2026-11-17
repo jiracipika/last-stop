@@ -1,6 +1,6 @@
 // In-mission HUD: vitals, quota/timer, scanner, teammates, prompts.
 import React from "react";
-import { COLORS } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { HudState } from "../game/store.js";
 import { activeNet } from "../net.js";
 
@@ -14,10 +14,12 @@ export function Hud({
   hud,
   paused,
   onSpectateNext,
+  reduceFlash = false,
 }: {
   hud: HudState;
   paused: boolean;
   onSpectateNext: () => void;
+  reduceFlash?: boolean;
 }): React.ReactElement {
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
   const danger = hud.timer < 120;
@@ -116,9 +118,11 @@ export function Hud({
         </div>
       )}
 
-      {/* damage vignette */}
-      {hud.damageFlash > 0 && <div className="vignette" style={{ opacity: hud.damageFlash * 0.7 }} />}
-      {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && <div className="chase-vignette" />}
+      {/* damage vignette (reduceFlash dampens the red pulse) */}
+      {hud.damageFlash > 0 && (
+        <div className="vignette" style={{ opacity: hud.damageFlash * (reduceFlash ? 0.22 : 0.7) }} />
+      )}
+      {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && !reduceFlash && <div className="chase-vignette" />}
 
       {/* directional damage indicator: wedge around the crosshair pointing at
           the source; rotates clockwise for a positive bearing, opacity tracks
@@ -292,11 +296,25 @@ export function Hud({
         </div>
       )}
 
+      {/* accessibility captions: the last critical audio cue, in text */}
+      {hud.caption && performance.now() - hud.caption.at < 2600 && (
+        <div className="caption-bar" key={hud.caption.at}>{hud.caption.text}</div>
+      )}
+
+      {/* floating +$ labels (engine projects the world position at spawn) */}
+      <div className="floaters">
+        {hud.floaters.map((f) => (
+          <span className="floater" key={f.id} style={{ left: f.x, top: f.y }}>
+            {f.text}
+          </span>
+        ))}
+      </div>
+
       {/* right: teammates */}
       <div className="team">
         {hud.teammates.map((t) => (
           <div key={t.sid} className={`mate ${t.dead ? "dead" : t.downed ? "downed" : ""} ${t.connected ? "" : "dc"}`}>
-            <span className="dot" style={{ background: COLORS[t.color % COLORS.length] }} />
+            <span className="dot" style={{ background: crewHex(t.color) }} />
             <span className="m-nick">{t.nick}</span>
             {t.seat > 0 && <span className="m-seat">🚐</span>}
             {!t.connected && <span className="dc-tag">dc</span>}
