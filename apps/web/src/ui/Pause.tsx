@@ -102,12 +102,14 @@ export function PauseOverlay({
             <div className="pc-row"><span>Move</span><b>WASD</b></div>
             <div className="pc-row"><span>Sprint</span><b>Shift</b></div>
             <div className="pc-row"><span>Look</span><b>Mouse</b></div>
-            <div className="pc-row"><span>Grab / release</span><b>LMB</b></div>
+            <div className="pc-row"><span>Haul cargo / release</span><b>LMB</b></div>
             <div className="pc-row"><span>Stabilize</span><b>RMB</b></div>
-            <div className="pc-row"><span>Interact</span><b>E</b></div>
+            <div className="pc-row"><span>Stow / interact</span><b>E</b></div>
             <div className="pc-row"><span>Flashlight</span><b>F</b></div>
             <div className="pc-row"><span>Ping</span><b>Q</b></div>
-            <div className="pc-row"><span>Quick chat</span><b>1/2/3</b></div>
+            <div className="pc-row"><span>Pack slots</span><b>1/2/3</b></div>
+            <div className="pc-row"><span>Quick chat</span><b>Z/X/C</b></div>
+            <div className="pc-row"><span>Drop held / stowed</span><b>G</b></div>
             <div className="pc-row"><span>Jump / handbrake</span><b>Space</b></div>
             <div className="pc-row"><span>Horn</span><b>H</b></div>
           </div>

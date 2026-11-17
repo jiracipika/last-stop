@@ -1442,3 +1442,129 @@ body,
 @media (max-height: 650px) {
   .shift-directive { display: none; }
 }
+
+/* ---- gas-station stop (lobby shop) ---- */
+.gas-stop {
+  width: min(340px, 92vw);
+  margin-right: 18px;
+  border-color: #3d4a3a;
+}
+.gas-stop h2 {
+  color: #cfe8d9;
+  border-bottom: 1px dashed #3d4a3a;
+  padding-bottom: 8px;
+}
+.gas-budget {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  letter-spacing: 2px;
+  color: #8fa898;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.gas-budget b {
+  color: #ffe66d;
+  font-size: 20px;
+}
+.gas-shelf {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gas-shelf li {
+  border: 1px solid #2a3442;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.gas-shelf li.owned {
+  border-color: #3f6d4a;
+  background: rgba(38, 66, 46, 0.18);
+}
+.gas-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.gas-name {
+  color: #cfe8d9;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+.gas-price {
+  color: #ffe66d;
+}
+.gas-shelf p {
+  margin: 6px 0 8px;
+  color: #8fa394;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.gas-shelf .hint {
+  margin: 10px 0 0;
+}
+
+/* ---- pack slots (body inventory) ---- */
+.pack {
+  position: absolute;
+  bottom: 64px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+.pack-slot {
+  width: 118px;
+  min-height: 46px;
+  border: 1px solid #2a3442;
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.82);
+  padding: 4px 8px 4px 24px;
+  position: relative;
+  color: #9fb2c6;
+  display: flex;
+  align-items: center;
+}
+.pack-slot.active {
+  border-color: #ffb347;
+  box-shadow: 0 0 0 1px rgba(255, 179, 71, 0.35);
+}
+.pack-slot.full {
+  color: #d8e6f2;
+}
+.pk-key {
+  position: absolute;
+  left: 7px;
+  top: 4px;
+  font-size: 10px;
+  color: #5c6f84;
+}
+.pack-slot.active .pk-key {
+  color: #ffb347;
+}
+.pk-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  font-size: 11px;
+  overflow: hidden;
+}
+.pk-item b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pk-item em {
+  color: #8fd3a6;
+  font-style: normal;
+  font-size: 10px;
+}
+.pk-empty {
+  font-size: 11px;
+  color: #44546a;
+}
+.caffe-tag {
+  color: #ffe66d;
+}

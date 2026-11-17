@@ -99,8 +99,9 @@ describe("cheat resistance", () => {
     await waitFor("ready2", () => stateOf(b2).players.get(b2.sid)!.ready);
     b2.room.send("act", { k: "start" });
     await waitFor("scavenge2", () => stateOf(b2).phase === "scavenge", 12000);
-    // stand far from the van (corner of the lot) and try van actions
-    await walkTo(b2, -30, 22, 1.0, 30000);
+    // stand far from the van (south-west corner of the lot, clear of the
+    // gas-station kiosk that now occupies (-30, 22)) and try van actions
+    await walkTo(b2, -31, 17.5, 1.0, 30000);
     b2.room.send("act", { k: "vanDoors" });
     b2.room.send("act", { k: "straps" });
     b2.room.send("act", { k: "enterVan", driver: true });

@@ -21,10 +21,8 @@ export class Net {
   rttMs = -1;
   evListeners = new Set<(e: Ev) => void>();
   statusListeners = new Set<() => void>();
-  private inputTimer: number | null = null;
   private pingTimer: number | null = null;
   private pingSentAt = 0;
-  private queuedInput: Record<string, unknown> | null = null;
   private reconnectionToken = "";
   private reconnectTries = 0;
 
@@ -140,13 +138,6 @@ export class Net {
       }
       this.tryReconnect();
     });
-    if (this.inputTimer) clearInterval(this.inputTimer);
-    this.inputTimer = setInterval(() => {
-      if (this.queuedInput && this.room) {
-        this.room.send("in", this.queuedInput);
-        this.queuedInput = null;
-      }
-    }, 50) as unknown as number;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.sendPing();
     this.pingTimer = setInterval(() => this.sendPing(), 5000) as unknown as number;
@@ -178,8 +169,12 @@ export class Net {
     this.setStatus("error", "reconnection failed");
   }
 
+  /** Send one input snapshot immediately. There is deliberately NO queue
+   *  here anymore: the old 50 ms interval pump overwrote snapshots written
+   *  between fires (dropping inputs and their seqs — lost jumps). The engine
+   *  calls this on its own 20 Hz cadence. */
   sendInput(input: Record<string, unknown>): void {
-    this.queuedInput = input;
+    this.room?.send("in", input);
   }
 
   act(k: string, extra: Record<string, unknown> = {}): void {
@@ -187,7 +182,6 @@ export class Net {
   }
 
   leave(): void {
-    if (this.inputTimer) clearInterval(this.inputTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.rttMs = -1;
     this.pingSentAt = 0;

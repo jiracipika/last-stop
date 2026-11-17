@@ -45,6 +45,8 @@ export class GameRoom extends Room {
       // test knob: the next mission start jumps straight to the escape phase
       // (part installed, gate open) for compass/aim testing
       if (_options.testAt === "escape") this.world.testAtEscape = true;
+      // test knob: spawn a toolbox beside the van for stow/pack probes
+      if (_options.testItemAt === true) this.world.testItemAt = true;
     }
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);
@@ -157,6 +159,38 @@ export class GameRoom extends Room {
         w.tryGrab(p, id);
         return;
       }
+      case "grabSlot": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "grabSlot", 0.15)) return;
+        const id = typeof data.id === "string" ? data.id : "";
+        w.tryStow(p, id);
+        return;
+      }
+      case "slot": {
+        if (typeof data.i !== "number") return;
+        if (!this.rateOk(client, "slot", 0.08)) return;
+        w.selectSlot(p, Math.max(0, Math.min(2, Math.round(data.i))));
+        return;
+      }
+      case "dropSlot": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "dropSlot", 0.3)) return;
+        w.dropSlot(p);
+        return;
+      }
+      case "storeSlot": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "storeSlot", 0.3)) return;
+        w.storeSlot(p);
+        return;
+      }
+      case "shop": {
+        if (w.phase !== "lobby") return;
+        if (!this.rateOk(client, "shop", 0.4)) return;
+        const item = typeof data.item === "string" ? data.item : "";
+        w.tryBuy(p, item);
+        return;
+      }
       case "release": {
         if (!this.rateOk(client, "release", 0.1)) return;
         w.tryRelease(p, data.thrown === true);
@@ -207,9 +241,16 @@ export class GameRoom extends Room {
         w.tryEnterVan(p, data.driver === true);
         return;
       }
+      case "enterCart": {
+        if (w.phase === "results" || w.phase === "lobby") return;
+        if (!this.rateOk(client, "enterCart", 0.5)) return;
+        w.tryEnterCart(p, data.driver === true);
+        return;
+      }
       case "exitVan": {
         if (!this.rateOk(client, "exitVan", 0.5)) return;
-        if (p.seat > 0 && Math.abs(w.van.speed) < 1.5) w.leaveSeat(p);
+        // handles whichever vehicle the player is seated in (van or cart)
+        w.exitSeat(p);
         return;
       }
       case "straps": {

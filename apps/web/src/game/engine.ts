@@ -6,11 +6,13 @@
 import * as THREE from "three";
 import {
   AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
+  CART, CART_START, SEAT, stowable,
   SnapBuf,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
 import { VanView } from "./van3d.js";
+import { CartView } from "./cart3d.js";
 import { EnemyView } from "./enemy3d.js";
 import { AvatarView } from "./avatars.js";
 import { ItemView } from "./items3d.js";
@@ -87,6 +89,7 @@ export class Engine {
   camera: THREE.PerspectiveCamera;
   world3d: World3D;
   vanView: VanView;
+  cartView: CartView;
   enemyView = new EnemyView();
   avatars = new Map<string, AvatarView>();
   itemViews = new Map<string, ItemView>();
@@ -118,7 +121,9 @@ export class Engine {
   private raf = 0;
   private lastFrame = 0;
   private running = false;
-  private ownSeq = 0;
+  /** seq of the last input packet sent — the ONE counter (mirrored into the
+   *  predictor's ring tags; the server acks it back via PlayerState.inputSeq) */
+  private sendSeq = 0;
   private target: TargetInfo | null = null;
   private shakeAmount = 0;
   private bobPhase = 0;
@@ -138,6 +143,7 @@ export class Engine {
   private bangToastCd = 0;
   private remoteBufs = new Map<string, SnapBuf>();
   private vanBuf = new SnapBuf();
+  private cartBuf = new SnapBuf();
   private enemyBuf = new SnapBuf();
   private lastPatchAt = 0;
   private watchedRoom: unknown = null; // room instance the patch stamp is wired to
@@ -175,6 +181,8 @@ export class Engine {
     this.scene.add(this.world3d.group);
     this.vanView = new VanView(this.world3d.textureKit);
     this.scene.add(this.vanView.group);
+    this.cartView = new CartView();
+    this.scene.add(this.cartView.group);
     this.scene.add(this.enemyView.group);
 
     this.predictor = new Predictor(() => this.dynamicColliders());
@@ -243,6 +251,11 @@ export class Engine {
       const hx = c * VAN.HALF_W + s * VAN.HALF_L;
       const hz = s * VAN.HALF_W + c * VAN.HALF_L;
       closed.push({ x0: st.van.x - hx, x1: st.van.x + hx, z0: st.van.z - hz, z1: st.van.z + hz });
+      const cc = Math.abs(Math.cos(st.cart.yaw));
+      const cs = Math.abs(Math.sin(st.cart.yaw));
+      const chx = cc * CART.HALF_W + cs * CART.HALF_L;
+      const chz = cs * CART.HALF_W + cc * CART.HALF_L;
+      closed.push({ x0: st.cart.x - chx, x1: st.cart.x + chx, z0: st.cart.z - chz, z1: st.cart.z + chz });
     }
     return STATIC_COLLIDERS.concat(closed);
   }
@@ -310,8 +323,10 @@ export class Engine {
       this.remoteBufs.clear();
       this.remoteStride.clear();
       this.vanBuf = new SnapBuf();
+      this.cartBuf = new SnapBuf();
       this.enemyBuf = new SnapBuf();
       this.vanView.syncCargo(0, true, 0);
+      this.cartView.update(CART_START.x, CART_START.z, CART_START.yaw, 0);
       for (const spot of HIDE_SPOTS) this.world3d.setHideOpen(spot.id, false);
       if (this.inputInstance) {
         this.input.exitLock();
@@ -331,6 +346,7 @@ export class Engine {
     this.world3d.setStorm(false);
     this.world3d.dispose();
     this.vanView.dispose();
+    this.cartView.dispose();
     this.enemyView.dispose();
     for (const av of this.avatars.values()) av.dispose();
     for (const view of this.itemViews.values()) view.dispose();
@@ -349,17 +365,26 @@ export class Engine {
       case "grabRelease":
         if (me.carrying) {
           this.net.act("release", { thrown: this.input.keys.has("ShiftLeft") });
-        } else if (this.target?.kind === "item") {
+        } else if (this.target?.kind === "item" || this.target?.kind === "itemHands") {
+          // hands-grab works for anything reachable (heavies need it)
           this.net.act("grab", { id: this.target.id });
         }
         break;
       case "throwItem":
         if (me.carrying) this.net.act("release", { thrown: true });
+        else if (me.slots[me.slotSel]) this.net.act("dropSlot");
         break;
       case "flashlight":
         this.net.act("flashlight");
         audio.click();
         break;
+      case "slot0":
+      case "slot1":
+      case "slot2": {
+        const i = Number(a.slice(-1));
+        if (st.phase !== "lobby" && st.phase !== "results") this.net.act("slot", { i });
+        break;
+      }
       case "ping": {
         // ping a few meters ahead along the view, or exactly at the targeted object
         const aimed = this.target?.kind === "item" || this.target?.kind === "door" || this.target?.kind === "revive";
@@ -382,14 +407,18 @@ export class Engine {
       case "interactTap": {
         const t = this.target;
         if (me.seat > 0) {
-          this.net.act("exitVan");
+          this.net.act("exitVan"); // exits whichever vehicle (van or cart)
         } else if (t) {
           if (t.kind === "door") this.net.act("door", { id: t.id });
+          else if (t.kind === "item") this.net.act("grabSlot", { id: t.id });
+          else if (t.kind === "storeSlot") this.net.act("storeSlot");
           else if (t.kind === "vanDoors") this.net.act("vanDoors");
           else if (t.kind === "vanLights") this.net.act("vanLights");
           else if (t.kind === "straps") this.net.act("straps");
           else if (t.kind === "seatDriver") this.net.act("enterVan", { driver: true });
           else if (t.kind === "seat") this.net.act("enterVan", { driver: false });
+          else if (t.kind === "cartDriver") this.net.act("enterCart", { driver: true });
+          else if (t.kind === "cartSeat") this.net.act("enterCart", { driver: false });
           else if (t.kind === "hide") this.net.act("hide", { spot: t.id });
           else if (t.kind === "hidden") this.net.act("hide", { out: true });
           // revive/install are hold-interactions via input.interact
@@ -430,6 +459,35 @@ export class Engine {
         // the server stamps drops with position + weight class (x/z/heavy):
         // play the cue at the item itself, no def-table or camera fallbacks
         audio.playEventAt(e.heavy ? "dropHeavy" : "drop", Number(e.x ?? 0), Number(e.z ?? 0), cam);
+        break;
+      }
+      case "stow": {
+        if (e.by === this.net.sid) {
+          audio.grab();
+          this.store.toast(`Stowed: ${ITEM_DEFS[String(e.def)]?.name ?? "loot"}`, "good");
+        } else {
+          const p = st?.players.get(String(e.by));
+          if (p) audio.playEventAt("grab", p.x, p.z, cam);
+        }
+        break;
+      }
+      case "unstow": {
+        if (e.by === this.net.sid) audio.grab();
+        break;
+      }
+      case "bought": {
+        if (e.sid === this.net.sid) {
+          audio.quotaDing();
+          const name = e.item === "coffee" ? "Truck stop coffee" : "Torchlight flashlight";
+          this.store.toast(`Bought ${name} — $${e.price} (change $${e.budget})`, "good");
+        }
+        break;
+      }
+      case "deny": {
+        if (e.sid !== this.net.sid) break;
+        if (e.k === "packFull") this.store.toast("Pack full — 3 slots occupied", "warn");
+        else if (e.k === "noFlashlight") this.store.toast("No flashlight — the gas station sells them before the shift", "warn");
+        else if (e.k === "broke") this.store.toast("Not enough gas-station money", "warn");
         break;
       }
       case "ring":
@@ -654,13 +712,13 @@ export class Engine {
     const px = this.predictor.renderX();
     const pz = this.predictor.renderZ();
     let best: (TargetInfo & { score: number; pos: { x: number; z: number } }) | null = null;
-    const consider = (t: TargetInfo, x: number, z: number, range: number, weight = 1) => {
+    const consider = (t: TargetInfo, x: number, z: number, range: number, weight = 1, minDot = 0.55) => {
       const dx = x - px;
       const dz = z - pz;
       const d = Math.hypot(dx, dz);
       if (d > range) return;
       const dot = d < 0.01 ? 1 : (dx * fwd.x + dz * fwd.z) / d;
-      if (dot < 0.55 && d > 1.2) return;
+      if (dot < minDot && d > 1.2) return;
       const score = dot * weight * 2 - d * 0.08;
       if (!best || score > best.score) best = { ...t, score, pos: { x, z } };
     };
@@ -676,7 +734,7 @@ export class Engine {
     }
 
     for (const [id, it] of st.items) {
-      if (it.state === 2 || it.state === 3) continue;
+      if (it.state === 2 || it.state === 3 || it.state === 4) continue;
       const def = ITEM_DEFS[it.defId];
       if (!def) continue;
       const mine = me.carrying === id;
@@ -684,11 +742,17 @@ export class Engine {
         const handleFree = def.twoHandle && !it.h1;
         if (!handleFree) continue;
         if (me.carrying) continue;
-        consider({ kind: "item", id, label: `Take second handle — ${def.name}` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        consider({ kind: "itemHands", id, label: `Take second handle — ${def.name}` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
         continue;
       }
       if (it.state === 0) {
-        consider({ kind: "item", id, label: `Grab ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        // E stows small loot straight into the pack; heavy cargo stays a
+        // hands job (LMB) — two-handle stuff never fits a body slot
+        if (stowable(def)) {
+          consider({ kind: "item", id, label: `Stow ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        } else {
+          consider({ kind: "itemHands", id, label: `Grab ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        }
       }
     }
 
@@ -713,7 +777,11 @@ export class Engine {
       consider({ kind: "door", id: def.id, label: ds.open ? "Close door" : "Open door" }, cx, cz, PLAYER.INTERACT_RANGE + 0.4, 0.9);
     }
 
-    // van interactions
+    // van interactions. The rear bay is one physical spot but TWO intents
+    // (open doors / board / load) used to fight over the same target slot, so
+    // E flipped doors when you meant to climb in. Split: while the doors are
+    // closed the rear point is the door toggle; once open it belongs to
+    // boarding/loading and closing the doors means facing the left door leaf.
     const van = st.van;
     const vcos = Math.cos(van.yaw);
     const vsin = Math.sin(van.yaw);
@@ -722,16 +790,50 @@ export class Engine {
     const strap = toWorld(VAN.STRAP_POINT.x, VAN.STRAP_POINT.z);
     const enginePt = toWorld(VAN.ENGINE_POINT.x, VAN.ENGINE_POINT.z);
     const driverDoor = toWorld(VAN.DRIVER_POINT.x, VAN.DRIVER_POINT.z);
-    const doorLatch = van.doorsOpen ? toWorld(-1.02, -2.4) : rear;
-    consider({ kind: "vanDoors", id: "van", label: van.doorsOpen ? "Close van doors" : "Open van doors" }, doorLatch.x, doorLatch.z, VAN.INTERACT_RANGE, 1.0);
+    if (van.doorsOpen) {
+      // door leaf toggle: only when actually facing the leaf (minDot gate)
+      const doorLatch = toWorld(-1.02, -2.4);
+      consider({ kind: "vanDoors", id: "van", label: "Close van doors" }, doorLatch.x, doorLatch.z, VAN.INTERACT_RANGE, 0.9, 0.78);
+    } else {
+      consider({ kind: "vanDoors", id: "van", label: "Open van doors" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
+    }
     consider({ kind: "vanLights", id: "van", label: van.lightsOn ? "Kill headlights" : "Headlights on" }, enginePt.x, enginePt.z, PLAYER.INTERACT_RANGE + 0.6, 0.8);
     if (van.cargo.length > 0) {
       consider({ kind: "straps", id: "van", label: van.strapped ? "Release cargo straps" : "Strap down cargo" }, strap.x, strap.z, VAN.INTERACT_RANGE, 0.95);
     }
     if (!me.carrying && Math.abs(van.speed) <= 0.5) {
+      // loading the pack takes priority over boarding at the same spot: the
+      // active slot's item reads as the action, empty pack = climb in
+      const activeItem = me.slots[me.slotSel] ? st.items.get(me.slots[me.slotSel]!) : undefined;
+      if (van.doorsOpen && activeItem && activeItem.state === 4) {
+        const def = ITEM_DEFS[activeItem.defId];
+        if (def) consider({ kind: "storeSlot", id: "van", label: `Load ${def.name} into the van` }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.15);
+      }
       if (!van.driver) consider({ kind: "seatDriver", id: "van", label: "Take the wheel" }, driverDoor.x, driverDoor.z, VAN.INTERACT_RANGE, 1.05);
-      const passengers = [...st.players.values()].filter((p) => p.seat > 1).length;
+      const passengers = [...st.players.values()].filter((p) => SEAT.isVan(p.seat) && p.seat > 1).length;
       if (van.doorsOpen && passengers < 3) consider({ kind: "seat", id: "van", label: "Board van — passenger" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
+    }
+
+    // golf cart: open buggy, step up from either side while stopped
+    {
+      const cart = st.cart;
+      const ccos = Math.cos(cart.yaw);
+      const csin = Math.sin(cart.yaw);
+      const cartSeat = (i: number) => ({
+        x: cart.x + CART.SEATS[i]!.x * ccos + CART.SEATS[i]!.z * csin,
+        z: cart.z - CART.SEATS[i]!.x * csin + CART.SEATS[i]!.z * ccos,
+      });
+      if (!me.carrying && Math.abs(cart.speed) <= 0.5) {
+        const passengerTaken = [...st.players.values()].some((p) => p.seat === SEAT.CART_PASSENGER);
+        if (!cart.driver) {
+          const s = cartSeat(0);
+          consider({ kind: "cartDriver", id: "cart", label: "Drive the golf cart" }, s.x, s.z, CART.INTERACT_RANGE, 1.0);
+        }
+        if (!passengerTaken) {
+          const s = cartSeat(1);
+          consider({ kind: "cartSeat", id: "cart", label: "Ride shotgun — golf cart" }, s.x, s.z, CART.INTERACT_RANGE, 0.95);
+        }
+      }
     }
 
     // install prompt when carrying the part near the engine
@@ -814,6 +916,7 @@ export class Engine {
       // ambient life — flicker, fan, sign sway — with no storm, no players
       // and no Caretaker. The van sits at its lot spawn, engine cold.
       this.vanView.update(VAN_START.x, VAN_START.z, VAN_START.yaw, 0, false, false, t, dt);
+      this.cartView.update(CART_START.x, CART_START.z, CART_START.yaw, 0, dt);
       this.enemyView.group.visible = false;
       this.world3d.update(dt, t);
       this.world3d.cullLights(this.camera.position);
@@ -842,7 +945,6 @@ export class Engine {
 
   private stepSelf(dt: number, st: RoomState, me: PlayerState): void {
     const fi = this.input.frame();
-    const drivable = st.phase === "escape" && me.seat === 1;
     if (st.phase !== "scavenge" && st.phase !== "escape") {
       // lobby/briefing: the server teleports the crew at startMission — keep
       // stepping the predictor here and reconcile slingshots the body across
@@ -855,11 +957,9 @@ export class Engine {
       this.input.jumpQueued = false;
     } else {
       const speed = this.predictor.speedFor(st, this.net.sid, fi);
-      const seq = this.predictor.nextSeq();
       this.predictor.carrying = me.carrying; // gates the stop-slide (server parity)
       this.predictor.step(dt, fi, speed);
       this.predictor.reconcile(me.x, me.z, me.inputSeq);
-      void seq;
       // hard contact with a wall/prop: the predictor reports how much velocity
       // the collision resolve stripped this tick — slam it as a soft thud
       this.bumpCd -= dt;
@@ -878,23 +978,31 @@ export class Engine {
         }
       }
     }
-    // send input at 20 Hz
+    // Input ships at 20 Hz, straight over the wire (the old Net interval pump
+    // was a second queue that overwrote snapshots between fires). ONE seq
+    // counter: the packet's seq tags the predictor's ring, the server acks it
+    // back through PlayerState.inputSeq, and reconcile() compares the same
+    // instant on both ends instead of racing past the ring's window.
     this.sendAcc += dt;
     if (this.sendAcc >= 0.05) {
       this.sendAcc = 0;
+      this.sendSeq += 1;
+      this.predictor.inputSeq = this.sendSeq;
       this.net.sendInput({
         mx: fi.mx,
-        mz: drivable ? fi.mz : fi.mz,
+        mz: fi.mz,
         yaw: fi.yaw,
         pitch: fi.pitch,
         sprint: fi.sprint,
         jump: fi.jump,
         interact: fi.interact,
         stabilize: fi.stabilize,
-        seq: ++this.ownSeq,
+        seq: this.sendSeq,
       });
+      // the jump latch cleared only once a packet has actually carried it —
+      // frame() used to eat presses between sends and the server never saw them
+      if (fi.jump) this.input.jumpQueued = false;
     }
-    void drivable;
   }
 
   private stepAcc = 0;
@@ -962,11 +1070,12 @@ export class Engine {
         view.group.position.set(it.x, it.y, it.z);
         this.scene.add(view.group);
       }
-      const highlighted = this.target?.kind === "item" && this.target.id === id;
+      const highlighted = (this.target?.kind === "item" || this.target?.kind === "itemHands") && this.target.id === id;
       let showX: number;
       let showZ: number;
       let showY: number;
-      if (it.state === 2) {
+      if (it.state === 2 || it.state === 4) {
+        // stored in the van / stowed on a body: no world mesh
         view.group.visible = false;
         continue;
       }
@@ -1021,12 +1130,16 @@ export class Engine {
         this.itemViews.delete(id);
       }
     }
-    // van + enemy
+    // van + cart + enemy
     const v = st.van;
     this.vanBuf.push(this.lastPatchAt || nowMs, v.x, v.z, v.yaw);
     const vs = this.vanBuf.sample(renderAt) ?? { x: v.x, z: v.z, yaw: v.yaw };
     this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t, dt);
     this.vanView.syncCargo(v.cargo.length, v.strapped, t, v.speed);
+    const c = st.cart;
+    this.cartBuf.push(this.lastPatchAt || nowMs, c.x, c.z, c.yaw);
+    const cs = this.cartBuf.sample(renderAt) ?? { x: c.x, z: c.z, yaw: c.yaw };
+    this.cartView.update(cs.x, cs.z, cs.yaw, c.speed, dt);
     // pull-away cue: the server eases van.pullT 0 -> 1 when a successful
     // mission starts the drive-off; the 0 crossing fires the engine-start
     // rumble once per mission (latch resets outside escape/results).
@@ -1160,6 +1273,7 @@ export class Engine {
     audio.setChaseIntensity(intensity);
     audio.heartbeat(dt, intensity);
     if (me.seat === 1) audio.engine(st.van.speed, st.phase === "escape");
+    else if (me.seat === SEAT.CART_DRIVER) audio.engine(st.cart.speed * 0.55, st.cart.speed !== 0);
     else audio.engine(0, false);
 
     // tucked in a junker? everything the Caretaker does arrives muffled
@@ -1259,14 +1373,25 @@ export class Engine {
     }
 
     if (me.seat > 0) {
-      // seated: camera rides the van
-      const seat = VAN.SEATS[me.seat - 1]!;
-      const v = this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
-      const c = Math.cos(v.yaw);
-      const s = Math.sin(v.yaw);
-      cx = v.x + seat.x * c + seat.z * s;
-      cz = v.z - seat.x * s + seat.z * c;
-      cy = 1.85;
+      if (SEAT.isCart(me.seat)) {
+        // seated: camera rides the cart bench (a touch lower than the van cab)
+        const seat = CART.SEATS[me.seat - SEAT.CART_DRIVER]!;
+        const v = this.cartBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.cart;
+        const c = Math.cos(v.yaw);
+        const s = Math.sin(v.yaw);
+        cx = v.x + seat.x * c + seat.z * s;
+        cz = v.z - seat.x * s + seat.z * c;
+        cy = 1.5;
+      } else {
+        // seated: camera rides the van
+        const seat = VAN.SEATS[me.seat - 1]!;
+        const v = this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
+        const c = Math.cos(v.yaw);
+        const s = Math.sin(v.yaw);
+        cx = v.x + seat.x * c + seat.z * s;
+        cz = v.z - seat.x * s + seat.z * c;
+        cy = 1.85;
+      }
     } else {
       cy = PLAYER.EYE + this.predictor.body.y;
       if (this.settings.headBob && !me.downed) {
@@ -1343,7 +1468,7 @@ export class Engine {
   /** HUD key hints mirror the actual input binding for each action. */
   private promptFor(t: TargetInfo | null): string {
     if (!t) return "";
-    if (t.kind === "item") return `[LMB] ${t.label}`;
+    if (t.kind === "itemHands") return `[LMB] ${t.label}`;
     if (t.kind === "revive" || t.kind === "install") return `[HOLD E] ${t.label}`;
     return `[E] ${t.label}`;
   }
@@ -1353,6 +1478,12 @@ export class Engine {
     if (!me) return;
     const carried = me.carrying ? st.items.get(me.carrying) : undefined;
     const def = carried ? ITEM_DEFS[carried.defId] : undefined;
+    const slots = [...me.slots].map((id) => {
+      if (!id) return { id: "", name: "", value: 0 };
+      const it = st.items.get(id);
+      const d = it ? ITEM_DEFS[it.defId] : undefined;
+      return { id, name: d?.name ?? "?", value: it?.value ?? 0 };
+    });
     const timer = Math.max(0, st.endsAt - st.now);
     const teammates = [...st.players.entries()]
       .filter(([sid2]) => sid2 !== this.net.sid)
@@ -1383,6 +1514,11 @@ export class Engine {
       carryingName: def?.name ?? "",
       carryingWeight: def?.weight ?? 0,
       twoHandle: def?.twoHandle ?? false,
+      slots,
+      slotSel: me.slotSel,
+      caffeinated: me.caffeinated,
+      budget: me.budget,
+      hasFlashlight: me.hasFlashlight,
       prompt: this.promptFor(this.target),
       teammates,
       ping: this.net.rttMs,
@@ -1395,8 +1531,10 @@ export class Engine {
       enemyAi: st.enemy.ai,
       enemyDist: Math.round(dist2d(me.x, me.z, st.enemy.x, st.enemy.z)),
       seat: me.seat,
-      driving: me.seat === 1,
+      driving: me.seat === 1 || me.seat === SEAT.CART_DRIVER,
       vanSpeed: Math.abs(st.van.speed),
+      cartSpeed: Math.abs(st.cart.speed),
+      cartTaken: !!st.cart.driver || [...st.players.values()].some((p) => p.seat === SEAT.CART_PASSENGER),
       locked: this.input.locked,
       fps: this.fpsN > 0 ? Math.round(this.fpsN / Math.max(0.001, this.fpsAcc)) : 0,
       leaveWarn: this.store.state.leaveWarn,

@@ -19,13 +19,18 @@ export class Predictor {
   yaw = Math.PI;
   /** replicated carrying id of the owning player; gates the stop-slide */
   carrying = "";
+  /** Seq of the input snapshot currently being simulated — i.e. the last one
+   *  SENT. The engine advances it when a packet ships; every ring entry is
+   *  tagged with it so reconcile(serverSeq) compares the same instant on both
+   *  ends. (The old per-frame ++seq raced past the network seq and fell out
+   *  of the ring's 1.5 s window, hard-snapping the local player forever.) */
+  inputSeq = 0;
   /** m/s of velocity the last step's collision resolve stripped (bump signal). */
   bumpImpulse = 0;
   /** decaying render offset from reconciliation — see reconcile() */
   visX = 0;
   visZ = 0;
   private ring: RingEntry[] = [];
-  private seq = 0;
   private colliders: () => import("@last-stop/shared").AABB[];
 
   constructor(colliders: () => import("@last-stop/shared").AABB[]) {
@@ -44,10 +49,6 @@ export class Predictor {
     this.visX = 0;
     this.visZ = 0;
     this.ring = [];
-  }
-
-  nextSeq(): number {
-    return ++this.seq;
   }
 
   /** Client-side speed estimate mirroring the server's effectiveSpeed EXACTLY
@@ -111,8 +112,8 @@ export class Predictor {
     this.visZ *= visKeep;
     if (Math.abs(this.visX) < 0.004) this.visX = 0;
     if (Math.abs(this.visZ) < 0.004) this.visZ = 0;
-    this.ring.push({ seq: this.seq, x: this.body.x, z: this.body.z });
-    if (this.ring.length > 90) this.ring.shift();
+    this.ring.push({ seq: this.inputSeq, x: this.body.x, z: this.body.z });
+    if (this.ring.length > 150) this.ring.shift();
   }
 
   /** Reconcile against the authoritative position for a given input seq. */

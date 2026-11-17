@@ -128,9 +128,9 @@ export function TitleScreen({
         </div>
 
         <div className="controls-hint">
-          <b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>LMB</b> grab/release ·{" "}
-          <b>RMB</b> stabilize · <b>E</b> interact · <b>F</b> flashlight · <b>Q</b> ping ·{" "}
-          <b>1/2/3</b> quick chat · <b>Space</b> jump/handbrake · <b>H</b> horn
+          <b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>LMB</b> haul cargo ·{" "}
+          <b>RMB</b> stabilize · <b>E</b> stow / interact · <b>F</b> flashlight · <b>Q</b> ping ·{" "}
+          <b>1/2/3</b> pack slots · <b>Z/X/C</b> quick chat · <b>Space</b> jump/handbrake · <b>H</b> horn
           <br />
           1–4 players · headphones recommended
         </div>

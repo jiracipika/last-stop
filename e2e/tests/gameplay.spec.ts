@@ -9,6 +9,13 @@ async function enterSoloMission(page: Page): Promise<void> {
   await page.locator("input[maxlength='16']").fill("Tester");
   await page.getByRole("button", { name: "Start a new shift" }).click();
   await page.locator(".invite .code").waitFor({ timeout: 15000 });
+  // gas-station stop: buy the flashlight so the F-toggle below is armed
+  await page
+    .locator(".gas-shelf li")
+    .filter({ hasText: "Torchlight" })
+    .getByRole("button", { name: "Buy" })
+    .click();
+  await page.locator(".gas-shelf li").filter({ hasText: "Torchlight" }).getByRole("button", { name: "In the truck" }).waitFor({ timeout: 8000 });
   await page.getByRole("button", { name: "Ready up" }).click();
   await page.getByRole("button", { name: /Start the shift/ }).click();
   await page.locator(".timer").waitFor({ timeout: 30000 });

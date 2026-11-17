@@ -20,6 +20,9 @@ export type ActionKind =
   | "quick0"
   | "quick1"
   | "quick2"
+  | "slot0"
+  | "slot1"
+  | "slot2"
   | "interactTap"
   | "exitVan"
   | "horn"
@@ -47,9 +50,13 @@ export class InputManager {
       switch (code) {
         case "KeyF": this.onAction("flashlight"); break;
         case "KeyQ": this.onAction("ping"); break;
-        case "Digit1": this.onAction("quick0"); break;
-        case "Digit2": this.onAction("quick1"); break;
-        case "Digit3": this.onAction("quick2"); break;
+        // 1/2/3 select inventory slots; quick chat moved to Z/X/C
+        case "Digit1": this.onAction("slot0"); break;
+        case "Digit2": this.onAction("slot1"); break;
+        case "Digit3": this.onAction("slot2"); break;
+        case "KeyZ": this.onAction("quick0"); break;
+        case "KeyX": this.onAction("quick1"); break;
+        case "KeyC": this.onAction("quick2"); break;
         case "KeyE": this.onAction("interactTap"); break;
         case "KeyG": this.onAction("throwItem"); break;
         case "KeyH": this.onAction("horn"); break;
@@ -113,15 +120,17 @@ export class InputManager {
     const k = this.keys;
     const mz = (k.has("KeyW") ? 1 : 0) - (k.has("KeyS") ? 1 : 0);
     const mx = (k.has("KeyD") ? 1 : 0) - (k.has("KeyA") ? 1 : 0);
-    const jump = this.jumpQueued;
-    this.jumpQueued = false;
+    // jump is a LATCH until the engine sends it: consuming it here (every
+    // rendered frame) while input ships at 20 Hz silently ate most presses —
+    // the local prediction jumped, the server never did, reconcile snapped
+    // you back down. The engine clears jumpQueued once a packet carries it.
     return {
       mx,
       mz,
       yaw: this.yaw,
       pitch: this.pitch,
       sprint: k.has("ShiftLeft") || k.has("ShiftRight"),
-      jump,
+      jump: this.jumpQueued,
       interact: k.has("KeyE"),
       stabilize: this.mouseRight,
     };

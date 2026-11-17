@@ -1,6 +1,7 @@
-// Crew room overlay: roster, ready-up, invite code, host start.
+// Crew room overlay: roster, ready-up, invite code, host start + the
+// gas-station stop (per-player pre-shift shop).
 import React, { useState } from "react";
-import { COLORS } from "@last-stop/shared";
+import { COLORS, SHOP } from "@last-stop/shared";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
 import type { Prefs } from "../App.js";
@@ -22,12 +23,43 @@ export function LobbyOverlay({
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
   const me = st.players.get(net.sid);
   const allReady = players.every(({ p }) => p.ready);
+  void hud;
 
   // /?code= pre-fills the title screen's join field (Title.inviteCodeFromUrl)
   const inviteLink = `${location.origin}${location.pathname}?code=${hud.roomCode}`;
 
   return (
     <div className="lobby">
+      {/* gas-station stop: last chance before the lot. Personal budget; the
+          coffee and the flashlight cost 4+7 of a $10 allowance — pick one. */}
+      <div className="lobby-panel gas-stop">
+        <h2>PALE LANTERN GAS &amp; SIPS</h2>
+        <div className="gas-budget">
+          POCKET MONEY <b>${me?.budget ?? SHOP.BUDGET}</b>
+        </div>
+        <ul className="gas-shelf">
+          {SHOP.ITEMS.map((item) => {
+            const owned = me ? (item.id === "coffee" ? me.caffeinated : me.hasFlashlight) : false;
+            return (
+              <li key={item.id} className={owned ? "owned" : ""}>
+                <div className="gas-item">
+                  <span className="gas-name">{item.id === "coffee" ? "☕" : "🔦"} {item.name}</span>
+                  <span className="gas-price">${item.price}</span>
+                </div>
+                <p>{item.desc}</p>
+                <button
+                  className="btn small"
+                  disabled={!me || owned || (me?.budget ?? 0) < item.price}
+                  onClick={() => net.act("shop", { item: item.id })}
+                >
+                  {owned ? "In the truck" : "Buy"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="hint">One of each per stop. Spend it before the van rolls in.</p>
+      </div>
       <div className="lobby-panel">
         <h2>Crew Room</h2>
         <div className="invite">

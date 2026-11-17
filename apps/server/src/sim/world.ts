@@ -5,12 +5,13 @@
 import { randomInt } from "node:crypto";
 import {
   AABB, Body, MoveInput, stepPlayer, stepFreeItem, stepVan, carrySpeedFactor, vanLocalToWorld, vanWorldToLocal,
+  stepVehicle, VAN_CFG, CART_CFG, CART, CART_START, SEAT, SLOTS, SHOP,
   PLAYER, CARRY, NOISE, VAN, MISSION, FRAGILE_IMPACT_V, FRAGILE_DPS, WRECKED_AT, WRECKED_VALUE_FACTOR,
-  ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers,
+  ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers, stowable,
   STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE,
   HIDE_SPOTS, HIDE,
   mulberry32, clamp, dist2d, hasLineOfSight,
-  PlayerState, ItemState, EnemyState, VanState, MarkerState, DoorState, RoomState,
+  PlayerState, ItemState, EnemyState, VanState, CartState, MarkerState, DoorState, RoomState,
   ArraySchema, computeAwards, type ItemDef, type MissionAwardRow,
 } from "@last-stop/shared";
 import { CaretakerAI } from "./enemy.js";
@@ -40,6 +41,13 @@ export interface RPlayer {
   dead: boolean;
   bleedAt: number;
   carrying: string;
+  /** body inventory: item ids ("", "" … = empty); length SLOTS.COUNT */
+  slots: string[];
+  slotSel: number;
+  /** gas-station money (lobby shop); purchases below */
+  budget: number;
+  hasFlashlight: boolean;
+  caffeinated: boolean;
   seat: number;
   hidden: boolean;
   hideSpot: string;
@@ -66,7 +74,8 @@ export interface RItem {
   id: string;
   defId: string;
   body: Body;
-  state: 0 | 1 | 2 | 3;
+  // 0 world, 1 carried (hands), 2 stored in van, 3 consumed, 4 stowed on a body
+  state: 0 | 1 | 2 | 3 | 4;
   value: number;
   damage: number;
   h0: string;
@@ -113,6 +122,10 @@ export class World {
   vanDriver = "";
   vanCargo: string[] = [];
   headlightsPulseT = 0;
+  // the crew's golf cart (lot shuttle — no repair needed, two seats)
+  cart: { x: number; z: number; yaw: number; speed: number } = { ...CART_START, speed: 0 };
+  cartDriver = "";
+  cartNoiseT = 0;
   extractWarnUntil = 0;
   extractConfirmed = false;
   // success end-beat: the van pulls away before results (finish/stepPull)
@@ -135,6 +148,8 @@ export class World {
   testFreezeEnemyAfterDown = false;
   /** test knob: startMission jumps straight to the escape phase */
   testAtEscape = false;
+  /** test knob: also drop a toolbox on the asphalt beside spawn (e2e stow probe) */
+  testItemAt = false;
 
   constructor() {
     this.state = new RoomState();
@@ -142,6 +157,7 @@ export class World {
     this.state.modifiers = new ArraySchema<string>() as never;
     this.state.van = new VanState();
     this.state.van.cargo = new ArraySchema<string>() as never;
+    this.state.cart = new CartState();
     this.state.enemy = new EnemyState();
     this.enemy = new CaretakerAI(this);
     for (const d of DOORS) {
@@ -172,10 +188,19 @@ export class World {
     return { x0: this.van.x - hx, x1: this.van.x + hx, z0: this.van.z - hz, z1: this.van.z + hz };
   }
 
+  /** Axis-aligned approximation of the cart's oriented body. */
+  cartAabb(): AABB {
+    const c = Math.abs(Math.cos(this.cart.yaw));
+    const s = Math.abs(Math.sin(this.cart.yaw));
+    const hx = c * CART.HALF_W + s * CART.HALF_L;
+    const hz = s * CART.HALF_W + c * CART.HALF_L;
+    return { x0: this.cart.x - hx, x1: this.cart.x + hx, z0: this.cart.z - hz, z1: this.cart.z + hz };
+  }
+
   playerColliders(): AABB[] {
     const closed: AABB[] = [];
     for (const d of this.doors.values()) if (!d.open) closed.push(doorAabb(d.def));
-    return STATIC_COLLIDERS.concat(closed, [this.vanAabb()]);
+    return STATIC_COLLIDERS.concat(closed, [this.vanAabb(), this.cartAabb()]);
   }
 
   hasLineOfSight(x0: number, z0: number, x1: number, z1: number): boolean {
@@ -198,7 +223,16 @@ export class World {
 
   vanColliders(): AABB[] {
     const g = this.gateCollider();
-    return g ? STATIC_COLLIDERS.concat([g]) : STATIC_COLLIDERS;
+    const base = g ? STATIC_COLLIDERS.concat([g]) : STATIC_COLLIDERS;
+    // the parked cart is a bump hazard for the van too
+    return base.concat([this.cartAabb()]);
+  }
+
+  /** Colliders the cart drives against: the static lot + gate + the van hull. */
+  cartColliders(): AABB[] {
+    const g = this.gateCollider();
+    const base = g ? STATIC_COLLIDERS.concat([g]) : STATIC_COLLIDERS;
+    return base.concat([this.vanAabb()]);
   }
 
   itemDef(it: RItem): ItemDef {
@@ -227,7 +261,9 @@ export class World {
       input: { mx: 0, mz: 0, yaw: Math.PI, sprint: false, jump: false, interact: false },
       lastSeq: 0, stamina: PLAYER.STAMINA_MAX, sprinting: false, flashlight: false,
       hp: 100, downed: false, dead: false, bleedAt: 0,
-      carrying: "", seat: 0, hidden: false, hideSpot: "", stabilize: false,
+      carrying: "", slots: ["", "", ""], slotSel: 0,
+      budget: SHOP.BUDGET, hasFlashlight: false, caffeinated: false,
+      seat: 0, hidden: false, hideSpot: "", stabilize: false,
       interactKind: "", interactTarget: "", interactT: 0,
       stepAcc: 0, noiseScore: 0, deliveredValue: 0, deliveredCount: 0,
       rescues: 0, biggestLoss: 0, lossItem: "", downedCount: 0, grabCd: 0, spawn: 0,
@@ -243,9 +279,13 @@ export class World {
   removePlayer(sid: string): void {
     this.releaseCarries(sid, "leave");
     const p = this.players.get(sid);
-    if (p && p.seat > 0) {
-      if (p.seat === 1) this.vanDriver = "";
-      p.seat = 0;
+    if (p) {
+      this.dropSlots(p, "leave");
+      if (p.seat > 0) {
+        if (p.seat === 1) this.vanDriver = "";
+        if (p.seat === SEAT.CART_DRIVER) this.cartDriver = "";
+        p.seat = 0;
+      }
     }
     this.players.delete(sid);
     this.state.players.delete(sid);
@@ -307,6 +347,10 @@ export class World {
       p.dead = false;
       p.bleedAt = 0;
       p.carrying = "";
+      // gas-station purchases (budget/hasFlashlight/caffeinated) carry INTO the
+      // shift; finalize() restocks the budget and clears them for the next stop
+      p.slots = ["", "", ""];
+      p.slotSel = 0;
       p.seat = 0;
       p.stamina = PLAYER.STAMINA_MAX;
       p.noiseScore = 0;
@@ -325,6 +369,10 @@ export class World {
     this.items.clear();
     this.state.items.clear();
     const all = [...plan.items, plan.part];
+    if (this.testItemAt) {
+      // deterministic probe item on the open asphalt by the van's rear-right
+      all.push({ defId: "toolbox", x: 4.2, z: 16.6, yaw: 0 });
+    }
     for (const planned of all) {
       const id = `i${this.nextItemId++}`;
       const def = ITEM_DEFS[planned.defId]!;
@@ -345,6 +393,8 @@ export class World {
     }
 
     this.resetVan();
+    this.cart = { x: CART_START.x, z: CART_START.z, yaw: CART_START.yaw, speed: 0 };
+    this.cartDriver = "";
     this.vanCargo = [];
     (this.state.van.cargo as unknown as string[]).length = 0;
     this.quota = this.testQuota >= 0 ? this.testQuota : quotaFor(planValue(plan.items), count, this.modifiers);
@@ -450,7 +500,7 @@ export class World {
 
   // ---------------------------------------------------------------- carrying
   tryGrab(p: RPlayer, itemId: string): boolean {
-    if (p.downed || p.dead || p.seat > 0 || p.carrying || p.grabCd > 0) return false;
+    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.carrying || p.grabCd > 0) return false;
     const it = this.items.get(itemId);
     if (!it) return false;
     const def = this.itemDef(it);
@@ -547,6 +597,127 @@ export class World {
       }
       this.emit({ t: "drop", item: it.id, by: p.sid, def: it.defId, thrown, x: it.body.x, z: it.body.z, heavy: this.itemDef(it).twoHandle });
     }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- inventory
+  /** Stow a small item into a body slot (E pickup). Same reachability rules
+   *  as tryGrab: range + no reaching through walls. */
+  tryStow(p: RPlayer, itemId: string): boolean {
+    if (p.downed || p.dead || p.seat > 0 || p.hidden || p.grabCd > 0) return false;
+    const it = this.items.get(itemId);
+    if (!it || it.state !== 0) return false;
+    const def = this.itemDef(it);
+    if (!stowable(def)) return false;
+    const d = dist2d(p.body.x, p.body.z, it.body.x, it.body.z);
+    if (d > PLAYER.GRAB_RANGE + def.radius) return false;
+    if (d > 0.8 && !this.losWallsOnly(p.body.x, p.body.z, it.body.x, it.body.z)) return false;
+    // active slot first, then the first empty one
+    let slot = p.slots[p.slotSel] === "" ? p.slotSel : p.slots.indexOf("");
+    if (slot < 0) {
+      this.emit({ t: "deny", sid: p.sid, k: "packFull" });
+      return false;
+    }
+    p.slots[slot] = itemId;
+    p.slotSel = slot;
+    it.state = 4; // stowed on a body
+    it.h0 = "";
+    it.h1 = "";
+    it.lastH0 = p.sid;
+    it.lastH1 = "";
+    this.emit({ t: "stow", item: itemId, by: p.sid, def: it.defId, slot });
+    return true;
+  }
+
+  selectSlot(p: RPlayer, idx: number): boolean {
+    if (idx < 0 || idx >= SLOTS.COUNT || idx === p.slotSel) return false;
+    p.slotSel = idx;
+    return true;
+  }
+
+  /** Gently set the active slot's item down in front of the player. */
+  dropSlot(p: RPlayer): boolean {
+    if (p.downed || p.dead || p.seat > 0) return false;
+    const id = p.slots[p.slotSel];
+    if (!id) return false;
+    const it = this.items.get(id);
+    if (!it) {
+      p.slots[p.slotSel] = "";
+      return false;
+    }
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    it.state = 0;
+    it.sleeping = false;
+    it.body.x = p.body.x + fx * 0.7;
+    it.body.z = p.body.z + fz * 0.7;
+    it.body.y = Math.max(it.body.y, this.itemDef(it).restY + 0.2);
+    it.body.vx = p.body.vx * 0.5;
+    it.body.vz = p.body.vz * 0.5;
+    it.body.vy = 0.4;
+    p.slots[p.slotSel] = "";
+    p.grabCd = 0.25;
+    this.emit({ t: "unstow", item: id, by: p.sid, def: it.defId });
+    return true;
+  }
+
+  /** Load the active slot's item into the van (open rear doors, at the back). */
+  storeSlot(p: RPlayer): boolean {
+    if (p.downed || p.dead || p.seat > 0) return false;
+    if (!this.vanDoorsOpen) return false;
+    const dp = this.vanPoint(VAN.DOOR_POINT);
+    if (dist2d(p.body.x, p.body.z, dp.x, dp.z) > VAN.INTERACT_RANGE + 0.4) return false;
+    const id = p.slots[p.slotSel];
+    if (!id) return false;
+    const it = this.items.get(id);
+    if (!it) {
+      p.slots[p.slotSel] = "";
+      return false;
+    }
+    it.lastH0 = p.sid; // delivery credit for the hauler
+    it.lastH1 = "";
+    p.slots[p.slotSel] = "";
+    this.storeItem(it);
+    return true;
+  }
+
+  /** Scatter everything in a player's pack on death/leave. Items land at the
+   *  body with a gentle toss so the loot never vanishes with its carrier. */
+  dropSlots(p: RPlayer, cause: "die" | "leave"): void {
+    for (let i = 0; i < p.slots.length; i++) {
+      const id = p.slots[i]!;
+      if (!id) continue;
+      const it = this.items.get(id);
+      p.slots[i] = "";
+      if (!it) continue;
+      it.state = 0;
+      it.sleeping = false;
+      it.body.x = p.body.x + (this.rng() - 0.5) * 0.9;
+      it.body.z = p.body.z + (this.rng() - 0.5) * 0.9;
+      it.body.y = this.itemDef(it).restY + 0.25;
+      it.body.vx = (this.rng() - 0.5) * 1.2;
+      it.body.vz = (this.rng() - 0.5) * 1.2;
+      it.body.vy = 0.6;
+      if (cause === "die") this.emit({ t: "unstow", item: id, by: p.sid, def: it.defId });
+    }
+  }
+
+  // ---------------------------------------------------------------- gas stop
+  /** Lobby shop purchase at the gas station. One of each per stop. */
+  tryBuy(p: RPlayer, itemId: string): boolean {
+    if (this.phase !== "lobby") return false;
+    const entry = SHOP.ITEMS.find((s) => s.id === itemId);
+    if (!entry) return false;
+    if (entry.id === "flashlight" && p.hasFlashlight) return false;
+    if (entry.id === "coffee" && p.caffeinated) return false;
+    if (p.budget < entry.price) {
+      this.emit({ t: "deny", sid: p.sid, k: "broke" });
+      return false;
+    }
+    p.budget -= entry.price;
+    if (entry.id === "flashlight") p.hasFlashlight = true;
+    if (entry.id === "coffee") p.caffeinated = true;
+    this.emit({ t: "bought", sid: p.sid, item: entry.id, price: entry.price, budget: p.budget });
     return true;
   }
 
@@ -748,8 +919,11 @@ export class World {
 
   leaveSeat(p: RPlayer): void {
     if (p.seat === 1) this.vanDriver = "";
+    if (p.seat === SEAT.CART_DRIVER) this.cartDriver = "";
+    const side = SEAT.isCart(p.seat)
+      ? vanLocalToWorld(this.cart, -CART.HALF_W - 0.7, 0)
+      : this.vanPoint({ x: -VAN.HALF_W - 0.7, z: 1.6 });
     p.seat = 0;
-    const side = this.vanPoint({ x: -VAN.HALF_W - 0.7, z: 1.6 });
     p.body.x = side.x;
     p.body.z = side.z;
     p.body.y = 0;
@@ -757,6 +931,45 @@ export class World {
     p.body.vz = 0;
     p.body.vy = 0;
     this.emit({ t: "seat", sid: p.sid, seat: 0 });
+  }
+
+  /** Unified exit for the act handler: checks the speed of whichever vehicle
+   *  the player is sitting in before letting them hop out. */
+  exitSeat(p: RPlayer): boolean {
+    if (p.seat === 0) return false;
+    const speed = SEAT.isCart(p.seat) ? this.cart.speed : this.van.speed;
+    if (Math.abs(speed) >= 1.5) return false;
+    this.leaveSeat(p);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- cart ops
+  cartPoint(local: { x: number; z: number }): { x: number; z: number } {
+    return vanLocalToWorld(this.cart, local.x, local.z);
+  }
+
+  /** Board the golf cart. Open buggy: step up from either side while it is
+   *  (nearly) stopped. Hands must be empty — pack slots are fine. */
+  tryEnterCart(p: RPlayer, wantDriver: boolean): boolean {
+    if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || Math.abs(this.cart.speed) > 0.5) return false;
+    const nearBody = dist2d(p.body.x, p.body.z, this.cart.x, this.cart.z) <= CART.INTERACT_RANGE;
+    const nearSeat = CART.SEATS.some((s) => {
+      const w = this.cartPoint(s);
+      return dist2d(p.body.x, p.body.z, w.x, w.z) <= CART.INTERACT_RANGE;
+    });
+    if (!nearBody && !nearSeat) return false;
+    let seat: number;
+    if (wantDriver) {
+      if (this.cartDriver) return false;
+      seat = SEAT.CART_DRIVER;
+    } else {
+      if ([...this.players.values()].some((o) => o.seat === SEAT.CART_PASSENGER)) return false;
+      seat = SEAT.CART_PASSENGER;
+    }
+    p.seat = seat;
+    if (wantDriver) this.cartDriver = p.sid;
+    this.emit({ t: "seat", sid: p.sid, seat });
+    return true;
   }
 
   toggleVanDoors(p: RPlayer): boolean {
@@ -815,6 +1028,12 @@ export class World {
 
   toggleFlashlight(p: RPlayer): boolean {
     if (p.dead) return false;
+    // the flashlight is gas-station stock: without the purchase there is no
+    // torch to click (deny lets the client explain instead of failing silently)
+    if (!p.hasFlashlight) {
+      this.emit({ t: "deny", sid: p.sid, k: "noFlashlight" });
+      return false;
+    }
     p.flashlight = !p.flashlight;
     return true;
   }
@@ -879,6 +1098,7 @@ export class World {
       p.dead = true;
       p.downed = false;
       this.releaseCarries(p.sid, "drop");
+      this.dropSlots(p, "die");
       this.emit({ t: "die", sid: p.sid, cause: source });
       return;
     }
@@ -933,6 +1153,7 @@ export class World {
     this.stepCarried(dt);
     this.stepFree(dt, colliders);
     this.stepVanSim(dt);
+    this.stepCartSim(dt);
     const enemyPaused =
       this.testFreezeEnemyAfterDown && [...this.players.values()].some((p) => p.connected && p.downed);
     if ((this.phase === "scavenge" || this.phase === "escape") && process.env.LS_DISABLE_ENEMY !== "1" && !enemyPaused) {
@@ -956,10 +1177,15 @@ export class World {
         continue;
       }
       if (p.seat > 0) {
-        const seatLocal = VAN.SEATS[p.seat - 1]!;
-        const w = this.vanPoint(seatLocal);
-        p.body.x = w.x;
-        p.body.z = w.z;
+        if (SEAT.isCart(p.seat)) {
+          const w = this.cartPoint(CART.SEATS[p.seat - SEAT.CART_DRIVER]!);
+          p.body.x = w.x;
+          p.body.z = w.z;
+        } else {
+          const w = this.vanPoint(VAN.SEATS[p.seat - 1]!);
+          p.body.x = w.x;
+          p.body.z = w.z;
+        }
         p.body.y = 0;
         p.body.vx = 0;
         p.body.vz = 0;
@@ -986,6 +1212,7 @@ export class World {
         if (p.bleedAt && this.t >= p.bleedAt) {
           p.dead = true;
           p.downed = false;
+          this.dropSlots(p, "die");
           this.emit({ t: "die", sid: p.sid, cause: "bleed" });
         }
         continue;
@@ -996,7 +1223,9 @@ export class World {
       if (wantsSprint && p.stamina > 0) {
         p.stamina = Math.max(0, p.stamina - PLAYER.STAMINA_DRAIN * dt);
       } else {
-        p.stamina = Math.min(PLAYER.STAMINA_MAX, p.stamina + PLAYER.STAMINA_REGEN * dt);
+        // truck-stop coffee: the refund runs noticeably hotter all shift
+        const regen = PLAYER.STAMINA_REGEN * (p.caffeinated ? SHOP.CAFFEINE_REGEN_MUL : 1);
+        p.stamina = Math.min(PLAYER.STAMINA_MAX, p.stamina + regen * dt);
       }
 
       const speed = this.effectiveSpeed(p);
@@ -1158,6 +1387,39 @@ export class World {
     }
   }
 
+  /** The golf cart runs the moment the shift starts (no repair). It shares
+   *  the van's arcade controller with CART tuning and stays lot-bound: only
+   *  the van crossing the west finish ends the shift. */
+  private stepCartSim(dt: number): void {
+    if (this.phase === "results") return;
+    const drivable = this.phase === "scavenge" || this.phase === "escape";
+    const driver = this.cartDriver ? this.players.get(this.cartDriver) : undefined;
+    let throttle = 0;
+    let steer = 0;
+    let handbrake = true;
+    if (drivable && driver && driver.connected && driver.seat === SEAT.CART_DRIVER && !driver.dead && !driver.downed) {
+      const i = driver.input;
+      throttle = clamp(i.mz, -1, 1);
+      steer = -clamp(i.mx, -1, 1); // D steers right on screen (yaw decreases)
+      handbrake = i.jump;
+    }
+    const r = stepVehicle(this.cart, { throttle, steer, handbrake }, dt, this.cartColliders(), CART_CFG);
+    if (r.impact > 1.5) {
+      this.emit({ t: "bump", v: Math.round(r.impact * 0.6) });
+      this.noise(this.cart.x, this.cart.z, NOISE.VAN_BUMP * 0.5, "bump");
+    }
+    // soft electric whine while under way — The Caretaker can track the shuttle
+    if (Math.abs(this.cart.speed) > 0.8) {
+      this.cartNoiseT -= dt;
+      if (this.cartNoiseT <= 0) {
+        this.cartNoiseT = 1.8;
+        this.noise(this.cart.x, this.cart.z, CART.DRIVE_NOISE, "cart");
+      }
+    } else {
+      this.cartNoiseT = 0;
+    }
+  }
+
   playersHaveLivingOutside(): number {
     let n = 0;
     for (const p of this.players.values()) {
@@ -1243,6 +1505,15 @@ export class World {
   /** Scoreboard freeze shared by every outcome: phase -> results, rows,
    *  awards and the results event. */
   private finalize(outcome: "escaped" | "timeout" | "wipe"): void {
+    // gas-station stop restocks for the next shift: budget back to full and
+    // consumables cleared (the coffee wore off; the torchlight goes back on
+    // the rack). Players who never left the lot keep their change — it resets
+    // here, not at startMission, so lobby purchases survive into the shift.
+    for (const p of this.players.values()) {
+      p.budget = SHOP.BUDGET;
+      p.hasFlashlight = false;
+      p.caffeinated = false;
+    }
     if (outcome === "escaped") {
       for (const p of this.players.values()) {
         if (!p.dead && p.seat === 0) {
@@ -1300,6 +1571,7 @@ export class World {
     let sp = this.state.players.get(p.sid);
     if (!sp) {
       sp = new PlayerState();
+      sp.slots = new ArraySchema<string>() as never;
       this.state.players.set(p.sid, sp);
       full = true;
     }
@@ -1327,10 +1599,17 @@ export class World {
     sp.flashlight = p.flashlight;
     sp.sprinting = p.sprinting;
     sp.carrying = p.carrying;
+    const slotArr = sp.slots as unknown as string[];
+    slotArr.length = 0;
+    for (const id of p.slots) slotArr.push(id);
+    sp.slotSel = p.slotSel;
+    sp.budget = p.budget;
+    sp.hasFlashlight = p.hasFlashlight;
+    sp.caffeinated = p.caffeinated;
     sp.seat = p.seat;
     sp.hidden = p.hidden;
     sp.hat = p.hat;
-    sp.driving = p.seat === 1;
+    sp.driving = p.seat === 1 || p.seat === SEAT.CART_DRIVER;
     sp.noiseScore = p.noiseScore;
     sp.deliveredValue = p.deliveredValue;
     sp.deliveredCount = p.deliveredCount;
@@ -1384,6 +1663,12 @@ export class World {
     const cargoArr = st.van.cargo as unknown as string[];
     cargoArr.length = 0;
     for (const id of this.vanCargo) cargoArr.push(id);
+
+    st.cart.x = this.cart.x;
+    st.cart.z = this.cart.z;
+    st.cart.yaw = this.cart.yaw;
+    st.cart.speed = this.cart.speed;
+    st.cart.driver = this.cartDriver;
 
     st.enemy.x = this.enemy.x;
     st.enemy.z = this.enemy.z;

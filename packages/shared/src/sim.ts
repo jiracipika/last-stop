@@ -3,7 +3,7 @@
 // same code for local prediction. Everything is kinematic with hard caps —
 // no unbounded forces, ever.
 
-import { PLAYER, CARRY, VAN, ENEMY } from "./constants.js";
+import { PLAYER, CARRY, VAN, CART, ENEMY } from "./constants.js";
 import { clamp, damp, circleVsAabb, angleDiff, type AABB } from "./math.js";
 
 export interface Body {
@@ -167,7 +167,7 @@ export function stepFreeItem(
 }
 
 // ---------------------------------------------------------------------------
-// Van — arcade kinematic controller.
+// Van / cart — arcade kinematic controller.
 // ---------------------------------------------------------------------------
 export interface VanBody {
   x: number;
@@ -182,30 +182,73 @@ export interface VanInput {
   handbrake: boolean;
 }
 
-export function stepVan(
+/** Tuning for stepVehicle: every knob the van and the golf cart differ on. */
+export interface VehicleCfg {
+  HALF_W: number;
+  HALF_L: number;
+  ACCEL: number;
+  REVERSE_ACCEL: number;
+  MAX_SPEED: number;
+  MAX_REVERSE: number;
+  BRAKE: number;
+  DRAG: number;
+  STEER_RATE: number;
+  /** world clamp box (the van may exit west onto the road; the cart may not) */
+  BOUNDS: { x0: number; x1: number; z0: number; z1: number };
+}
+
+export const VAN_CFG: VehicleCfg = {
+  HALF_W: VAN.HALF_W,
+  HALF_L: VAN.HALF_L,
+  ACCEL: VAN.ACCEL,
+  REVERSE_ACCEL: VAN.REVERSE_ACCEL,
+  MAX_SPEED: VAN.MAX_SPEED,
+  MAX_REVERSE: VAN.MAX_REVERSE,
+  BRAKE: VAN.BRAKE,
+  DRAG: VAN.DRAG,
+  STEER_RATE: VAN.STEER_RATE,
+  BOUNDS: { x0: -68.5, x1: 33, z0: -25, z1: 25 },
+};
+
+export const CART_CFG: VehicleCfg = {
+  HALF_W: CART.HALF_W,
+  HALF_L: CART.HALF_L,
+  ACCEL: CART.ACCEL,
+  REVERSE_ACCEL: CART.REVERSE_ACCEL,
+  MAX_SPEED: CART.MAX_SPEED,
+  MAX_REVERSE: CART.MAX_REVERSE,
+  BRAKE: CART.BRAKE,
+  DRAG: CART.DRAG,
+  STEER_RATE: CART.STEER_RATE,
+  BOUNDS: { ...CART.BOUNDS },
+};
+
+/** One kinematic step for any VehicleCfg body (van, golf cart, …). */
+export function stepVehicle(
   v: VanBody,
   input: VanInput,
   dt: number,
   colliders: AABB[],
+  cfg: VehicleCfg,
 ): { impact: number } {
   const accelerating = input.throttle > 0.05;
   const braking = input.throttle < -0.05;
-  if (accelerating) v.speed += VAN.ACCEL * input.throttle * dt;
+  if (accelerating) v.speed += cfg.ACCEL * input.throttle * dt;
   else if (braking) {
-    if (v.speed > 0.1) v.speed -= VAN.BRAKE * dt; // brake
-    else v.speed = Math.max(-VAN.MAX_REVERSE, v.speed - VAN.REVERSE_ACCEL * dt); // reverse
+    if (v.speed > 0.1) v.speed -= cfg.BRAKE * dt; // brake
+    else v.speed = Math.max(-cfg.MAX_REVERSE, v.speed - cfg.REVERSE_ACCEL * dt); // reverse
   }
   if (input.handbrake) {
     const s = Math.sign(v.speed);
-    v.speed -= s * VAN.BRAKE * 1.4 * dt;
+    v.speed -= s * cfg.BRAKE * 1.4 * dt;
     if (Math.sign(v.speed) !== s) v.speed = 0;
   }
   // drag
-  v.speed *= Math.exp(-VAN.DRAG * dt);
-  v.speed = clamp(v.speed, -VAN.MAX_REVERSE, VAN.MAX_SPEED);
+  v.speed *= Math.exp(-cfg.DRAG * dt);
+  v.speed = clamp(v.speed, -cfg.MAX_REVERSE, cfg.MAX_SPEED);
 
   // steering scales down at speed for stability
-  const steerAmount = input.steer * VAN.STEER_RATE * (1 / (1 + Math.abs(v.speed) * 0.045));
+  const steerAmount = input.steer * cfg.STEER_RATE * (1 / (1 + Math.abs(v.speed) * 0.045));
   v.yaw += steerAmount * clamp(v.speed / 3, -1, 1) * dt * 2.2;
 
   const fx = Math.sin(v.yaw);
@@ -213,16 +256,16 @@ export function stepVan(
   const nx = v.x + fx * v.speed * dt;
   const nz = v.z + fz * v.speed * dt;
 
-  // Van collision: sample 3 circles along the body
+  // body collision: sample 3 circles along the length
   let impact = 0;
   let px = nx;
   let pz = nz;
   let hitNormal: { x: number; z: number } | null = null;
-  for (const off of [-VAN.HALF_L * 0.7, 0, VAN.HALF_L * 0.7]) {
+  for (const off of [-cfg.HALF_L * 0.7, 0, cfg.HALF_L * 0.7]) {
     const cx = nx + fx * off;
     const cz = nz + fz * off;
     for (const c of colliders) {
-      const r = circleVsAabb(cx, cz, VAN.HALF_W + 0.25, c);
+      const r = circleVsAabb(cx, cz, cfg.HALF_W + 0.25, c);
       if (r.hit) {
         px += r.x - cx;
         pz += r.z - cz;
@@ -240,9 +283,18 @@ export function stepVan(
       v.speed *= 0.5;
     }
   }
-  v.x = clamp(px, -68.5, 33);
-  v.z = clamp(pz, -25, 25);
+  v.x = clamp(px, cfg.BOUNDS.x0, cfg.BOUNDS.x1);
+  v.z = clamp(pz, cfg.BOUNDS.z0, cfg.BOUNDS.z1);
   return { impact };
+}
+
+export function stepVan(
+  v: VanBody,
+  input: VanInput,
+  dt: number,
+  colliders: AABB[],
+): { impact: number } {
+  return stepVehicle(v, input, dt, colliders, VAN_CFG);
 }
 
 /** Convert a local-space van offset to world coordinates. */

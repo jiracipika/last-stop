@@ -521,6 +521,28 @@ export class World3D {
             this.group.add(this.smesh(tire));
           }
           break;
+        case "kiosk": {
+          // the gas-station shed: cream clapboard, cold fluorescent window
+          this.group.add(this.sbox(p.w, 2.5, p.d, this.mat(this.tex.wood, 0xcfc6ae), p.x, 1.25, p.z));
+          this.group.add(this.sbox(p.w + 0.2, 0.18, p.d + 0.2, this.mat(this.tex.metalWorn, 0x6a6258), p.x, 2.56, p.z));
+          const glow = new THREE.MeshBasicMaterial({ color: 0xbfe8d9 });
+          this.disposables.push({ mat: glow });
+          this.group.add(this.sbox(1.5, 0.9, 0.05, glow, p.x, 1.4, p.z + p.d / 2 + 0.03));
+          this.pointLight(0xbfe8d9, 6, 8, p.x, 1.5, p.z + p.d / 2 + 0.5, false);
+          break;
+        }
+        case "pumps": {
+          // two pumps on a concrete island under one cold lamp
+          this.group.add(this.sbox(p.w + 0.5, 0.16, p.d + 0.3, this.solid(0x777c80), p.x, 0.08, p.z));
+          for (const oz of [-0.85, 0.85]) {
+            this.group.add(this.sbox(p.w, 1.25, 0.45, this.mat(this.tex.metalWorn, 0xb04a3c), p.x, 0.78, p.z + oz));
+            const face = new THREE.MeshBasicMaterial({ color: 0x1e2c33 });
+            this.disposables.push({ mat: face });
+            this.group.add(this.sbox(p.w - 0.1, 0.5, 0.05, face, p.x, 1.0, p.z + oz + 0.25));
+          }
+          this.pointLight(0x9fd8ff, 5, 9, p.x, 3.4, p.z, false);
+          break;
+        }
       }
     }
     // knocked-over cones + scattered junk (non-colliding flavour)

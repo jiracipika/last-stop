@@ -22,6 +22,12 @@ export interface HudState {
   carryingName: string;
   carryingWeight: number;
   twoHandle: boolean;
+  /** body inventory: 3 slots of stowed small loot ({ id: "" } = empty) */
+  slots: { id: string; name: string; value: number }[];
+  slotSel: number;
+  caffeinated: boolean;
+  budget: number;
+  hasFlashlight: boolean;
   prompt: string;
   progress: number; // 0..1 hold-interact bar
   progressKind: string;
@@ -40,6 +46,8 @@ export interface HudState {
   seat: number;
   driving: boolean;
   vanSpeed: number;
+  cartSpeed: number;
+  cartTaken: boolean;
   toasts: Toast[];
   damageFlash: number;
   /** Signed SCREEN angle to the last damage source (rad, wrapped to
@@ -69,6 +77,11 @@ export const initialHud: HudState = {
   carryingName: "",
   carryingWeight: 0,
   twoHandle: false,
+  slots: [],
+  slotSel: 0,
+  caffeinated: false,
+  budget: 10,
+  hasFlashlight: false,
   prompt: "",
   progress: 0,
   progressKind: "",
@@ -87,6 +100,8 @@ export const initialHud: HudState = {
   seat: 0,
   driving: false,
   vanSpeed: 0,
+  cartSpeed: 0,
+  cartTaken: false,
   toasts: [],
   damageFlash: 0,
   dmgDir: null,

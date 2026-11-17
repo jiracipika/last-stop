@@ -31,8 +31,14 @@ export const PlayerState = schema(
     bleedAt: t.float64(), // server time when bleedout ends (0 = n/a)
     flashlight: t.boolean(),
     sprinting: t.boolean(),
-    carrying: t.string(), // item id or ""
-    seat: t.uint8(), // 0 = on foot, 1..4 van seats (1 = driver)
+    carrying: t.string(), // item id or "" (hands-carry: heavy cargo, deliveries)
+    // body inventory: up to SLOTS.COUNT stowed small-item ids ("" = empty)
+    slots: t.array("string"),
+    slotSel: t.uint8(), // active slot index 0..2
+    budget: t.uint8(), // gas-station money left (lobby shop)
+    hasFlashlight: t.boolean(), // bought at the gas station this shift
+    caffeinated: t.boolean(), // truck-stop coffee: faster stamina regen
+    seat: t.uint8(), // 0 = on foot, 1..4 van seats (1 = driver), 5/6 cart driver/passenger
     driving: t.boolean(),
     // stats
     noiseScore: t.float64(),
@@ -99,6 +105,18 @@ export const VanState = schema(
 );
 export type VanState = SchemaType<typeof VanState>;
 
+export const CartState = schema(
+  {
+    x: t.float64(),
+    z: t.float64(),
+    yaw: t.float64(),
+    speed: t.float64(),
+    driver: t.string(),
+  },
+  "CartState",
+);
+export type CartState = SchemaType<typeof CartState>;
+
 export const MarkerState = schema(
   {
     kind: t.string(), // ping | quick | info
@@ -142,6 +160,7 @@ export const RoomState = schema(
     doors: t.map(DoorState),
     enemy: EnemyState,
     van: VanState,
+    cart: CartState,
     markers: t.array(MarkerState),
   },
   "RoomState",
