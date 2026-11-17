@@ -328,8 +328,9 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
             Back to title
           </button>
         </div>
-        <p className="hint">“Run it back” restarts immediately with a fresh seed for everyone in the room.</p>
+        <p className="hint">“Run it back” returns everyone to the gas stop to buy supplies and ready up for a fresh shift.</p>
       </div>
     </div>
   );
 }
+

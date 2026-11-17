@@ -7,7 +7,7 @@ import * as THREE from "three";
 import {
   AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
   CART, CART_START, SEAT, stowable, COURSE, missionSeconds,
-  SnapBuf,
+  SnapBuf, LOS_BLOCKERS, hasLineOfSight,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
 import { World3D } from "./world3d.js";
@@ -914,12 +914,19 @@ export class Engine {
     const fwd = { x: Math.sin(this.input.yaw), z: Math.cos(this.input.yaw) };
     const px = this.predictor.renderX();
     const pz = this.predictor.renderZ();
+    const pickupBlockers = LOS_BLOCKERS.concat(
+      DOORS.filter(d => !st.doors.get(d.id)?.open).map(doorAabb),
+    );
     let best: (TargetInfo & { score: number; pos: { x: number; z: number } }) | null = null;
     const consider = (t: TargetInfo, x: number, z: number, range: number, weight = 1, minDot = 0.55) => {
       const dx = x - px;
       const dz = z - pz;
       const d = Math.hypot(dx, dz);
       if (d > range) return;
+      // Match the server's walls-only pickup rule. Loot behind a closed
+      // door must not steal that door's E prompt and produce a rejected grab.
+      if ((t.kind === "item" || t.kind === "itemHands" || t.kind === "body") &&
+          !hasLineOfSight(px, pz, x, z, pickupBlockers)) return;
       const dot = d < 0.01 ? 1 : (dx * fwd.x + dz * fwd.z) / d;
       if (dot < minDot && d > 1.2) return;
       const score = dot * weight * 2 - d * 0.08;
@@ -1252,7 +1259,9 @@ export class Engine {
       if (sid === this.net.sid) {
         const px = this.predictor.renderX();
         const pz = this.predictor.renderZ();
-        av.update(dt, { ...p, x: px, z: pz } as PlayerState, t);
+        // Colyseus fields are non-enumerable accessors: {...p} is empty.
+        // Keep height, flashlight, hidden/downed and carry state in the pose.
+        av.update(dt, { ...p.toJSON(), x: px, z: pz } as PlayerState, t);
         av.hideBody();
       } else {
         // buffered interpolation: render the remote player ~120 ms in the past
@@ -1264,7 +1273,7 @@ export class Engine {
         buf.push(this.lastPatchAt || nowMs, p.x, p.z, p.yaw);
         const s = buf.sample(renderAt) ?? { x: p.x, z: p.z, yaw: p.yaw };
         renderedRemote.set(sid, s);
-        av.update(dt, { ...p, x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
+        av.update(dt, { ...p.toJSON(), x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
         this.updateRemoteAudio(sid, p, s.x, s.z, cam);
       }
     }
@@ -1346,7 +1355,7 @@ export class Engine {
         showZ = view.group.position.z + (it.z - view.group.position.z) * k;
         showY = it.y;
       }
-      view.update({ ...it, x: showX, y: showY, z: showZ } as typeof it, highlighted, t, dt);
+      view.update({ ...it.toJSON(), x: showX, y: showY, z: showZ } as typeof it, highlighted, t, dt);
       // grab/stow pop: overshoot to 1.3, ease back to 1
       const popUntil = this.itemPops.get(id);
       if (popUntil !== undefined) {
@@ -1396,7 +1405,7 @@ export class Engine {
     this.enemyView.group.visible = st.phase === "scavenge" || st.phase === "escape";
     this.enemyBuf.push(this.lastPatchAt || nowMs, e.x, e.z, e.yaw);
     const es = this.enemyBuf.sample(renderAt) ?? { x: e.x, z: e.z, yaw: e.yaw };
-    this.enemyView.update(dt, { ...e, x: es.x, z: es.z, yaw: es.yaw }, t);
+    this.enemyView.update(dt, { x: es.x, z: es.z, yaw: es.yaw, ai: e.ai }, t);
     // junker hide doors mirror who's tucked in
     for (const s of HIDE_SPOTS) {
       let occupied = false;
@@ -1862,3 +1871,4 @@ export class Engine {
     return "";
   }
 }
+

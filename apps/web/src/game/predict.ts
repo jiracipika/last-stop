@@ -59,11 +59,11 @@ export class Predictor {
     if (!me || me.downed || me.dead || me.seat > 0) return 0;
     const moving = Math.hypot(input.mx, input.mz) > 0.1;
     let wantSprint = input.sprint === true && moving && me.stamina > 0.5;
-    let speed: number = wantSprint ? PLAYER.SPRINT : PLAYER.WALK;
+    let factor = 1;
     if (me.carryBody) {
       // hauling a coworker's body: fixed heavy load, no sprint — mirrors the
       // server's effectiveSpeed body branch EXACTLY (same constant)
-      speed *= carrySpeedFactor(CARRY.BODY_WEIGHT);
+      factor *= carrySpeedFactor(CARRY.BODY_WEIGHT);
       wantSprint = false;
     } else {
       const carrying = me.carrying;
@@ -75,13 +75,13 @@ export class Predictor {
             const carriers = (it.h0 ? 1 : 0) + (it.h1 ? 1 : 0) || 1;
             const w = def.weight * (def.twoHandle && state.players.size === 1 ? CARRY.SOLO_HEAVY_FACTOR : 1);
             const per = w / carriers;
-            speed *= carrySpeedFactor(per);
+            factor *= carrySpeedFactor(per);
             if (per >= CARRY.SPRINT_MAX_WEIGHT) wantSprint = false;
           }
         }
       }
     }
-    if (!wantSprint) speed = Math.min(speed, PLAYER.WALK * carrySpeedFactor(0));
+    let speed = (wantSprint ? PLAYER.SPRINT : PLAYER.WALK) * factor;
     if (me.hp < 30) speed *= 0.85;
     return speed;
   }
@@ -171,3 +171,4 @@ export class Predictor {
     return this.body.z + this.visZ;
   }
 }
+

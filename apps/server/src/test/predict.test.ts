@@ -7,8 +7,9 @@
 // and drive it at the engine's cadence: 60 fps sim, 20 Hz sends, 30 Hz
 // patches whose ack lags the newest send by ~100 ms.
 import { describe, expect, it } from "vitest";
-import { PLAYER, stepPlayer, type Body, type MoveInput } from "@last-stop/shared";
+import { PLAYER, CARRY, stepPlayer, type Body, type MoveInput } from "@last-stop/shared";
 import { Predictor } from "../../../web/src/game/predict.js";
+import { World } from "../sim/world.js";
 
 const NO_COLLIDE: Parameters<typeof stepPlayer>[4] = [];
 
@@ -84,4 +85,23 @@ describe("predictor input-seq reconciliation", () => {
     expect(pred.body.x).toBe(20);
     expect(pred.visX).toBe(0);
   });
+
+  it("matches authoritative speed when sprint is held while hauling a body", () => {
+    const w = new World();
+    const p = w.addPlayer("hauler", "Hauler", 0, true);
+    const fallen = w.addPlayer("fallen", "Fallen", 1, false);
+    w.modifiersOverride = [];
+    w.startMission();
+    w.phase = "scavenge";
+    fallen.dead = true;
+    Object.assign(fallen.body, { x: p.body.x + 0.5, z: p.body.z });
+    expect(w.tryLiftBody(p, fallen.sid)).toBe(true);
+    Object.assign(p.input, { mz: 1, sprint: true });
+    const speed = w.effectiveSpeed(p);
+    w.syncAll();
+    const pred = new Predictor(() => []);
+    expect(pred.speedFor(w.state, p.sid, p.input)).toBeCloseTo(speed);
+    expect(speed).toBeCloseTo(PLAYER.WALK * (1 - CARRY.BODY_WEIGHT * CARRY.SPEED_PENALTY_PER_WEIGHT));
+  });
 });
+

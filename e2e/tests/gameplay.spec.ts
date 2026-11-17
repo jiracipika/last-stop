@@ -54,6 +54,16 @@ test("keyboard input drives the player through the real client pipeline", async 
     return ls.net.state.players.get(ls.net.sid)!.flashlight;
   });
   expect(flash).toBe(true);
+  // Replicated fields are accessor-backed, so spreading the schema silently
+  // erased avatar height and flashlight state before applying its pose.
+  await expect.poll(() => page.evaluate(() => {
+    const ls = (window as any).__laststop;
+    const avatar = ls.engine().avatars.get(ls.net.sid);
+    return {
+      finite: Number.isFinite(avatar.group.position.y),
+      light: avatar.flashlight.intensity,
+    };
+  })).toEqual({ finite: true, light: 26 });
 
   // Q ping lands a marker in replicated state
   await page.keyboard.press("q");
@@ -161,3 +171,4 @@ test("W moves toward what the camera shows (screen-direction regression)", async
   const right = { x: -Math.cos(s1.yaw), z: Math.sin(s1.yaw) };
   expect((dx2 / len2) * right.x + (dz2 / len2) * right.z).toBeGreaterThan(0.8);
 }, 60000);
+

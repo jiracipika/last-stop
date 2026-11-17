@@ -13,6 +13,9 @@
     // cadence (it has no DOM deps); outside rootDir by nature. Vitest still
     // runs it — tsc just can't nest the web package under src/. The imported
     // predict.ts is typechecked by the web package's own tsc.
-    "src/test/predict.test.ts"
+    "src/test/predict.test.ts",
+    // Runs the real web targeting method without creating a renderer.
+    "src/test/client-target.test.ts"
   ]
 }
+
