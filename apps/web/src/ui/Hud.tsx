@@ -1,6 +1,6 @@
 // In-mission HUD: vitals, quota/timer, scanner, teammates, prompts.
 import React from "react";
-import { COLORS } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { HudState } from "../game/store.js";
 import { activeNet } from "../net.js";
 
@@ -14,10 +14,12 @@ export function Hud({
   hud,
   paused,
   onSpectateNext,
+  reduceFlash = false,
 }: {
   hud: HudState;
   paused: boolean;
   onSpectateNext: () => void;
+  reduceFlash?: boolean;
 }): React.ReactElement {
   const quotaPct = Math.min(100, hud.quota > 0 ? (hud.salvage / hud.quota) * 100 : 0);
   const danger = hud.timer < 120;
@@ -94,7 +96,7 @@ export function Hud({
         <b>{directive}</b>
         <small>{hud.phase === "escape" ? "Driver: cab side · Passengers: open rear doors"
           : hud.carrying ? "Open rear doors to load · RMB steadies fragile cargo"
-          : "LMB grabs cargo · E uses doors · Q marks a find"}</small>
+          : "E stows small loot · LMB hauls cargo · Q marks a find"}</small>
       </div>
       {threat && <div className={`threat-cue ${hud.enemyAi === 3 ? "strike" : ""}`} role="status">{threat}</div>}
       {/* crosshair + prompt */}
@@ -116,9 +118,11 @@ export function Hud({
         </div>
       )}
 
-      {/* damage vignette */}
-      {hud.damageFlash > 0 && <div className="vignette" style={{ opacity: hud.damageFlash * 0.7 }} />}
-      {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && <div className="chase-vignette" />}
+      {/* damage vignette (reduceFlash dampens the red pulse) */}
+      {hud.damageFlash > 0 && (
+        <div className="vignette" style={{ opacity: hud.damageFlash * (reduceFlash ? 0.22 : 0.7) }} />
+      )}
+      {(hud.enemyAi === 2 || hud.enemyAi === 3) && hud.enemyDist < 16 && !reduceFlash && <div className="chase-vignette" />}
 
       {/* directional damage indicator: wedge around the crosshair pointing at
           the source; rotates clockwise for a positive bearing, opacity tracks
@@ -151,12 +155,14 @@ export function Hud({
           <span><b>WASD</b> move</span>
           <span><b>Shift</b> sprint</span>
           <span><b>Mouse</b> look</span>
-          <span><b>LMB</b> grab/release</span>
+          <span><b>LMB</b> haul cargo</span>
           <span><b>RMB</b> stabilize</span>
-          <span><b>E</b> interact</span>
+          <span><b>E</b> stow / doors / board</span>
           <span><b>F</b> flashlight</span>
           <span><b>Q</b> ping</span>
-          <span><b>1/2/3</b> quick chat</span>
+          <span><b>1/2/3</b> pack slots</span>
+          <span><b>G</b> drop held/stowed</span>
+          <span><b>Z/X/C</b> quick chat</span>
           <span><b>Space</b> jump/handbrake</span>
           <span><b>H</b> horn</span>
         </div>
@@ -248,7 +254,17 @@ export function Hud({
       {/* driving strip */}
       {hud.seat > 0 && (
         <div className="drive-strip">
-          {hud.driving ? (
+          {hud.seat >= 5 ? (
+            hud.driving ? (
+              <>
+                <b>DRIVING THE CART</b> · W/S throttle · A/D steer · Space brake · E to hop out (stopped)
+              </>
+            ) : (
+              <>
+                <b>CART PASSENGER</b> · E to hop out (when stopped)
+              </>
+            )
+          ) : hud.driving ? (
             <>
               <b>DRIVING</b> · W/S throttle · A/D steer · Space handbrake · H horn · E to get out (stopped)
             </>
@@ -261,11 +277,44 @@ export function Hud({
         </div>
       )}
 
+      {/* pack slots: stowed small loot; 1/2/3 selects, G drops, E at the open van loads */}
+      {hud.seat === 0 && !hud.dead && hud.slots.length > 0 && (
+        <div className="pack">
+          {hud.slots.map((s, i) => (
+            <div key={i} className={`pack-slot ${i === hud.slotSel ? "active" : ""} ${s.id ? "full" : ""}`}>
+              <span className="pk-key">{i + 1}</span>
+              {s.id ? (
+                <span className="pk-item">
+                  <b>{s.name}</b>
+                  <em>${s.value}</em>
+                </span>
+              ) : (
+                <span className="pk-empty">—</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* accessibility captions: the last critical audio cue, in text */}
+      {hud.caption && performance.now() - hud.caption.at < 2600 && (
+        <div className="caption-bar" key={hud.caption.at}>{hud.caption.text}</div>
+      )}
+
+      {/* floating +$ labels (engine projects the world position at spawn) */}
+      <div className="floaters">
+        {hud.floaters.map((f) => (
+          <span className="floater" key={f.id} style={{ left: f.x, top: f.y }}>
+            {f.text}
+          </span>
+        ))}
+      </div>
+
       {/* right: teammates */}
       <div className="team">
         {hud.teammates.map((t) => (
           <div key={t.sid} className={`mate ${t.dead ? "dead" : t.downed ? "downed" : ""} ${t.connected ? "" : "dc"}`}>
-            <span className="dot" style={{ background: COLORS[t.color % COLORS.length] }} />
+            <span className="dot" style={{ background: crewHex(t.color) }} />
             <span className="m-nick">{t.nick}</span>
             {t.seat > 0 && <span className="m-seat">🚐</span>}
             {!t.connected && <span className="dc-tag">dc</span>}
@@ -277,10 +326,11 @@ export function Hud({
         ))}
       </div>
 
-      {/* corner: fps + quick chat reminder */}
+      {/* corner: fps + quick chat reminder + caffeine tag */}
       <div className="corner-meta">
         <span>{hud.fps} fps</span>
-        <span>1 HELP CARRY · 2 ENEMY HERE · 3 BACK TO VAN</span>
+        <span>Z HELP CARRY · X ENEMY HERE · C BACK TO VAN</span>
+        {hud.caffeinated && <span className="caffe-tag">☕ CAFFEINATED</span>}
       </div>
 
       {paused && <div className="pause-note" />}

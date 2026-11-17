@@ -7,5 +7,12 @@
     "module": "NodeNext",
     "moduleResolution": "nodenext"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    // drives the REAL web Predictor against the engine's send/reconcile
+    // cadence (it has no DOM deps); outside rootDir by nature. Vitest still
+    // runs it — tsc just can't nest the web package under src/. The imported
+    // predict.ts is typechecked by the web package's own tsc.
+    "src/test/predict.test.ts"
+  ]
 }

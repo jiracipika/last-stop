@@ -64,26 +64,39 @@ pnpm e2e           # Playwright: two real browsers, one room, join-by-code, full
 | WASD | move | throttle / steer |
 | Mouse | look | look |
 | Shift | sprint (stamina) | — |
-| E | interact: doors, van doors, straps, seats, **hide in the junkers**; **hold** to revive teammate / install part | exit (when stopped) |
-| Left mouse | grab / release carried item | — |
+| E | stow loot into the pack; interact: doors, van doors, straps, seats, **hide in the junkers**, load pack at the open van rear; **hold** to revive teammate / install part | exit (when stopped) |
+| Left mouse | haul cargo in your hands (heavy two-handle loot needs it) / release | — |
 | Right mouse (hold) | stabilize carried item (halves impact damage) | — |
-| F | flashlight | — |
+| F | flashlight (must be bought at the gas station) | — |
 | Q | ping (contextual marker at crosshair target) | — |
-| G | throw carried item | — |
-| 1 / 2 / 3 | quick chat: HELP CARRY / ENEMY HERE / BACK TO VAN | — |
+| G | drop/throw carried item, or drop the selected pack item | — |
+| 1 / 2 / 3 | select pack slot 1/2/3 | — |
+| Z / X / C | quick chat: HELP CARRY / ENEMY HERE / BACK TO VAN | — |
 | H | — | horn (a big, deliberate noise) |
 | Space | jump | handbrake |
 | Esc | pause + settings (releases mouse) | same |
 
 Settings: mouse sensitivity, volume, quality (low/medium/high), head-bob toggle, camera-shake
-toggle. Desktop-only: a notice is shown on touch layouts.
+toggle — plus an **accessibility** section (Esc → pause): **caption sound cues** renders critical
+noises as text (door bangs, the spotted sting, going down), **reduce flashes** softens the storm
+lightning to a steady glow and damps the damage pulse, and **colorblind-safe colors** swaps the
+8-way crew palette for one distinguishable under every common color-vision deficiency (HUD dots,
+roster, results table, title swatches and the 3D suits all follow it). Desktop-only: a notice is
+shown on touch layouts.
 
 ## The shift (mission loop)
 
-1. Crew room: create/join by code, pick name + uniform color, ready up.
+1. Crew room: create/join by code, pick name + uniform color, ready up — and make your stop at the
+   **gas station** (south-west corner): a $10 personal allowance buys a **truck-stop coffee**
+   ($4, faster stamina regen all shift) or the **torchlight flashlight** ($7, arms your F key —
+   it matters on BLACKOUT nights). One of each per stop; the allowance restocks after every shift.
 2. Briefing (5 s): three random modifiers are announced.
 3. Scavenge (12 min base): grab valuables, haul them to the van's rear loading zone, find the
-   **distributor cap** and install it at the engine (hold E, 3 s).
+   **distributor cap** and install it at the engine (hold E, 3 s). Small loot (weight ≤ 2) can
+   also be **stowed in your 3-slot pack** with E — hands-free, no slow-down, load it at the open
+   van rear; heavy two-handle cargo only travels in your hands. The crew's **golf cart** parks by
+   the gas pumps from shift start: two seats, no repair needed, quiet-ish — The Caretaker can
+   still hear it whine. It cannot leave the lot; only the van ends the shift.
 4. Meet the salvage quota **and** install the part → the west gate opens, phase becomes **GET OUT**.
 5. Everyone boards (rear doors: shotgun seats; driver door: the wheel). Driving asks for a
    confirming second press if living teammates are still outside.

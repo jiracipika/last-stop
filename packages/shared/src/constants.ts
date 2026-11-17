@@ -123,6 +123,55 @@ export const VAN = {
   BUMP_CARGO_DAMAGE: 14, // damage to unsecured cargo per significant bump
 } as const;
 
+// ---- Crew golf cart (lot shuttle; local frame: +z is FORWARD) ----
+// Runs from shift start (no repair); quiet-ish electric donk. Two seats.
+// The cart is lot-bound: it clamps inside the fence and can never cross the
+// escape finish — only the van ends the shift.
+export const CART = {
+  HALF_W: 0.62,
+  HALF_L: 1.15,
+  ACCEL: 5,
+  REVERSE_ACCEL: 3,
+  MAX_SPEED: 6.8,
+  MAX_REVERSE: 2.2,
+  BRAKE: 9,
+  DRAG: 0.9,
+  STEER_RATE: 2.4,
+  SEATS: [
+    { x: 0, z: 0.18 }, // driver (right-hand drive kiosk carts drive from the left… we keep center)
+    { x: 0, z: -0.62 },
+  ],
+  INTERACT_RANGE: PLAYER.INTERACT_RANGE + 0.3,
+  BOUNDS: { x0: -33, x1: 33, z0: -25, z1: 25 },
+  DRIVE_NOISE: 5, // soft electric whine radius while moving
+} as const;
+
+/** Seat codes on PlayerState.seat: 0 = on foot, 1..4 = van, 5 = cart driver, 6 = cart passenger. */
+export const SEAT = {
+  VAN_DRIVER: 1,
+  CART_DRIVER: 5,
+  CART_PASSENGER: 6,
+  isCart: (s: number) => s === 5 || s === 6,
+  isVan: (s: number) => s >= 1 && s <= 4,
+} as const;
+
+// ---- Inventory: what a crew member can stow on their body ----
+export const SLOTS = {
+  COUNT: 3,
+  /** Max def weight stowable in a body slot (heavier needs the hands mechanic). */
+  MAX_WEIGHT: 2,
+} as const;
+
+// ---- Gas-station stop (lobby shop, per-player budget) ----
+export const SHOP = {
+  BUDGET: 10,
+  ITEMS: [
+    { id: "coffee", name: "Truck Stop Coffee", price: 4, desc: "Caffeinated: stamina refills 60% faster all shift" },
+    { id: "flashlight", name: "Torchlight Flashlight", price: 7, desc: "Unlocks your flashlight (F) for the shift" },
+  ] as { id: string; name: string; price: number; desc: string }[],
+  CAFFEINE_REGEN_MUL: 1.6,
+} as const;
+
 // ---- Mission ----
 export const MISSION = {
   TIME_S: 720, // 12 minutes

@@ -3,6 +3,7 @@
 // on the client from `mesh` + `color`.
 
 import { LOOT_SPAWNS, PART_SPAWNS } from "./map.js";
+import { SLOTS } from "./constants.js";
 
 export interface ItemDef {
   id: string;
@@ -112,4 +113,11 @@ export function planSpawns(rng: () => number, playerCount: number): { items: Pla
 /** Total base value of a plan (for quota math). */
 export function planValue(items: PlannedItem[]): number {
   return items.reduce((sum, it) => sum + (ITEM_DEFS[it.defId]?.value ?? 0), 0);
+}
+
+/** Can this item be stowed in a body inventory slot? Small loot only: heavy
+ *  two-handle cargo needs the hands mechanic, and the distributor cap must be
+ *  hand-carried to the engine bay to install it. */
+export function stowable(def: ItemDef): boolean {
+  return !def.twoHandle && !def.part && def.weight <= SLOTS.MAX_WEIGHT;
 }

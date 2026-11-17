@@ -204,6 +204,11 @@ export const PROPS: PropDef[] = [
   { kind: "sign", x: -13, z: -2.5, w: 1.1, d: 1.1 },
   { kind: "washer", x: -21.2, z: -21, w: 1.6, d: 3 },
   { kind: "tires", x: 27.8, z: -18.9, w: 1.6, d: 1.6 },
+  // Gas-station corner (south-west): kiosk shed + pump island. The crew stops
+  // here on the way in — the lobby shop UI is themed on it, and the golf cart
+  // parks by the pumps.
+  { kind: "kiosk", x: -30.2, z: 21.8, w: 3.2, d: 2.4 },
+  { kind: "pumps", x: -26.6, z: 18.4, w: 1.0, d: 3.4 },
 ];
 
 export function propAabbs(): AABB[] {
@@ -354,6 +359,9 @@ export const PLAYER_SPAWNS = [
 ];
 
 export const VAN_START = { x: 2, z: 13.5, yaw: Math.PI }; // facing north (-Z)
+
+// The crew's golf cart parks by the gas-station pumps, facing east into the lot
+export const CART_START = { x: -23.6, z: 19.6, yaw: Math.PI / 2 };
 
 export interface SpawnPoint {
   x: number;

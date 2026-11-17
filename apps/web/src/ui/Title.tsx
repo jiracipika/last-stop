@@ -1,6 +1,6 @@
 // Title screen: neon sign vibes, nickname + color + headgear, create/join.
 import React, { useEffect, useRef, useState } from "react";
-import { COLORS } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { Prefs } from "../App.js";
 
 // Invite links land here as /?code=CODE (legacy links used ?room=). Sanitize
@@ -77,34 +77,35 @@ export function TitleScreen({
           />
         </label>
 
-        <div className="field">
-          <span>Uniform color</span>
-          <div className="colors">
-            {COLORS.map((c, i) => (
-              <button
-                key={c}
-                aria-label={`color ${i}`}
-                className={`swatch ${prefs.color === i ? "sel" : ""}`}
-                style={{ background: c }}
-                onClick={() => savePrefs({ ...prefs, color: i })}
-              />
-            ))}
+        <div className="field-row">
+          <div className="field">
+            <span>Uniform color</span>
+            <div className="colors">
+              {Array.from({ length: 8 }, (_, i) => crewHex(i)).map((c, i) => (
+                <button
+                  key={c}
+                  aria-label={`color ${i}`}
+                  className={`swatch ${prefs.color === i ? "sel" : ""}`}
+                  style={{ background: c }}
+                  onClick={() => savePrefs({ ...prefs, color: i })}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-
-        <div className="field">
-          <span>Headgear</span>
-          <div className="hats">
-            {HATS.map((h, i) => (
-              <button
-                key={h.label}
-                className={`hat-btn ${prefs.hat === i ? "sel" : ""}`}
-                onClick={() => savePrefs({ ...prefs, hat: i })}
-                title={h.label}
-              >
-                {h.glyph}
-              </button>
-            ))}
+          <div className="field">
+            <span>Headgear</span>
+            <div className="hats">
+              {HATS.map((h, i) => (
+                <button
+                  key={h.label}
+                  className={`hat-btn ${prefs.hat === i ? "sel" : ""}`}
+                  onClick={() => savePrefs({ ...prefs, hat: i })}
+                  title={h.label}
+                >
+                  {h.glyph}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -128,11 +129,10 @@ export function TitleScreen({
         </div>
 
         <div className="controls-hint">
-          <b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>LMB</b> grab/release ·{" "}
-          <b>RMB</b> stabilize · <b>E</b> interact · <b>F</b> flashlight · <b>Q</b> ping ·{" "}
-          <b>1/2/3</b> quick chat · <b>Space</b> jump/handbrake · <b>H</b> horn
-          <br />
-          1–4 players · headphones recommended
+          <span className="ch-row"><b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>Space</b> jump</span>
+          <span className="ch-row"><b>E</b> stow / interact · <b>LMB</b> haul cargo · <b>RMB</b> stabilize · <b>G</b> drop</span>
+          <span className="ch-row"><b>F</b> flashlight · <b>Q</b> ping · <b>1/2/3</b> pack slots · <b>Z/X/C</b> quick chat · <b>H</b> horn</span>
+          <span className="ch-foot">1–4 players · headphones recommended · Esc pauses</span>
         </div>
       </div>
     </div>

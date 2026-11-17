@@ -1,7 +1,8 @@
 // Results screen: DUSTPAN RECOVERY shift report (debrief) — outcome, crew
 // ledger, employee file, management notes, personnel file, instant replay.
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { COLORS, MODIFIERS, type MissionAwardRow, type MissionResults } from "@last-stop/shared";
+import { MODIFIERS, type MissionAwardRow, type MissionResults } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { HudState } from "../game/store.js";
 import type { Net } from "../net.js";
 
@@ -233,7 +234,7 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
                   return (
                     <tr key={i}>
                       <td className="row-nick">
-                        <span className="dot" style={{ background: COLORS[r.color % COLORS.length] }} />
+                        <span className="dot" style={{ background: crewHex(r.color) }} />
                         {r.nick}
                       </td>
                       <td>{money(r.delivered)}</td>

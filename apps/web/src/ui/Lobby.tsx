@@ -1,6 +1,8 @@
-// Crew room overlay: roster, ready-up, invite code, host start.
+// Crew room overlay: roster, ready-up, invite code, host start + the
+// gas-station stop (per-player pre-shift shop).
 import React, { useState } from "react";
-import { COLORS } from "@last-stop/shared";
+import { SHOP } from "@last-stop/shared";
+import { crewHex } from "../game/palette.js";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
 import type { Prefs } from "../App.js";
@@ -22,13 +24,46 @@ export function LobbyOverlay({
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
   const me = st.players.get(net.sid);
   const allReady = players.every(({ p }) => p.ready);
+  void hud;
 
   // /?code= pre-fills the title screen's join field (Title.inviteCodeFromUrl)
   const inviteLink = `${location.origin}${location.pathname}?code=${hud.roomCode}`;
 
   return (
     <div className="lobby">
+      {/* gas-station stop: last chance before the lot. Personal budget; the
+          coffee and the flashlight cost 4+7 of a $10 allowance — pick one. */}
+      <div className="lobby-panel gas-stop">
+        <div className="panel-kicker">LAST STOP BEFORE THE LOT</div>
+        <h2>PALE LANTERN GAS &amp; SIPS</h2>
+        <div className="gas-budget">
+          POCKET MONEY <b>${me?.budget ?? SHOP.BUDGET}</b>
+        </div>
+        <ul className="gas-shelf">
+          {SHOP.ITEMS.map((item) => {
+            const owned = me ? (item.id === "coffee" ? me.caffeinated : me.hasFlashlight) : false;
+            return (
+              <li key={item.id} className={owned ? "owned" : ""}>
+                <div className="gas-item">
+                  <span className="gas-name">{item.id === "coffee" ? "☕" : "🔦"} {item.name}</span>
+                  <span className="gas-price">${item.price}</span>
+                </div>
+                <p>{item.desc}</p>
+                <button
+                  className="btn small"
+                  disabled={!me || owned || (me?.budget ?? 0) < item.price}
+                  onClick={() => net.act("shop", { item: item.id })}
+                >
+                  {owned ? "In the truck" : "Buy"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="hint">One of each per stop. Spend it before the van rolls in.</p>
+      </div>
       <div className="lobby-panel">
+        <div className="panel-kicker">SHIFT SETUP</div>
         <h2>Crew Room</h2>
         <div className="invite">
           <span>
@@ -52,7 +87,7 @@ export function LobbyOverlay({
         <ul className="roster">
           {players.map(({ sid, p }) => (
             <li key={sid} className={p.connected ? "" : "dc"}>
-              <span className="dot" style={{ background: COLORS[p.color % COLORS.length] }} />
+              <span className="dot" style={{ background: crewHex(p.color) }} />
               <span className="nick">{p.nick}{sid === net.sid ? " (you)" : ""}</span>
               {p.host && <span className="host-tag">host</span>}
               <span className={`ready ${p.ready ? "on" : ""}`}>{p.ready ? "READY" : "warming up"}</span>
