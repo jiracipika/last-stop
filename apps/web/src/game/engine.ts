@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import {
   AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
-  CART, CART_START, SEAT, stowable,
+  CART, CART_START, SEAT, stowable, COURSE, missionSeconds,
   SnapBuf,
   type RoomState, type PlayerState, QUICK_MESSAGES,
 } from "@last-stop/shared";
@@ -84,6 +84,40 @@ const ATTRACT_PATH: AttractPose[] = [
   { pos: [8.5, 2.6, 20.5], look: [2, 1.5, 13.5], dur: 12 },
 ];
 const ATTRACT_LOOP_LEN = ATTRACT_PATH.reduce((s, p) => s + p.dur, 0); // 50 s
+
+/** Checkpoint gates for the drive-in course: two posts + a crossbar + a
+ *  hanging flag per stage, plus the parking ring at the lot spot. Unlit
+ *  materials so they read at night; recolored per-frame by stage progress. */
+function buildCourseGates(): THREE.Group {
+  const root = new THREE.Group();
+  const mkGate = (x: number, z: number) => {
+    const g = new THREE.Group();
+    const postMat = new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.85 });
+    const barMat = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9 });
+    const flagMat = new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+    const post = (zz: number) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 2.7, 8), postMat);
+      m.position.set(x, 1.35, zz);
+      return m;
+    };
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 5.4), barMat);
+    bar.position.set(x, 2.55, z);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7), flagMat);
+    flag.position.set(x, 2.05, z - 0.12);
+    g.add(post(z - 2.7), post(z + 2.7), bar, flag);
+    return g;
+  };
+  for (const cp of COURSE.STAGES) root.add(mkGate(cp.x, cp.z));
+  const park = new THREE.Mesh(
+    new THREE.RingGeometry(2.6, 3.2, 28),
+    new THREE.MeshBasicMaterial({ color: 0x9dff8f, transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
+  );
+  park.rotation.x = -Math.PI / 2;
+  park.position.set(COURSE.PARK.x, 0.05, COURSE.PARK.z);
+  root.add(park);
+  root.visible = false;
+  return root;
+}
 
 // The remote-entity interpolation buffer (SnapBuf) lives in shared now
 // (packages/shared/src/interp.ts): bounded extrapolation through jitter gaps
@@ -180,6 +214,9 @@ export class Engine {
   private fpsAcc = 0;
   private fpsN = 0;
   private bangToastCd = 0;
+  /** Drive-in course gates + park ring (visible only during the "arrive"
+   *  phase; per-gate color tracks threaded progress). */
+  private courseGates = buildCourseGates();
   private remoteBufs = new Map<string, SnapBuf>();
   private vanBuf = new SnapBuf();
   private cartBuf = new SnapBuf();
@@ -224,6 +261,7 @@ export class Engine {
     this.cartView = new CartView();
     this.scene.add(this.cartView.group);
     this.scene.add(this.enemyView.group);
+    this.scene.add(this.courseGates);
 
     this.predictor = new Predictor(() => this.dynamicColliders());
     // InputManager is created lazily by the `input` getter: at the title its
@@ -411,7 +449,8 @@ export class Engine {
         }
         break;
       case "throwItem":
-        if (me.carrying) this.net.act("release", { thrown: true });
+        if (me.carryBody) this.net.act("dropBody");
+        else if (me.carrying) this.net.act("release", { thrown: true });
         else if (me.slots[me.slotSel]) this.net.act("dropSlot");
         break;
       case "flashlight":
@@ -459,6 +498,8 @@ export class Engine {
           else if (t.kind === "seat") this.net.act("enterVan", { driver: false });
           else if (t.kind === "cartDriver") this.net.act("enterCart", { driver: true });
           else if (t.kind === "cartSeat") this.net.act("enterCart", { driver: false });
+          else if (t.kind === "body") this.net.act("liftBody", { sid: t.id });
+          else if (t.kind === "loadBody") this.net.act("loadBody");
           else if (t.kind === "hide") this.net.act("hide", { spot: t.id });
           else if (t.kind === "hidden") this.net.act("hide", { out: true });
           // revive/install are hold-interactions via input.interact
@@ -646,6 +687,63 @@ export class Engine {
       case "leaveWarn":
         this.store.set({ leaveWarn: Number(e.outside ?? 0) });
         this.store.toast(`${e.outside} teammate(s) still out there! Press W again to leave them.`, "warn");
+        break;
+      case "leaveBlock": {
+        const nick = st?.players.get(String(e.sid ?? ""))?.nick ?? "the driver";
+        if (e.k === "body") {
+          this.store.toast(`The van won't leave: ${nick}'s body is still out there — bring it back.`, "warn");
+          this.caption(`(${nick}'s body is still on the lot — the van will not leave without it)`);
+        } else {
+          this.store.toast(`The van won't leave: ${nick} (exit driver) is DOWN — stabilize them.`, "warn");
+          this.caption(`(${nick} is down — the van will not leave without them)`);
+        }
+        break;
+      }
+      case "course": {
+        const stage = Number(e.stage ?? 0);
+        if (stage >= 3) {
+          audio.quotaDing();
+          this.store.toast("Last gate — park it at the ring", "good");
+        } else {
+          audio.bell();
+          this.store.toast(`Checkpoint ${stage}/3`, "good");
+        }
+        this.caption(`(checkpoint ${stage} of 3)`);
+        break;
+      }
+      case "courseDriver": {
+        const nick = st?.players.get(String(e.sid ?? ""))?.nick ?? "?";
+        this.store.toast(`${nick} takes the wheel`, "info");
+        break;
+      }
+      case "courseAuto":
+        this.store.toast("Nobody driving — the van's bringing itself in", "warn");
+        this.caption("(the van is driving itself in — hang on)");
+        break;
+      case "arrived": {
+        // the server's say() line already toasts the park + dead cap; here we
+        // only dress the moment (clunk + caption)
+        audio.vanDoor();
+        this.caption("(the van parks — the engine dies with a clunk)");
+        break;
+      }
+      case "bodyLift": {
+        if (e.by === this.net.sid) {
+          audio.grab();
+          this.store.toast("Body on your shoulders — slow, loud, worth it", "info");
+        } else {
+          const lifter = st?.players.get(String(e.by));
+          if (lifter) audio.playEventAt("grab", lifter.x, lifter.z, cam);
+        }
+        break;
+      }
+      case "bodyDrop":
+        audio.playEventAt("dropHeavy", this.predictor.body.x, this.predictor.body.z, cam);
+        break;
+      case "bodyLoaded":
+        audio.vanDoor();
+        this.store.toast("Body brought home", "good");
+        this.caption("(a body is loaded into the van)");
         break;
       case "toast":
         this.store.toast(String(e.msg ?? ""), "info");
@@ -941,6 +1039,20 @@ export class Engine {
       }
     }
 
+    // dead-body recovery: lift a fallen coworker (E), or load the one you're
+    // hauling through the open rear doors
+    if (me.carryBody) {
+      if (van.doorsOpen && Math.abs(van.speed) <= 0.5) {
+        consider({ kind: "loadBody", id: "van", label: "Load the body into the van" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.15);
+      }
+    } else if (!me.carrying) {
+      for (const [sid2, p] of st.players) {
+        if (!p.dead || p.bodyVan) continue;
+        if ([...st.players.values()].some((o) => o.carryBody === sid2)) continue;
+        consider({ kind: "body", id: sid2, label: `Carry ${p.nick}'s body home` }, p.x, p.z, PLAYER.INTERACT_RANGE + 0.2, 1.25);
+      }
+    }
+
     // install prompt when carrying the part near the engine
     if (me.carrying) {
       const carried = st.items.get(me.carrying);
@@ -1012,6 +1124,7 @@ export class Engine {
         this.scanTarget(st, me);
       }
       this.syncEntities(dt, st, t, now);
+      this.updateCourseGates(st, t);
       this.world3d.update(dt, t);
       this.world3d.applyGate(dt);
       this.world3d.cullLights(this.camera.position);
@@ -1052,10 +1165,12 @@ export class Engine {
 
   private stepSelf(dt: number, st: RoomState, me: PlayerState): void {
     const fi = this.input.frame();
-    if (st.phase !== "scavenge" && st.phase !== "escape") {
-      // lobby/briefing: the server teleports the crew at startMission — keep
-      // stepping the predictor here and reconcile slingshots the body across
-      // the map for seconds after spawn-in. Pin to the authoritative spot.
+    if (st.phase === "lobby" || st.phase === "briefing" || st.phase === "results") {
+      // lobby/briefing/results: the server teleports the crew at phase flips —
+      // keep stepping the predictor here and reconcile slingshots the body
+      // across the map for seconds after spawn-in. Pin to the authoritative
+      // spot. (The drive-in is NOT in this list: a rider who hops out of the
+      // moving van onto the road predicts normally.)
       this.predictor.reset(me.x, me.z, me.yaw);
       this.input.jumpQueued = false;
     } else if (me.seat > 0 || me.downed || me.dead || me.hidden) {
@@ -1064,7 +1179,8 @@ export class Engine {
       this.input.jumpQueued = false;
     } else {
       const speed = this.predictor.speedFor(st, this.net.sid, fi);
-      this.predictor.carrying = me.carrying; // gates the stop-slide (server parity)
+      // gates the stop-slide (server parity): hauling cargo OR a body
+      this.predictor.carrying = me.carrying || me.carryBody;
       this.predictor.step(dt, fi, speed);
       this.predictor.reconcile(me.x, me.z, me.inputSeq);
       // hard contact with a wall/prop: the predictor reports how much velocity
@@ -1289,8 +1405,8 @@ export class Engine {
       }
       this.world3d.setHideOpen(s.id, occupied);
     }
-    // gate
-    this.world3d.setGateOpen(st.gateOpen);
+    // gate (open for the drive-in, then shut behind the crew until quota)
+    this.world3d.setGateOpen(st.gateOpen || st.phase === "arrive");
     // doors
     for (const dv of this.world3d.doorViews) {
       const ds = st.doors.get(dv.def.id);
@@ -1395,7 +1511,7 @@ export class Engine {
     const intensity = chasing ? clamp01(1.4 - d / 22) : e.ai === 1 ? clamp01(0.6 - d / 30) : 0;
     audio.setChaseIntensity(intensity);
     audio.heartbeat(dt, intensity);
-    if (me.seat === 1) audio.engine(st.van.speed, st.phase === "escape");
+    if (me.seat === 1) audio.engine(st.van.speed, st.phase === "escape" || st.phase === "arrive");
     else if (me.seat === SEAT.CART_DRIVER) audio.engine(st.cart.speed * 0.55, st.cart.speed !== 0);
     else audio.engine(0, false);
 
@@ -1591,6 +1707,36 @@ export class Engine {
     this.spectateIdx++;
   }
 
+  /** Drive-in course dressing: unlit posts/flags so the gates glow at night.
+   *  Color state per gate: threaded = dim green, the active gate = pulsing
+   *  amber, upcoming = faint blue. Park ring lights up once stage 3 clears. */
+  private updateCourseGates(st: RoomState, t: number): void {
+    const on = st.phase === "arrive";
+    this.courseGates.visible = on;
+    if (!on) return;
+    for (let i = 0; i < COURSE.STAGES.length; i++) {
+      const gate = this.courseGates.children[i] as THREE.Group;
+      const state = i < st.course.stage ? "done" : i === st.course.stage ? "next" : "todo";
+      const pulse = state === "next" ? 0.65 + 0.35 * Math.sin(t * 6) : 1;
+      for (const child of gate.children) {
+        const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (state === "done") {
+          mat.color.setHex(0x9dff8f);
+          mat.opacity = 0.26;
+        } else if (state === "next") {
+          mat.color.setHex(0xffb347);
+          mat.opacity = 0.95 * pulse;
+        } else {
+          mat.color.setHex(0x7fd4ff);
+          mat.opacity = 0.3;
+        }
+      }
+    }
+    const park = this.courseGates.children[COURSE.STAGES.length] as THREE.Mesh;
+    const pm = park.material as THREE.MeshBasicMaterial;
+    pm.opacity = st.course.stage >= 3 ? 0.55 + 0.4 * Math.sin(t * 5) : 0.18;
+  }
+
   /** HUD key hints mirror the actual input binding for each action. */
   private promptFor(t: TargetInfo | null): string {
     if (!t) return "";
@@ -1620,10 +1766,13 @@ export class Engine {
         hp: p.hp,
         downed: p.downed,
         dead: p.dead,
+        bodyVan: p.bodyVan,
         seat: p.seat,
         connected: p.connected,
         dist: Math.round(dist2d(me.x, me.z, p.x, p.z)),
       }));
+    const exitDriverNick = st.course.driver ? st.players.get(st.course.driver)?.nick ?? "" : "";
+    const exitBlock = st.phase === "escape" && st.course.driver ? this.exitBlockOf(st) : "";
     this.store.set({
       phase: st.phase,
       outcome: st.outcome,
@@ -1661,6 +1810,14 @@ export class Engine {
       vanSpeed: Math.abs(st.van.speed),
       cartSpeed: Math.abs(st.cart.speed),
       cartTaken: !!st.cart.driver || [...st.players.values()].some((p) => p.seat === SEAT.CART_PASSENGER),
+      // during the drive-in the shift clock has not started — show it full
+      ...(st.phase === "arrive" ? { timer: missionSeconds([...st.modifiers]) } : {}),
+      courseStage: st.course.stage,
+      courseAuto: st.course.autopilot,
+      exitDriver: st.course.driver,
+      exitDriverNick,
+      exitBlock,
+      carryBodyNick: me.carryBody ? st.players.get(me.carryBody)?.nick ?? "" : "",
       locked: this.input.locked,
       fps: this.fpsN > 0 ? Math.round(this.fpsN / Math.max(0.001, this.fpsAcc)) : 0,
       leaveWarn: this.store.state.leaveWarn,
@@ -1671,6 +1828,7 @@ export class Engine {
     }
     // phase change side effects
     if (st.phase !== this.lastPhase) {
+      if (st.phase === "arrive") this.store.toast("Drive us in — thread the three gates, then park at the ring.", "info");
       if (st.phase === "scavenge") this.store.toast("Shift started. Find valuables, find the distributor, don't die.", "info");
       if (st.phase === "escape") this.store.toast("Everyone in the van! DRIVE.", "good");
       this.lastPhase = st.phase;
@@ -1693,5 +1851,14 @@ export class Engine {
     if (this.store.state.leaveWarn > 0 && st.phase !== "escape") {
       this.store.set({ leaveWarn: 0 });
     }
+  }
+
+  /** Client mirror of the server's exitDriverBlock() for the HUD banner. */
+  private exitBlockOf(st: RoomState): string {
+    const d = st.players.get(st.course.driver);
+    if (!d || !d.connected) return "";
+    if (d.dead) return d.bodyVan ? "" : "body";
+    if (d.downed) return "down";
+    return "";
   }
 }

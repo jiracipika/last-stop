@@ -41,6 +41,12 @@ export const CARRY = {
   MAX_ITEM_SPEED: 9, // hard cap on any item velocity
   SOLO_HEAVY_FACTOR: 0.55, // weight multiplier for heavy items in solo mode
   STABILIZE_FACTOR: 0.45, // impact damage multiplier while stabilizing
+  /** Hauling a coworker's body reads as a fixed heavy load: one weight number
+   *  fed to carrySpeedFactor on BOTH server (effectiveSpeed) and predictor
+   *  (speedFor) so body-carrying never rubber-bands. */
+  BODY_WEIGHT: 4,
+  /** Body held slightly closer than items (fireman carry, not a suitcase). */
+  BODY_HOLD_DIST: 0.55,
 } as const;
 
 // ---- Impact / fragility ----
@@ -114,6 +120,12 @@ export const VAN = {
     { x: 0.42, z: 0.95 },
     { x: -0.42, z: 0.45 },
     { x: 0.42, z: 0.45 },
+  ],
+  // where recovered bodies lie inside the cargo bay (local frame, up to 3)
+  BODY_SPOTS: [
+    { x: -0.5, z: -1.55 },
+    { x: 0.5, z: -1.55 },
+    { x: 0, z: -0.95 },
   ],
   ENGINE_POINT: { x: 0, z: 2.55 }, // local; install interaction (front)
   DRIVER_POINT: { x: -1.35, z: 1.6 }, // cab entry, independent of cargo doors

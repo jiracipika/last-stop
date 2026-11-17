@@ -152,7 +152,7 @@ export function App(): React.ReactElement {
     const onLockChange = () => {
       const locked = document.pointerLockElement !== null;
       const phase = net.state?.phase ?? "lobby";
-      if (!locked && (phase === "scavenge" || phase === "escape" || phase === "briefing")) {
+      if (!locked && (phase === "scavenge" || phase === "escape" || phase === "briefing" || phase === "arrive")) {
         setPaused(true);
       }
     };
@@ -236,7 +236,7 @@ export function App(): React.ReactElement {
         <>
           {hud.phase === "lobby" && <LobbyOverlay net={net} hud={hud} prefs={prefs} onLeave={leaveRoom} />}
           {hud.phase === "briefing" && <Briefing hud={hud} />}
-          {(hud.phase === "scavenge" || hud.phase === "escape") && (
+          {(hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "arrive") && (
             <Hud
               hud={hud}
               paused={paused}
@@ -248,7 +248,7 @@ export function App(): React.ReactElement {
           {paused && hud.phase !== "lobby" && hud.phase !== "results" && (
             <PauseOverlay prefs={prefs} savePrefs={savePrefs} onResume={resume} onLeave={leaveRoom} engine={engineRef.current} />
           )}
-          {!hud.locked && !paused && (hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "briefing") && (
+          {!hud.locked && !paused && (hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "briefing" || hud.phase === "arrive") && (
             <div className="click-catch" onClick={onCanvasClick}>
               <span>Click to grab the wheel — mouse look needs focus</span>
             </div>
@@ -303,8 +303,15 @@ function Briefing({ hud }: { hud: typeof initialHud }): React.ReactElement {
         <p className="briefing-quota">
           Quota: <b className="quota-num">${hud.quota}</b> of salvage. Find the distributor cap. Doors bang. Keep quiet.
         </p>
+        {hud.exitDriverNick && (
+          <p className="briefing-quota">
+            The drive-in: <b className="quota-num">{hud.exitDriverNick}</b> takes the wheel. Thread the three gates,
+            park at the ring — the clock starts when the van stops. Whoever parks it drives you out.
+          </p>
+        )}
         <div className="report-sec">IF THE NIGHT GOES WRONG</div>
         <p className="briefing-hide">The junkers out front and the passage dumpster open if you need to disappear. (E)</p>
+        <p className="briefing-hide">The van will not leave without the exit driver — downed, stabilize them; gone, carry the body home. (E)</p>
       </div>
     </div>
   );

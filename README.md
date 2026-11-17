@@ -64,12 +64,12 @@ pnpm e2e           # Playwright: two real browsers, one room, join-by-code, full
 | WASD | move | throttle / steer |
 | Mouse | look | look |
 | Shift | sprint (stamina) | — |
-| E | stow loot into the pack; interact: doors, van doors, straps, seats, **hide in the junkers**, load pack at the open van rear; **hold** to revive teammate / install part | exit (when stopped) |
+| E | stow loot into the pack; interact: doors, van doors, straps, seats, **hide in the junkers**, load pack at the open van rear; **carry a fallen teammate's body** / load it into the van; **hold** to revive teammate / install part | exit (when stopped) |
 | Left mouse | haul cargo in your hands (heavy two-handle loot needs it) / release | — |
 | Right mouse (hold) | stabilize carried item (halves impact damage) | — |
 | F | flashlight (must be bought at the gas station) | — |
 | Q | ping (contextual marker at crosshair target) | — |
-| G | drop/throw carried item, or drop the selected pack item | — |
+| G | drop/throw carried item, drop the selected pack item, or set down a carried body | — |
 | 1 / 2 / 3 | select pack slot 1/2/3 | — |
 | Z / X / C | quick chat: HELP CARRY / ENEMY HERE / BACK TO VAN | — |
 | H | — | horn (a big, deliberate noise) |
@@ -90,24 +90,35 @@ shown on touch layouts.
    **gas station** (south-west corner): a $10 personal allowance buys a **truck-stop coffee**
    ($4, faster stamina regen all shift) or the **torchlight flashlight** ($7, arms your F key —
    it matters on BLACKOUT nights). One of each per stop; the allowance restocks after every shift.
-2. Briefing (5 s): three random modifiers are announced.
-3. Scavenge (12 min base): grab valuables, haul them to the van's rear loading zone, find the
+2. Briefing (5 s): three random modifiers are announced — over the van already parked on the old
+   road, because the shift now opens with the **drive-in course**.
+3. **Drive-in (~20 s)**: the whole crew rides in the van, **one random member at the wheel**.
+   Thread the **three checkpoint gates** east along the road, through the lot gate, and park at
+   the ring by the usual spot — the shift clock only starts when the van stops (and the
+   distributor cap promptly gives out, which is why you need a new one). Whoever is holding the
+   wheel at park becomes the **exit driver**. A dropped driver is replaced by the next rider; if
+   nobody drives for 45 s the van brings itself in (nobody can grief-lock a lobby).
+4. Scavenge (12 min base): grab valuables, haul them to the van's rear loading zone, find the
    **distributor cap** and install it at the engine (hold E, 3 s). Small loot (weight ≤ 2) can
    also be **stowed in your 3-slot pack** with E — hands-free, no slow-down, load it at the open
    van rear; heavy two-handle cargo only travels in your hands. The crew's **golf cart** parks by
    the gas pumps from shift start: two seats, no repair needed, quiet-ish — The Caretaker can
    still hear it whine. It cannot leave the lot; only the van ends the shift.
-4. Meet the salvage quota **and** install the part → the west gate opens, phase becomes **GET OUT**.
-5. Everyone boards (rear doors: shotgun seats; driver door: the wheel). Driving asks for a
-   confirming second press if living teammates are still outside.
-6. Drive west through the gate. Crossing the finish line wins — anyone not aboard is left behind.
-7. Shared debrief: salvage vs quota, cargo damage, per-crew stats, **Loudest Employee**,
+5. Meet the salvage quota **and** install the part → the west gate opens, phase becomes **GET OUT**.
+6. Everyone boards (rear doors: shotgun seats; driver door: the wheel). Driving asks for a
+   confirming second press if living teammates are still outside — but **the van will not leave
+   without the exit driver**: downed, the crew must stabilize them; dead, they must **carry the
+   body home** (E to lift, E at the open rear doors to load it). No abandon-press gets past that.
+7. Drive west through the gate. Crossing the finish line wins — anyone not aboard is left behind
+   (a recovered body rides out with the crew and is listed as *brought home* on the report).
+8. Shared debrief: salvage vs quota, cargo damage, per-crew stats, **Loudest Employee**,
    **Most Expensive Mistake**, top hauler, rescuer of the night. One click to run it back
    (fresh seed, same room).
 
 Failure states are explicit: **timeout** (shift ran out), **wipe** (everyone down), or winning
 without the quota is impossible — the gate needs both. Downed players bleed out in 60 s unless a
-teammate holds E for 5 s. Dead players spectate (button cycles teammates).
+teammate holds E for 5 s. Dead players spectate (button cycles teammates) — but their body stays
+on the lot, and hauling it is slow, loud and worth it.
 
 ### Cargo
 
