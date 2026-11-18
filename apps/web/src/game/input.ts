@@ -40,7 +40,9 @@ export class InputManager {
   onAction: (a: ActionKind) => void = () => {};
   onClear: () => void = () => {};
   private el: HTMLElement;
-  private lockedAt = -Infinity;
+  private firstLockedMotion = false;
+  private cursorX = 0;
+  private cursorY = 0;
   private disposers: (() => void)[] = [];
 
   constructor(el: HTMLElement) {
@@ -68,12 +70,23 @@ export class InputManager {
     };
     const ku = (e: KeyboardEvent) => this.keys.delete(e.code);
     const mm = (e: MouseEvent) => {
-      // Chromium can report the cursor warp from acquiring pointer lock as
-      // relative motion. Suppress the handoff before accepting mouse look.
-      if (!this.locked || performance.now() - this.lockedAt < 120) return;
+      if (!this.locked) {
+        this.cursorX = e.clientX;
+        this.cursorY = e.clientY;
+        return;
+      }
+      const { movementX, movementY } = e;
+      if (!movementX && !movementY) return;
+      if (this.firstLockedMotion) {
+        this.firstLockedMotion = false;
+        // Chromium can deliver a delayed reset-to-origin delta after taking
+        // pointer lock. Match the delta to the last unlocked cursor position.
+        const reset = Math.abs(movementX + this.cursorX) <= 2 && Math.abs(movementY + this.cursorY) <= 2;
+        if (reset) return;
+      }
       const s = 0.0022 * this.sensitivity;
-      this.yaw -= e.movementX * s;
-      this.pitch -= e.movementY * s;
+      this.yaw -= movementX * s;
+      this.pitch -= movementY * s;
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
     };
     const md = (e: MouseEvent) => {
@@ -91,8 +104,8 @@ export class InputManager {
     const ctx = (e: Event) => e.preventDefault();
     const plc = () => {
       this.locked = document.pointerLockElement === this.el;
-      if (this.locked) this.lockedAt = performance.now();
-      else this.clear();
+      this.firstLockedMotion = this.locked;
+      if (!this.locked) this.clear();
     };
     const blur = () => this.clear();
     const visibility = () => { if (document.hidden) this.clear(); };

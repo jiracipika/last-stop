@@ -38,15 +38,15 @@ async function joinProbeRoom(page: Page, request: APIRequestContext): Promise<vo
 
 // Walk via the real client input/prediction/server pipeline (same contract as
 // overhaul.spec's helper).
-async function walk(page: Page, x: number, z: number) {
-  await page.evaluate(async ({ x, z }) => {
+async function walk(page: Page, x: number, z: number, tolerance = 0.6) {
+  await page.evaluate(async ({ x, z, tolerance }) => {
     const ls = (window as any).__laststop;
     const e = ls.engine();
     const until = performance.now() + 18000;
     try {
       while (performance.now() < until) {
         const p = ls.net.state.players.get(ls.net.sid);
-        if (Math.hypot(x - p.x, z - p.z) < 0.35) return;
+        if (Math.hypot(x - p.x, z - p.z) < tolerance) return;
         e.input.yaw = Math.atan2(x - p.x, z - p.z);
         e.input.keys.add("KeyW");
         await new Promise((r) => setTimeout(r, 60));
@@ -55,7 +55,7 @@ async function walk(page: Page, x: number, z: number) {
     } finally {
       e.input.keys.delete("KeyW");
     }
-  }, { x, z });
+  }, { x, z, tolerance });
   await page.waitForTimeout(350);
 }
 
@@ -92,7 +92,7 @@ test("E stows small loot into the pack; slots select and drop", async ({ page, r
 
   // Walk around the van hull to reach the toolbox from the open lot.
   await walk(page, -0.4, 17.2);
-  await walk(page, tool!.x, tool!.z);
+  await walk(page, tool!.x, tool!.z, 1.15);
   await aim(page, tool!.x, tool!.z);
   await expect(page.locator(".prompt")).toContainText("Stow", { timeout: 5000 });
   await page.keyboard.press("e");
@@ -142,8 +142,8 @@ test("golf cart: board with E, drive with W, hop back out", async ({ page, reque
   await joinProbeRoom(page, request);
 
   // step up beside the cart (it parks by the gas pumps, facing east)
-  await walk(page, -22.2, 19.6);
-  await aim(page, -23.6, 19.6);
+  await walk(page, -23.4, 17.9, 0.85);
+  await aim(page, -23.42, 19.6);
   await expect(page.locator(".prompt")).toContainText("Drive the golf cart", { timeout: 5000 });
   await page.keyboard.press("e");
   await expect.poll(async () => (await own(page)).seat).toBe(5);

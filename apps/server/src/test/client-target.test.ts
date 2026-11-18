@@ -1,8 +1,9 @@
 // Runs the real, DOM-free targeting method without constructing WebGL.
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { DOORS, ITEM_DEFS, SEAT, TICK_DT } from "@last-stop/shared";
 import { World } from "../sim/world.js";
 import { Engine } from "../../../web/src/game/engine.js";
+import { InputManager } from "../../../web/src/game/input.js";
 
 it("offers the closed door instead of unreachable loot behind it", () => {
   const w = new World();
@@ -78,4 +79,37 @@ it("shows the driver the cart turn while preserving mouse look around the seat",
   world.state.cart.yaw = 1.5;
   engine.updateCamera(TICK_DT, 0, world.state, 0);
   expect(input.yaw).toBeCloseTo(1.65);
+});
+
+
+it("ignores a delayed origin warp on pointer lock and still accepts real look motion", () => {
+  const fakeWindow = new EventTarget();
+  const canvas = new EventTarget();
+  const fakeDocument = Object.assign(new EventTarget(), { pointerLockElement: null as EventTarget | null });
+  vi.stubGlobal("window", fakeWindow);
+  vi.stubGlobal("document", fakeDocument);
+  const input = new InputManager(canvas as HTMLElement);
+  const move = (x: number, y: number, dx: number, dy: number) =>
+    fakeWindow.dispatchEvent(Object.assign(new Event("mousemove"), { clientX: x, clientY: y, movementX: dx, movementY: dy }));
+  try {
+    move(550, 360, 550, 360);
+    fakeDocument.pointerLockElement = canvas;
+    fakeDocument.dispatchEvent(new Event("pointerlockchange"));
+    move(550, 360, 0, 0);
+    move(550, 360, -550, -360);
+    expect(input.yaw).toBe(Math.PI);
+    expect(input.pitch).toBe(0);
+    move(550, 360, 10, -5);
+    expect(input.yaw).toBeCloseTo(Math.PI - 0.022);
+    expect(input.pitch).toBeCloseTo(0.011);
+
+    input.keys.add("KeyW");
+    input.mouseRight = true;
+    input.jumpQueued = true;
+    fakeWindow.dispatchEvent(new Event("blur"));
+    expect(input.frame()).toMatchObject({ mz: 0, jump: false, stabilize: false });
+  } finally {
+    input.dispose();
+    vi.unstubAllGlobals();
+  }
 });
