@@ -401,8 +401,8 @@ export class World {
     this.state.items.clear();
     const all = [...plan.items, plan.part];
     if (this.testItemAt) {
-      // deterministic probe item on the open asphalt by the van's rear-right
-      all.push({ defId: "toolbox", x: 4.2, z: 16.6, yaw: 0 });
+      // Leave a reachable, unobstructed probe beside the solo spawn.
+      all.push({ defId: "toolbox", x: -0.6, z: 8, yaw: 0 });
     }
     for (const planned of all) {
       const id = `i${this.nextItemId++}`;
