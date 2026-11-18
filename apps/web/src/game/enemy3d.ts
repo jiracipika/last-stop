@@ -3,69 +3,107 @@ import * as THREE from "three";
 
 export class EnemyView {
   group = new THREE.Group();
-  private coat: THREE.Mesh;
+  private coat = new THREE.Group();
+  private tails: THREE.Mesh[] = [];
+  private legs: THREE.Group[] = [];
   private head: THREE.Group;
-  private armL: THREE.Mesh;
-  private armR: THREE.Mesh;
+  private armL: THREE.Group;
+  private armR: THREE.Group;
   private lantern: THREE.Group;
   private lanternLight: THREE.PointLight;
-  private lampFace: THREE.Mesh;
+  private eyes: THREE.Group;
+  private lanternGlass: THREE.MeshBasicMaterial;
   private faceCalm: THREE.MeshBasicMaterial;
   private faceAlert: THREE.MeshBasicMaterial;
   private pool: THREE.Mesh;
   private poolMat: THREE.MeshBasicMaterial;
   private sway = 0;
 
-  constructor() {
-    const coatMat = new THREE.MeshLambertMaterial({ color: 0x191c21 });
-    const trimMat = new THREE.MeshLambertMaterial({ color: 0x2c2f36 });
+  constructor(fabric: THREE.Texture) {
+    const coatMat = new THREE.MeshLambertMaterial({ color: 0x5c6664, map: fabric });
+    const trimMat = new THREE.MeshLambertMaterial({ color: 0x282d2e });
+    const patchMat = new THREE.MeshLambertMaterial({ color: 0x827354, map: fabric });
+    const brass = new THREE.MeshLambertMaterial({ color: 0x916742 });
+    const porcelain = new THREE.MeshLambertMaterial({ color: 0xbbb39c, emissive: 0x211c14 });
+    const mesh = (parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+      const part = new THREE.Mesh(geo, mat);
+      part.position.set(x, y, z);
+      parent.add(part);
+      return part;
+    };
+    const box = (parent: THREE.Object3D, mat: THREE.Material, x: number, y: number, z: number, w: number, h: number, d: number) =>
+      mesh(parent, new THREE.BoxGeometry(w, h, d), mat, x, y, z);
 
-    this.coat = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 1.5, 4, 10), coatMat);
-    this.coat.position.y = 1.5;
+    this.coat.position.y = 1.57;
     this.group.add(this.coat);
-    // coat tails
-    const tails = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.16), trimMat);
-    tails.position.set(0, 0.6, -0.18);
-    this.group.add(tails);
+    const chest = mesh(this.coat, new THREE.CylinderGeometry(0.35, 0.29, 0.85, 7), coatMat, 0, 0.25, 0);
+    chest.scale.z = 0.65;
+    mesh(this.coat, new THREE.CylinderGeometry(0.26, 0.42, 0.27, 7), trimMat, 0, 0.67, 0).scale.z = 0.73;
+    for (const side of [-1, 1]) {
+      const tail = mesh(this.coat, new THREE.BoxGeometry(0.32, 0.91, 0.41), coatMat, side * 0.18, -0.51, -0.05);
+      tail.rotation.z = side * 0.09;
+      this.tails.push(tail);
+      box(this.coat, trimMat, side * 0.12, 0.39, 0.235, 0.10, 0.48, 0.035).rotation.z = -side * 0.3;
+    }
+    box(this.coat, trimMat, 0, -0.02, 0, 0.65, 0.075, 0.47);
+    box(this.coat, brass, 0.04, -0.01, 0.245, 0.134, 0.095, 0.035);
+    box(this.coat, patchMat, 0.19, -0.42, 0.17, 0.18, 0.24, 0.035).rotation.z = -0.17;
+    box(this.coat, brass, -0.18, 0.36, 0.258, 0.12, 0.075, 0.025);
 
     this.head = new THREE.Group();
-    const skull = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.42, 0.36), coatMat);
-    this.head.add(skull);
-    // hat brim
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.05, 10), trimMat);
-    brim.position.y = 0.2;
-    this.head.add(brim);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.22, 10), trimMat);
-    crown.position.y = 0.32;
-    this.head.add(crown);
-    // glowing face (materials are reused, never reallocated per frame)
-    this.faceCalm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
-    this.faceAlert = new THREE.MeshBasicMaterial({ color: 0xff5030 });
-    this.lampFace = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.05), this.faceCalm);
-    this.lampFace.position.set(0, 0.02, 0.19);
-    this.head.add(this.lampFace);
-    this.head.position.y = 2.42;
+    const hood = mesh(this.head, new THREE.SphereGeometry(0.29, 9, 7), trimMat, 0, 0.016, -0.05);
+    hood.scale.set(1.07, 1.24, 0.99);
+    const mask = mesh(this.head, new THREE.SphereGeometry(0.233, 7, 6), porcelain, 0, -0.02, 0.165);
+    mask.scale.set(0.78, 1.17, 0.38);
+    box(this.head, trimMat, 0.038, -0.13, 0.247, 0.018, 0.13, 0.019).rotation.z = -0.34;
+    box(this.head, trimMat, 0, -0.132, 0.242, 0.12, 0.022, 0.023);
+    this.faceCalm = new THREE.MeshBasicMaterial({ color: 0xffd2a0 });
+    this.faceAlert = new THREE.MeshBasicMaterial({ color: 0xff5636 });
+    this.eyes = new THREE.Group();
+    for (const side of [-1, 1]) {
+      box(this.head, trimMat, side * 0.077, 0.037, 0.236, 0.093, 0.072, 0.032);
+      box(this.eyes, this.faceCalm, side * 0.077, 0.038, 0.257, 0.041, 0.021, 0.013);
+    }
+    this.head.add(this.eyes);
+    this.head.position.set(0, 2.40, 0.035);
     this.group.add(this.head);
 
-    const armGeo = new THREE.CapsuleGeometry(0.08, 0.9, 2, 6);
-    this.armL = new THREE.Mesh(armGeo, coatMat);
-    this.armR = new THREE.Mesh(armGeo, coatMat);
-    this.armL.position.set(-0.48, 1.7, 0);
-    this.armR.position.set(0.48, 1.7, 0);
-    this.group.add(this.armL, this.armR);
+    const arm = (side: number) => {
+      const joint = new THREE.Group();
+      joint.position.set(side * 0.38, 2.01, 0);
+      mesh(joint, new THREE.CapsuleGeometry(0.118, 0.53, 2, 7), coatMat, side * 0.055, -0.33, 0);
+      box(joint, patchMat, side * 0.055, -0.59, 0, 0.20, 0.09, 0.21);
+      box(joint, trimMat, side * 0.055, -0.72, 0.05, 0.144, 0.23, 0.17);
+      this.group.add(joint);
+      return joint;
+    };
+    this.armL = arm(-1);
+    this.armR = arm(1);
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Group();
+      leg.position.set(side * 0.155, 1.02, -0.02);
+      mesh(leg, new THREE.CapsuleGeometry(0.109, 0.66, 2, 7), trimMat, 0, -0.39, 0);
+      box(leg, trimMat, 0, -0.88, 0.08, 0.24, 0.24, 0.37);
+      this.legs.push(leg);
+      this.group.add(leg);
+    }
 
-    // lantern on a pole
+    // The cage follows the striking hand instead of swinging independently.
     this.lantern = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 6), trimMat);
-    this.lantern.add(pole);
-    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.16), new THREE.MeshBasicMaterial({ color: 0xffc060 }));
-    bulb.position.y = -0.55;
-    this.lantern.add(bulb);
+    this.lantern.position.set(0.08, -0.75, 0.14);
+    this.armR.add(this.lantern);
+    mesh(this.lantern, new THREE.TorusGeometry(0.083, 0.018, 6, 9), brass, 0, -0.055, 0);
+    this.lanternGlass = new THREE.MeshBasicMaterial({ color: 0xffcc7e });
+    mesh(this.lantern, new THREE.CylinderGeometry(0.093, 0.101, 0.24, 6), this.lanternGlass, 0, -0.235, 0);
+    mesh(this.lantern, new THREE.CylinderGeometry(0.10, 0.14, 0.064, 6), brass, 0, -0.094, 0);
+    mesh(this.lantern, new THREE.CylinderGeometry(0.13, 0.106, 0.062, 6), brass, 0, -0.374, 0);
+    for (let i = 0; i < 4; i++) {
+      const angle = i * Math.PI / 2;
+      box(this.lantern, trimMat, Math.sin(angle) * 0.11, -0.23, Math.cos(angle) * 0.11, 0.025, 0.23, 0.025);
+    }
     this.lanternLight = new THREE.PointLight(0xffb45e, 16, 12, 1.7);
-    this.lanternLight.position.y = -0.55;
+    this.lanternLight.position.set(0.09, -0.24, 0.12);
     this.lantern.add(this.lanternLight);
-    this.lantern.position.set(0.55, 1.9, 0.25);
-    this.group.add(this.lantern);
 
     // warm light pool cast on the ground under the lantern (additive decal)
     this.poolMat = new THREE.MeshBasicMaterial({
@@ -105,6 +143,8 @@ export class EnemyView {
 
     // lurching walk
     this.coat.rotation.z = sw * 0.07 * speedLike;
+    this.tails.forEach((tail, i) => { tail.rotation.x = (i === 0 ? sw : -sw) * 0.14 * speedLike; });
+    this.legs.forEach((leg, i) => { leg.rotation.x = (i === 0 ? sw : -sw) * 0.54 * speedLike; });
     this.group.position.y = Math.abs(sw) * 0.05 * speedLike;
     this.armL.rotation.x = -sw * 0.4 * speedLike;
     this.armR.rotation.x = sw * 0.4 * speedLike;
@@ -113,7 +153,9 @@ export class EnemyView {
     this.lantern.rotation.z = sw * 0.35;
     const flare = e.ai === 3 ? 2.4 : e.ai === 2 ? 1.5 : 1;
     this.lanternLight.intensity = (12 + Math.sin(t * 5) * 2) * flare;
-    this.lampFace.material = e.ai === 3 ? this.faceAlert : this.faceCalm;
+    this.eyes.scale.y = e.ai === 3 ? 1.65 : 1;
+    this.eyes.children.forEach((eye) => { (eye as THREE.Mesh).material = e.ai === 3 ? this.faceAlert : this.faceCalm; });
+    this.lanternGlass.color.setHex(e.ai === 3 ? 0xff854b : 0xffcc7e);
 
     // ground pool tracks the same flare; forcing a door strobes with the pounding
     let poolOp = 0.3 * flare;
@@ -144,16 +186,13 @@ export class EnemyView {
   }
 
   dispose(): void {
+    const materials = new Set<THREE.Material>([this.faceCalm, this.faceAlert]);
     this.group.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
-      else if (mat) {
-        const anyMat = mat as THREE.Material & { map?: THREE.Texture };
-        anyMat.map?.dispose();
-        mat.dispose();
-      }
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose();
+      if (mesh.material) materials.add(mesh.material as THREE.Material);
     });
+    materials.forEach((mat) => mat.dispose());
+    this.poolMat.map?.dispose();
   }
 }

@@ -92,33 +92,6 @@ body,
   border-radius: 10px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
-/* clipboard clip holding the sign-in sheet */
-.title-panel::before {
-  content: "";
-  position: absolute;
-  top: -13px;
-  left: 50%;
-  width: 118px;
-  height: 24px;
-  transform: translateX(-50%) rotate(-1.6deg);
-  background: linear-gradient(#3d4855, #222b36);
-  border: 1px solid #4a5b70;
-  border-radius: 6px;
-  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.55);
-}
-.vacancy-strip {
-  width: fit-content;
-  margin: 0 auto 14px;
-  padding: 3px 16px 2px;
-  border: 1px solid rgba(182, 61, 53, 0.7);
-  border-radius: 3px;
-  color: #c96a5c;
-  font-size: 11px;
-  letter-spacing: 7px;
-  text-indent: 7px;
-  background: rgba(28, 8, 6, 0.55);
-  animation: vacancyHum 5.2s infinite;
-}
 /* ATTRACT MODE: the live 3D lot renders behind the clipboard, so the title
    trades its opaque backdrop for a translucent night grade over the render.
    Without .attract-live (engine failed to boot) the opaque background above
@@ -132,56 +105,6 @@ body,
 /* the painted highway dashes would sit on top of the real highway */
 .app.attract-live .title-backdrop::after {
   display: none;
-}
-@keyframes vacancyHum {
-  0%, 88%, 92%, 100% { opacity: 0.85; }
-  90% { opacity: 0.45; }
-  91% { opacity: 0.95; }
-}
-.game-title {
-  margin: 0 0 4px;
-  font-size: 42px;
-  letter-spacing: 5px;
-  text-align: center;
-}
-.t-pale {
-  color: #ffbe55;
-  text-shadow: 0 0 18px rgba(255, 190, 85, 0.55);
-  animation: signFlickerA 6.7s infinite;
-}
-.t-lantern {
-  color: #78e8ff;
-  text-shadow: 0 0 18px rgba(120, 232, 255, 0.5);
-  animation: signFlickerB 8.3s infinite;
-}
-/* one letter on the sign died years ago; maintenance is aware */
-.t-dead {
-  color: #232e3a;
-  text-shadow: none;
-  animation: deadSputter 11s infinite;
-}
-.t-sub {
-  display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  letter-spacing: 10px;
-  color: #6d7d90;
-}
-@keyframes signFlickerA {
-  0%, 74%, 78%, 93.5%, 95%, 100% { opacity: 1; }
-  75.5% { opacity: 0.42; }
-  76.5% { opacity: 0.85; }
-  93% { opacity: 0.6; }
-}
-@keyframes signFlickerB {
-  0%, 31%, 34%, 61.5%, 63.5%, 100% { opacity: 1; }
-  32% { opacity: 0.35; }
-  33% { opacity: 0.8; }
-  62% { opacity: 0.55; }
-}
-@keyframes deadSputter {
-  0%, 95.9%, 97.2%, 100% { color: #232e3a; text-shadow: none; }
-  96.3%, 96.8% { color: rgba(120, 232, 255, 0.4); text-shadow: 0 0 10px rgba(120, 232, 255, 0.3); }
 }
 .form-head {
   margin: 0 0 4px;
@@ -240,24 +163,6 @@ body,
   border-color: #fff;
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
-.hats {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.hat-btn {
-  width: 34px;
-  height: 30px;
-  border-radius: 6px;
-  border: 1px solid #3a4148;
-  background: #141a21;
-  font-size: 15px;
-  cursor: pointer;
-}
-.hat-btn.sel {
-  border-color: #78e8ff;
-  box-shadow: 0 0 8px rgba(120, 232, 255, 0.45);
-}
 .title-actions {
   display: flex;
   gap: 12px;
@@ -302,7 +207,6 @@ body,
 /* keyboard users get a crisp ring; the pointer path stays clean */
 .btn:focus-visible,
 .swatch:focus-visible,
-.hat-btn:focus-visible,
 .q-btn:focus-visible,
 input:focus-visible {
   outline: none;
@@ -1255,13 +1159,8 @@ input:focus-visible {
   border-top: 1px dashed #26313d;
 }
 @media (prefers-reduced-motion: reduce) {
-  .title-panel::before,
   .results-panel,
   .briefing-sheet,
-  .t-pale,
-  .t-lantern,
-  .t-dead,
-  .vacancy-strip,
   .downed-banner {
     animation: none;
   }
@@ -1609,47 +1508,15 @@ input:focus-visible {
    receipt/noir palette comes from the :root tokens above.
    ========================================================================== */
 
-/* ---- title: compact sign-in ---- */
-.field-row {
-  display: flex;
-  gap: 18px;
-}
-.field-row .field {
-  flex: 1;
-  margin: 14px 0 0;
-}
-.field-row .field + .field {
-  border-left: 1px solid var(--line-soft);
-  padding-left: 18px;
-}
 .controls-hint {
   display: flex;
   flex-direction: column;
   gap: 3px;
   font-size: 11.5px;
 }
-.controls-hint .ch-row {
-  color: var(--ink-faint);
-}
-.controls-hint .ch-foot {
-  margin-top: 6px;
-  color: #46536a;
-  letter-spacing: 1px;
-  border-top: 1px dashed var(--line-soft);
-  padding-top: 8px;
-}
-.swatch,
-.hat-btn {
-  transition: transform 0.1s ease, box-shadow 0.14s ease, border-color 0.14s ease;
-}
+.swatch { transition: transform 0.1s ease, box-shadow 0.14s ease, border-color 0.14s ease; }
 .swatch:hover {
   transform: scale(1.14);
-}
-.hat-btn:hover {
-  border-color: var(--cyan);
-}
-.hat-btn.sel {
-  background: #10222c;
 }
 .title-actions {
   border-top: 1px solid var(--line-soft);
@@ -1855,4 +1722,126 @@ input:focus-visible {
 .m-flag.drive {
   color: var(--amber, #ffb347);
   border-color: var(--amber, #ffb347);
+}
+
+/* Roadside dispatch */
+.title-screen,
+.app.attract-live .title-screen {
+  justify-content: flex-start;
+  align-items: safe center;
+  overflow: auto;
+  padding: 28px clamp(22px, 6vw, 100px);
+}
+
+.app.attract-live .title-screen {
+  background: linear-gradient(90deg, rgba(6, 11, 17, 0.95), rgba(6, 11, 17, 0.76) 37%, rgba(6, 11, 17, 0.09) 78%);
+}
+
+.title-panel {
+  width: min(100%, 480px);
+  margin: 0;
+  padding: clamp(22px, 4vw, 40px);
+  border-radius: 4px;
+  border-color: #405058;
+  border-top: 3px solid var(--amber);
+  background: rgba(12, 21, 28, 0.94);
+  box-shadow: 16px 22px 66px #0007;
+}
+
+.title-panel .game-title {
+  text-align: left;
+  font: 900 clamp(43px, 6vw, 76px)/0.93 "Arial Black", system-ui, sans-serif;
+  letter-spacing: -0.048em;
+  color: #f2ead9;
+  text-shadow: none;
+  margin: 0 0 18px;
+}
+
+.title-panel .game-title span {
+  margin-left: 0.14em;
+  color: var(--amber);
+}
+
+.title-panel .tagline {
+  margin: 0 0 22px;
+  max-width: 39ch;
+  font: 400 15px/1.6 system-ui, sans-serif;
+  color: #b5c1c8;
+  text-align: left;
+}
+
+.title-panel .form-head {
+  margin-bottom: 14px;
+  color: #edc991;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.crew-options {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 12px;
+}
+
+.crew-options .swatch:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.crew-headgear select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #384b55;
+  border-radius: 4px;
+  background: #101b23;
+  color: var(--ink);
+  font: inherit;
+  padding: 0 8px;
+}
+
+.title-panel .title-actions { display: grid; gap: 10px; }
+.title-panel .join-row { width: 100%; min-width: 0; }
+.title-panel .join-row input { flex: 1; width: min(100%, 130px); min-width: 0; }
+.title-panel .join-row .btn { flex: 1; }
+
+.title-controls {
+  margin-top: 16px;
+  color: #b6c3cb;
+  font-size: 12px;
+}
+.title-controls summary { cursor: pointer; }
+.title-controls .controls-hint { color: #a7b7c3; margin-top: 8px; }
+
+.lobby {
+  align-items: safe center;
+  overflow: auto;
+  background: linear-gradient(110deg, rgba(10, 19, 23, 0.58), rgba(7, 11, 20, 0.84));
+}
+
+.lobby-panel {
+  border-radius: 4px;
+  border-top: 3px solid #d7b77b;
+  background-color: #111b23f5;
+}
+
+.lobby-panel.gas-stop { border-top-color: #91c7ab; }
+.lobby-panel h2 { font: 750 24px/1.15 system-ui, sans-serif; letter-spacing: 0; color: #f2ead9; }
+.roster .nick small { display: block; margin-top: 2px; color: #899fae; font-size: 10px; }
+.lobby-outfit { padding: 10px; margin-bottom: 12px; border: 1px solid #384b55; }
+.outfit-button { margin-bottom: 12px; }
+.click-catch { border: 0; width: 100%; font: inherit; }
+
+@media (max-width: 780px) {
+  .lobby { flex-direction: column; justify-content: safe center; }
+  .lobby-panel { flex: none; }
+  .title-screen,
+  .app.attract-live .title-screen { justify-content: center; }
+  .crew-options { grid-template-columns: 1fr; }
+}
+
+@media (max-height: 580px) {
+  .title-screen,
+  .app.attract-live .title-screen,
+  .lobby { align-items: flex-start; }
 }

@@ -75,6 +75,25 @@ function speckle(ctx: CanvasRenderingContext2D, rnd: () => number, s: number, n:
   ctx.globalAlpha = 1;
 }
 
+/** Tonal canvas map shared by uniforms, upholstery and the Caretaker's coat. */
+export function buildWorkwearTexture(): THREE.CanvasTexture {
+  return canvasTex(256, (ctx, s) => {
+    const rnd = mulberry32(0xfa81c);
+    ctx.fillStyle = "#bdb7aa";
+    ctx.fillRect(0, 0, s, s);
+    for (let y = 0; y < s; y += 4) {
+      ctx.fillStyle = y % 8 === 0 ? "#d0c8b8" : "#8f8c84";
+      ctx.fillRect(0, y, s, 1);
+    }
+    for (let x = 0; x < s; x += 4) {
+      ctx.fillStyle = "rgba(255,248,230,0.13)";
+      ctx.fillRect(x, 0, 1, s);
+    }
+    speckle(ctx, rnd, s, 1800, "#ffffff", "#3c372d");
+    for (let i = 0; i < 7; i++) blob(ctx, rnd() * s, rnd() * s, 18 + rnd() * 46, "#665b4b", 0.25);
+  }, 0xfa81c);
+}
+
 export interface Tex {
   asphalt: THREE.CanvasTexture;
   gravel: THREE.CanvasTexture;
@@ -103,7 +122,11 @@ export function buildTextures(): Tex {
     const rnd = (ctx as CanvasRenderingContext2D & { rnd: () => number }).rnd;
     ctx.fillStyle = PAL.asphalt;
     ctx.fillRect(0, 0, s, s);
-    speckle(ctx, rnd, s, 2600, "#5a6a78", "#05070a");
+    // Coarse stone and tire-polished patches survive the night lighting.
+    for (let i = 0; i < 13; i++) {
+      blob(ctx, rnd() * s, rnd() * s, 22 + rnd() * 74, i % 2 ? "#4e5860" : "#10181e", 0.23);
+    }
+    speckle(ctx, rnd, s, 4100, "#96a19c", "#05070a");
     for (let i = 0; i < 5; i++) crack(ctx, rnd, s);
     // tar repair patches
     for (let i = 0; i < 3; i++) {

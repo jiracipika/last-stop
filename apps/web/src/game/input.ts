@@ -8,6 +8,7 @@ export interface FrameInput {
   pitch: number;
   sprint: boolean;
   jump: boolean;
+  brake: boolean;
   interact: boolean;
   stabilize: boolean;
 }
@@ -25,8 +26,7 @@ export type ActionKind =
   | "slot2"
   | "interactTap"
   | "exitVan"
-  | "horn"
-  | "pause";
+  | "horn";
 
 export class InputManager {
   yaw = Math.PI;
@@ -38,13 +38,17 @@ export class InputManager {
   sensitivity = 1;
   locked = false;
   onAction: (a: ActionKind) => void = () => {};
+  onClear: () => void = () => {};
   private el: HTMLElement;
+  private firstLockedMotion = false;
+  private cursorX = 0;
+  private cursorY = 0;
   private disposers: (() => void)[] = [];
 
   constructor(el: HTMLElement) {
     this.el = el;
     const kd = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (!this.locked || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const code = e.code;
       this.keys.add(code);
       switch (code) {
@@ -61,16 +65,28 @@ export class InputManager {
         case "KeyG": this.onAction("throwItem"); break;
         case "KeyH": this.onAction("horn"); break;
         case "Space": this.jumpQueued = true; e.preventDefault(); break;
-        case "Escape": this.onAction("pause"); break;
       }
       if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(code)) e.preventDefault();
     };
     const ku = (e: KeyboardEvent) => this.keys.delete(e.code);
     const mm = (e: MouseEvent) => {
-      if (!this.locked) return;
+      if (!this.locked) {
+        this.cursorX = e.clientX;
+        this.cursorY = e.clientY;
+        return;
+      }
+      const { movementX, movementY } = e;
+      if (!movementX && !movementY) return;
+      if (this.firstLockedMotion) {
+        this.firstLockedMotion = false;
+        // Chromium can deliver a delayed reset-to-origin delta after taking
+        // pointer lock. Match the delta to the last unlocked cursor position.
+        const reset = Math.abs(movementX + this.cursorX) <= 2 && Math.abs(movementY + this.cursorY) <= 2;
+        if (reset) return;
+      }
       const s = 0.0022 * this.sensitivity;
-      this.yaw -= e.movementX * s;
-      this.pitch -= e.movementY * s;
+      this.yaw -= movementX * s;
+      this.pitch -= movementY * s;
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
     };
     const md = (e: MouseEvent) => {
@@ -88,8 +104,13 @@ export class InputManager {
     const ctx = (e: Event) => e.preventDefault();
     const plc = () => {
       this.locked = document.pointerLockElement === this.el;
-      if (!this.locked) this.keys.clear();
+      this.firstLockedMotion = this.locked;
+      if (!this.locked) this.clear();
     };
+    const blur = () => this.clear();
+    const visibility = () => { if (document.hidden) this.clear(); };
+    window.addEventListener("blur", blur);
+    document.addEventListener("visibilitychange", visibility);
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     window.addEventListener("mousemove", mm);
@@ -98,6 +119,8 @@ export class InputManager {
     this.el.addEventListener("contextmenu", ctx);
     document.addEventListener("pointerlockchange", plc);
     this.disposers.push(() => {
+      window.removeEventListener("blur", blur);
+      document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
       window.removeEventListener("mousemove", mm);
@@ -108,12 +131,20 @@ export class InputManager {
     });
   }
 
+  clear(): void {
+    this.keys.clear();
+    this.mouseLeft = false;
+    this.mouseRight = false;
+    this.jumpQueued = false;
+    this.onClear();
+  }
+
   requestLock(): void {
-    void this.el.requestPointerLock()?.catch?.(() => {});
+    void this.el.requestPointerLock?.()?.catch?.(() => {});
   }
 
   exitLock(): void {
-    if (document.pointerLockElement) document.exitPointerLock();
+    if (document.pointerLockElement === this.el) document.exitPointerLock();
   }
 
   frame(): FrameInput {
@@ -131,6 +162,7 @@ export class InputManager {
       pitch: this.pitch,
       sprint: k.has("ShiftLeft") || k.has("ShiftRight"),
       jump: this.jumpQueued,
+      brake: k.has("Space"),
       interact: k.has("KeyE"),
       stabilize: this.mouseRight,
     };

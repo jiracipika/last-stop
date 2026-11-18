@@ -1,6 +1,6 @@
 // Title screen: neon sign vibes, nickname + color + headgear, create/join.
 import React, { useEffect, useRef, useState } from "react";
-import { crewHex } from "../game/palette.js";
+import { CrewOptions } from "./CrewOptions.js";
 import type { Prefs } from "../App.js";
 
 // Invite links land here as /?code=CODE (legacy links used ?room=). Sanitize
@@ -11,14 +11,6 @@ function inviteCodeFromUrl(): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
 }
 
-const HATS = [
-  { label: "Hi-vis cap", glyph: "🧢" },
-  { label: "Hard hat", glyph: "⛑" },
-  { label: "Beanie", glyph: "🎩" },
-  { label: "Headphones", glyph: "🎧" },
-  { label: "Bare head", glyph: "🚫" },
-];
-
 export function TitleScreen({
   prefs,
   savePrefs,
@@ -26,12 +18,13 @@ export function TitleScreen({
 }: {
   prefs: Prefs;
   savePrefs: (p: Prefs) => void;
-  onEnter: (mode: "create" | "join", code: string) => void;
+  onEnter: (mode: "create" | "join", code: string) => Promise<void>;
 }): React.ReactElement {
   const [code, setCode] = useState(inviteCodeFromUrl);
   const [busy, setBusy] = useState(false);
   const joinInputRef = useRef<HTMLInputElement | null>(null);
   const prefilled = code !== "";
+  const createLabel = busy ? "Connecting…" : "Start a new shift";
 
   // An invite-link code focuses the join field so the friend only adds a name.
   useEffect(() => {
@@ -55,17 +48,12 @@ export function TitleScreen({
     <div className="title-screen">
       <div className="title-backdrop" />
       <div className="title-panel">
-        <div className="vacancy-strip">NO VACANCY</div>
-        <h1 className="game-title">
-          <span className="t-pale">PALE</span> <span className="t-lantern">LA<span className="t-dead">N</span>TERN</span>
-          <span className="t-sub">ROADSIDE RECOVERY</span>
-        </h1>
+        <h1 className="game-title">LAST<span>STOP</span></h1>
         <p className="tagline">
-          The van broke down at the worst motel on the highway. Haul the valuables, find a distributor cap,
-          and get out before The Caretaker collects <em>you</em>.
+          Your recovery van is stranded at the Pale Lantern Motel. Haul enough salvage, fix the van,
+          and get the crew out before the Caretaker catches you.
         </p>
-
-        <div className="form-head">DUSTPAN RECOVERY CO. — NIGHT-SHIFT SIGN-IN · FORM 2AM-B</div>
+        <div className="form-head">Night shift sign-in</div>
 
         <label className="field">
           <span>Crew name</span>
@@ -77,47 +65,19 @@ export function TitleScreen({
           />
         </label>
 
-        <div className="field-row">
-          <div className="field">
-            <span>Uniform color</span>
-            <div className="colors">
-              {Array.from({ length: 8 }, (_, i) => crewHex(i)).map((c, i) => (
-                <button
-                  key={c}
-                  aria-label={`color ${i}`}
-                  className={`swatch ${prefs.color === i ? "sel" : ""}`}
-                  style={{ background: c }}
-                  onClick={() => savePrefs({ ...prefs, color: i })}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="field">
-            <span>Headgear</span>
-            <div className="hats">
-              {HATS.map((h, i) => (
-                <button
-                  key={h.label}
-                  className={`hat-btn ${prefs.hat === i ? "sel" : ""}`}
-                  onClick={() => savePrefs({ ...prefs, hat: i })}
-                  title={h.label}
-                >
-                  {h.glyph}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <CrewOptions color={prefs.color} hat={prefs.hat}
+          onChange={(color, hat) => savePrefs({ ...prefs, color, hat })} />
 
         <div className="title-actions">
           <button className="btn primary" disabled={busy} onClick={() => void go("create")}>
-            Start a new shift
+            {createLabel}
           </button>
           <div className="join-row">
             <input
               ref={joinInputRef}
               maxLength={5}
               placeholder="CODE"
+              aria-label="Room code"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
               onKeyDown={(e) => e.key === "Enter" && void go("join")}
@@ -128,12 +88,14 @@ export function TitleScreen({
           </div>
         </div>
 
-        <div className="controls-hint">
-          <span className="ch-row"><b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>Space</b> jump</span>
-          <span className="ch-row"><b>E</b> stow / interact · <b>LMB</b> haul cargo · <b>RMB</b> stabilize · <b>G</b> drop</span>
-          <span className="ch-row"><b>F</b> flashlight · <b>Q</b> ping · <b>1/2/3</b> pack slots · <b>Z/X/C</b> quick chat · <b>H</b> horn</span>
-          <span className="ch-foot">1–4 players · headphones recommended · Esc pauses</span>
-        </div>
+        <details className="title-controls">
+          <summary>Controls</summary>
+          <div className="controls-hint">
+            <span><b>WASD</b> Move or drive · <b>Mouse</b> Look · <b>Shift</b> Sprint</span>
+            <span><b>E</b> Interact or stow · <b>LMB</b> Carry · <b>G</b> Drop</span>
+            <span><b>Space</b> Jump or brake · <b>1–3</b> Pack slots · <b>Esc</b> Pause</span>
+          </div>
+        </details>
       </div>
     </div>
   );

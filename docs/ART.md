@@ -78,8 +78,7 @@ Deferred (per direction): voice chat, progression economy details.
 All world materials are **original procedural canvas textures**, generated deterministically
 (`mulberry32` seed constants) at runtime by `apps/web/src/game/textures.ts` — no external
 image assets, no runtime hotlinks, nothing to license. See the manifest at the bottom of this
-file. Normal/roughness maps are NOT faked from color output; materials stay Lambert (vertex
-lit) by design for the low-poly look and SwiftShader floor.
+file. Most surfaces use Lambert materials for the low-poly look and software rendering. Wet patches use one Phong material to pick up moving highlights from lot lamps and headlights.
 
 ## Manifest (procedural set, slice 1)
 
@@ -89,7 +88,9 @@ unless noted). Tiles at consistent world scale: floors 4 m/tile, walls ~4 m/tile
 
 | Material | Size | Seed | Notes |
 |---|---|---|---|
-| asphalt | 512 | 0xa51 | aggregate speckle, cracks, tar patches; stall lines are geometry |
+| asphalt | 512 | 0xa51 | aggregate, tar repairs, tire-polished wear and cracks |
+| wet-lot puddles | 128 | 0x9add1e | feathered alpha shapes on one merged mesh with a Phong specular response |
+| workwear | 256 | 0xfa81c | shared canvas weave for crew uniforms, the Caretaker coat, and cart upholstery |
 | gravel | 512 | 0x9a7e1 | stones over dirt, west yard + east alley |
 | plaster | 512 | 0x91a57 | dirty cream, mid-freq weathering blotches, drips, brighter-teal wainscot + cream cap at wall base |
 | garageSteel | 512 | 0x57ee1 | teal cinderblock coursing, edge wear, sparse rust |

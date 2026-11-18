@@ -1,6 +1,6 @@
 // Pack slots + the golf cart through the real client pipeline: reserve a room
 // with the testItemAt knob (LS_TEST_MODE test server drops a toolbox on the
-// asphalt beside the van), then drive everything with the real keyboard,
+// asphalt beside the solo spawn), then drive everything with the real keyboard,
 // prompts and HUD the way a player would.
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
@@ -38,24 +38,25 @@ async function joinProbeRoom(page: Page, request: APIRequestContext): Promise<vo
 
 // Walk via the real client input/prediction/server pipeline (same contract as
 // overhaul.spec's helper).
-async function walk(page: Page, x: number, z: number) {
-  await page.evaluate(async ({ x, z }) => {
+async function walk(page: Page, x: number, z: number, tolerance = 0.6) {
+  await page.evaluate(async ({ x, z, tolerance }) => {
     const ls = (window as any).__laststop;
     const e = ls.engine();
     const until = performance.now() + 18000;
     try {
       while (performance.now() < until) {
         const p = ls.net.state.players.get(ls.net.sid);
-        if (Math.hypot(x - p.x, z - p.z) < 0.35) return;
+        if (Math.hypot(x - p.x, z - p.z) < tolerance) return;
         e.input.yaw = Math.atan2(x - p.x, z - p.z);
         e.input.keys.add("KeyW");
         await new Promise((r) => setTimeout(r, 60));
       }
-      throw new Error(`Could not walk to ${x}, ${z}`);
+      const p = ls.net.state.players.get(ls.net.sid);
+      throw new Error(`Could not walk to (${x}, ${z}); last position (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
     } finally {
       e.input.keys.delete("KeyW");
     }
-  }, { x, z });
+  }, { x, z, tolerance });
   await page.waitForTimeout(350);
 }
 
@@ -78,19 +79,18 @@ const own = (page: Page) =>
 test("E stows small loot into the pack; slots select and drop", async ({ page, request }) => {
   await joinProbeRoom(page, request);
 
-  // the testItemAt toolbox by the van's rear-right
+  // The probe is in reach of the solo spawn so this spec isolates the pack interaction.
   const tool = await page.evaluate(() => {
     const ls = (window as any).__laststop;
     for (const [id, it] of ls.net.state.items) {
-      if (it.defId === "toolbox" && it.state === 0 && Math.hypot(it.x - 4.2, it.z - 16.6) < 1) {
+      if (it.defId === "toolbox" && it.state === 0 && Math.hypot(it.x + 0.6, it.z - 8) < 0.1) {
         return { id, x: it.x, z: it.z };
       }
     }
     return null;
   });
-  expect(tool, "probe toolbox spawned beside the van").toBeTruthy();
+  expect(tool, "probe toolbox spawned beside the crew").toBeTruthy();
 
-  await walk(page, tool!.x, tool!.z);
   await aim(page, tool!.x, tool!.z);
   await expect(page.locator(".prompt")).toContainText("Stow", { timeout: 5000 });
   await page.keyboard.press("e");
@@ -140,8 +140,8 @@ test("golf cart: board with E, drive with W, hop back out", async ({ page, reque
   await joinProbeRoom(page, request);
 
   // step up beside the cart (it parks by the gas pumps, facing east)
-  await walk(page, -22.2, 19.6);
-  await aim(page, -23.6, 19.6);
+  await walk(page, -21.65, 19.65);
+  await aim(page, -23.42, 19.6);
   await expect(page.locator(".prompt")).toContainText("Drive the golf cart", { timeout: 5000 });
   await page.keyboard.press("e");
   await expect.poll(async () => (await own(page)).seat).toBe(5);
