@@ -90,6 +90,8 @@ test("E stows small loot into the pack; slots select and drop", async ({ page, r
   });
   expect(tool, "probe toolbox spawned beside the van").toBeTruthy();
 
+  // Walk around the van hull to reach the toolbox from the open lot.
+  await walk(page, -0.4, 17.2);
   await walk(page, tool!.x, tool!.z);
   await aim(page, tool!.x, tool!.z);
   await expect(page.locator(".prompt")).toContainText("Stow", { timeout: 5000 });

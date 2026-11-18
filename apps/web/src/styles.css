@@ -1751,7 +1751,7 @@ input:focus-visible {
 .title-panel .game-title {
   text-align: left;
   font: 900 clamp(43px, 6vw, 76px)/0.93 "Arial Black", system-ui, sans-serif;
-  letter-spacing: -0.075em;
+  letter-spacing: -0.048em;
   color: #f2ead9;
   text-shadow: none;
   margin: 0 0 18px;

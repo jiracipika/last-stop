@@ -40,6 +40,7 @@ export class InputManager {
   onAction: (a: ActionKind) => void = () => {};
   onClear: () => void = () => {};
   private el: HTMLElement;
+  private lockedAt = -Infinity;
   private disposers: (() => void)[] = [];
 
   constructor(el: HTMLElement) {
@@ -67,7 +68,9 @@ export class InputManager {
     };
     const ku = (e: KeyboardEvent) => this.keys.delete(e.code);
     const mm = (e: MouseEvent) => {
-      if (!this.locked) return;
+      // Chromium can report the cursor warp from acquiring pointer lock as
+      // relative motion. Suppress the handoff before accepting mouse look.
+      if (!this.locked || performance.now() - this.lockedAt < 120) return;
       const s = 0.0022 * this.sensitivity;
       this.yaw -= e.movementX * s;
       this.pitch -= e.movementY * s;
@@ -88,7 +91,8 @@ export class InputManager {
     const ctx = (e: Event) => e.preventDefault();
     const plc = () => {
       this.locked = document.pointerLockElement === this.el;
-      if (!this.locked) this.clear();
+      if (this.locked) this.lockedAt = performance.now();
+      else this.clear();
     };
     const blur = () => this.clear();
     const visibility = () => { if (document.hidden) this.clear(); };

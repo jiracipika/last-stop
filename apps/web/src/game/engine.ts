@@ -1137,12 +1137,13 @@ export class Engine {
   }
 
   private frameInner(now: number): void {
-    const dt = Math.min(0.05, (now - this.lastFrame) / 1000) || 0.016;
+    const frameSeconds = (now - this.lastFrame) / 1000 || 0.016;
+    const dt = Math.min(0.05, Math.max(0, frameSeconds));
     this.lastFrame = now;
     const t = now / 1000;
     const st = this.net.state;
 
-    this.fpsAcc += dt;
+    this.fpsAcc += Math.max(0, frameSeconds);
     this.fpsN++;
     if (this.bangToastCd > 0) this.bangToastCd -= dt;
     this.store.pruneToasts();
@@ -1739,7 +1740,16 @@ export class Engine {
     const mix = (p: readonly [number, number, number], q: readonly [number, number, number], k: 0 | 1 | 2) =>
       p[k] + (q[k] - p[k]) * e;
     this.camera.position.set(mix(a.pos, b.pos, 0), mix(a.pos, b.pos, 1), mix(a.pos, b.pos, 2));
-    this.camera.lookAt(mix(a.look, b.look, 0), mix(a.look, b.look, 1), mix(a.look, b.look, 2));
+    const tx = mix(a.look, b.look, 0);
+    const tz = mix(a.look, b.look, 2);
+    // The desktop sign-in panel sits left of frame. Keep the motel and van
+    // visible to its right without changing the first-person projection.
+    const offset = this.camera.aspect > 1.2 ? 0.27 : 0;
+    this.camera.lookAt(
+      tx + (tz - this.camera.position.z) * offset,
+      mix(a.look, b.look, 1),
+      tz - (tx - this.camera.position.x) * offset,
+    );
   }
 
   private updateMarkers(dt: number): void {
