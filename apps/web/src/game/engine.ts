@@ -5,7 +5,7 @@
 // camera from the attract path to the gameplay path (see setAttract).
 import * as THREE from "three";
 import {
-  AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
+  vanLocalToWorld, AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
   CART, CART_START, SEAT, stowable, COURSE, missionSeconds,
   SnapBuf, LOS_BLOCKERS, hasLineOfSight,
   type RoomState, type PlayerState, QUICK_MESSAGES,
@@ -15,6 +15,7 @@ import { VanView } from "./van3d.js";
 import { CartView } from "./cart3d.js";
 import { EnemyView } from "./enemy3d.js";
 import { AvatarView } from "./avatars.js";
+import { buildWorkwearTexture } from "./textures.js";
 import { ItemView } from "./items3d.js";
 import { Predictor } from "./predict.js";
 import { InputManager, type ActionKind } from "./input.js";
@@ -129,7 +130,8 @@ export class Engine {
   world3d: World3D;
   vanView: VanView;
   cartView: CartView;
-  enemyView = new EnemyView();
+  private readonly workwear = buildWorkwearTexture();
+  enemyView = new EnemyView(this.workwear);
   avatars = new Map<string, AvatarView>();
   itemViews = new Map<string, ItemView>();
   markers3d: Marker3D[] = [];
@@ -172,6 +174,13 @@ export class Engine {
       this.inputInstance = new InputManager(this.renderer.domElement);
       this.inputInstance.sensitivity = this.settings.sensitivity;
       this.inputInstance.onAction = (a) => this.onAction(a);
+      this.inputInstance.onClear = () => {
+        this.heldTarget = null;
+        this.store.set({ progress: 0, progressKind: "" });
+        this.net.sendInput({
+          mx: 0, mz: 0, sprint: false, jump: false, brake: false, interact: false, stabilize: false,
+        });
+      };
     }
     return this.inputInstance;
   }
@@ -183,6 +192,9 @@ export class Engine {
    *  predictor's ring tags; the server acks it back via PlayerState.inputSeq) */
   private sendSeq = 0;
   private target: TargetInfo | null = null;
+  private heldTarget: TargetInfo | null = null;
+  private cameraSeat = 0;
+  private vehicleYaw = 0;
   private shakeAmount = 0;
   // ---- impact feel (game-feel pass) ----
   /** hit-stop: while now < hitstopUntil, interpolated entities render at the
@@ -238,27 +250,25 @@ export class Engine {
     this.net = net;
     this.settings = settings;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== "low", powerPreference: "high-performance" });
-    this.renderer.setClearColor(0x0a0f16);
+    this.renderer.setClearColor(0x101923);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
     this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.08, 240);
-    this.scene.fog = new THREE.FogExp2(0x0a0f16, 0.021);
+    this.scene.fog = new THREE.FogExp2(0x101923, 0.021);
 
     this.scene.add(new THREE.AmbientLight(0x22304a, 0.75));
-    const moon = new THREE.DirectionalLight(0x8fa8d0, 0.5);
+    const moon = new THREE.DirectionalLight(0xb2c9e5, 0.65);
     moon.position.set(40, 60, -50);
     this.scene.add(moon);
     const hemi = new THREE.HemisphereLight(0x2a3648, 0x14161a, 0.5);
     this.scene.add(hemi);
 
-    const mods: string[] = net.state ? [...net.state.modifiers] : [];
-    const blackout = mods.includes("blackout");
-    this.world3d = new World3D(blackout);
+    this.world3d = new World3D();
     this.world3d.setReduceFlash(settings.reduceFlash);
     this.scene.add(this.world3d.group);
     this.vanView = new VanView(this.world3d.textureKit);
     this.scene.add(this.vanView.group);
-    this.cartView = new CartView();
+    this.cartView = new CartView(this.world3d.textureKit, this.workwear);
     this.scene.add(this.cartView.group);
     this.scene.add(this.enemyView.group);
     this.scene.add(this.courseGates);
@@ -267,12 +277,13 @@ export class Engine {
     // InputManager is created lazily by the `input` getter: at the title its
     // window listeners would eat the nickname field's keystrokes.
 
-    net.onEvent((e) => this.handleEvent(e));
+    this.disposers.push(net.onEvent((e) => this.handleEvent(e)));
     // net.room?.onStateChange is NOT subscribed here: at boot (attract mode)
     // no room exists yet — the subscription is attached lazily in frame().
-    net.onStatus(() => {
+    this.disposers.push(net.onStatus(() => {
+      if (net.status !== "connected") this.inputInstance?.clear();
       store.set({ connStatus: net.status, connDetail: net.statusDetail });
-    });
+    }));
 
     this.applyQuality();
     this.resize();
@@ -398,6 +409,14 @@ export class Engine {
       for (const view of this.itemViews.values()) { this.scene.remove(view.group); view.dispose(); }
       this.avatars.clear();
       this.itemViews.clear();
+      this.target = null;
+      this.heldTarget = null;
+      this.cameraSeat = 0;
+      this.lastPhase = "lobby";
+      this.world3d.setGateOpen(false);
+      this.world3d.setStorm(false);
+      this.stormOn = false;
+      audio.setRain(false);
       this.remoteBufs.clear();
       this.remoteStride.clear();
       this.vanBuf = new SnapBuf();
@@ -426,6 +445,7 @@ export class Engine {
     this.vanView.dispose();
     this.cartView.dispose();
     this.enemyView.dispose();
+    this.workwear.dispose();
     for (const av of this.avatars.values()) av.dispose();
     for (const view of this.itemViews.values()) view.dispose();
     this.renderer.dispose();
@@ -436,14 +456,16 @@ export class Engine {
     const st = this.net.state;
     if (!st) return;
     const me = st.players.get(this.net.sid);
-    if (a === "pause") return; // handled by React
-    if (!me) return;
+    if (!me || !["arrive", "scavenge", "escape"].includes(st.phase)) return;
+    if (me.dead || me.downed) return;
 
     switch (a) {
       case "grabRelease":
         if (me.carrying) {
-          this.net.act("release", { thrown: this.input.keys.has("ShiftLeft") });
-        } else if (this.target?.kind === "item" || this.target?.kind === "itemHands") {
+          this.net.act("release", { thrown: this.input.frame().sprint });
+        } else {
+          this.scanTarget(st, me);
+          if (this.target?.kind !== "item" && this.target?.kind !== "itemHands") break;
           // hands-grab works for anything reachable (heavies need it)
           this.net.act("grab", { id: this.target.id });
         }
@@ -484,6 +506,8 @@ export class Engine {
         break;
       }
       case "interactTap": {
+        this.heldTarget = null;
+        this.scanTarget(st, me);
         const t = this.target;
         if (me.seat > 0) {
           this.net.act("exitVan"); // exits whichever vehicle (van or cart)
@@ -502,7 +526,7 @@ export class Engine {
           else if (t.kind === "loadBody") this.net.act("loadBody");
           else if (t.kind === "hide") this.net.act("hide", { spot: t.id });
           else if (t.kind === "hidden") this.net.act("hide", { out: true });
-          // revive/install are hold-interactions via input.interact
+          else if (t.kind === "revive" || t.kind === "install") this.heldTarget = t;
         }
         break;
       }
@@ -571,6 +595,8 @@ export class Engine {
         if (e.sid !== this.net.sid) break;
         if (e.k === "packFull") this.store.toast("Pack full — 3 slots occupied", "warn");
         else if (e.k === "noFlashlight") this.store.toast("No flashlight — the gas station sells them before the shift", "warn");
+        else if (e.k === "movingExit") this.store.toast("Slow down before getting out", "warn");
+        else if (e.k === "blockedExit") this.store.toast("No room to get out. Move the vehicle away from the obstacle.", "warn");
         else if (e.k === "broke") this.store.toast("Not enough gas-station money", "warn");
         break;
       }
@@ -764,6 +790,7 @@ export class Engine {
         break;
       }
       case "seat":
+        if (e.cabSide === -1 || e.cabSide === 1) this.vanView.swingCabDoor(e.cabSide);
         break;
       case "hide": {
         const dragged = !e.on && e.dragged === true;
@@ -784,7 +811,7 @@ export class Engine {
         break;
       }
       case "prog":
-        if (e.sid === this.net.sid) {
+        if (e.sid === this.net.sid && (Number(e.v) === 0 || this.heldTarget?.kind === e.k)) {
           this.store.set({ progress: clamp01(Number(e.v)), progressKind: String(e.k) });
         }
         break;
@@ -925,15 +952,19 @@ export class Engine {
       if (d > range) return;
       // Match the server's walls-only pickup rule. Loot behind a closed
       // door must not steal that door's E prompt and produce a rejected grab.
-      if ((t.kind === "item" || t.kind === "itemHands" || t.kind === "body") &&
-          !hasLineOfSight(px, pz, x, z, pickupBlockers)) return;
+      if (t.kind === "door") {
+        const blockers = LOS_BLOCKERS.concat(
+          DOORS.filter(d => d.id !== t.id && !st.doors.get(d.id)?.open).map(doorAabb),
+        );
+        if (!hasLineOfSight(px, pz, x, z, blockers)) return;
+      } else if (!hasLineOfSight(px, pz, x, z, pickupBlockers)) return;
       const dot = d < 0.01 ? 1 : (dx * fwd.x + dz * fwd.z) / d;
-      if (dot < minDot && d > 1.2) return;
+      if (dot < minDot && d > 0.55) return;
       const score = dot * weight * 2 - d * 0.08;
       if (!best || score > best.score) best = { ...t, score, pos: { x, z } };
     };
 
-    if (me.seat > 0) {
+    if (me.seat > 0 || me.dead || me.downed || !["scavenge", "escape"].includes(st.phase)) {
       this.target = null;
       return;
     }
@@ -947,6 +978,7 @@ export class Engine {
       if (it.state === 2 || it.state === 3 || it.state === 4) continue;
       const def = ITEM_DEFS[it.defId];
       if (!def) continue;
+      if (me.carryBody) break;
       const mine = me.carrying === id;
       if (it.state === 1 && !mine) {
         const handleFree = def.twoHandle && !it.h1;
@@ -958,16 +990,17 @@ export class Engine {
       if (it.state === 0) {
         // E stows small loot straight into the pack; heavy cargo stays a
         // hands job (LMB) — two-handle stuff never fits a body slot
-        if (stowable(def)) {
+        if (stowable(def) && [...me.slots].some((slot) => !slot)) {
           consider({ kind: "item", id, label: `Stow ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
-        } else {
-          consider({ kind: "itemHands", id, label: `Grab ${def.name} ($${it.value})` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
+        } else if (!me.carrying) {
+          const hint = stowable(def) ? " · pack full" : "";
+          consider({ kind: "itemHands", id, label: `Grab ${def.name} ($${it.value})${hint}` }, it.x, it.z, PLAYER.GRAB_RANGE + def.radius);
         }
       }
     }
 
     // junker hiding spots
-    if (!me.carrying) {
+    if (!me.carrying && !me.carryBody) {
       for (const s of HIDE_SPOTS) {
         if ([...st.players.values()].some((p) => p.hidden && Math.hypot(p.x - s.x, p.z - s.z) < 1)) continue;
         consider(
@@ -1000,18 +1033,18 @@ export class Engine {
     const strap = toWorld(VAN.STRAP_POINT.x, VAN.STRAP_POINT.z);
     const enginePt = toWorld(VAN.ENGINE_POINT.x, VAN.ENGINE_POINT.z);
     const driverDoor = toWorld(VAN.DRIVER_POINT.x, VAN.DRIVER_POINT.z);
-    if (van.doorsOpen) {
+    if (Math.abs(van.speed) <= 0.5 && van.doorsOpen) {
       // door leaf toggle: only when actually facing the leaf (minDot gate)
       const doorLatch = toWorld(-1.02, -2.4);
       consider({ kind: "vanDoors", id: "van", label: "Close van doors" }, doorLatch.x, doorLatch.z, VAN.INTERACT_RANGE, 0.9, 0.78);
-    } else {
+    } else if (Math.abs(van.speed) <= 0.5) {
       consider({ kind: "vanDoors", id: "van", label: "Open van doors" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
     }
     consider({ kind: "vanLights", id: "van", label: van.lightsOn ? "Kill headlights" : "Headlights on" }, enginePt.x, enginePt.z, PLAYER.INTERACT_RANGE + 0.6, 0.8);
     if (van.cargo.length > 0) {
       consider({ kind: "straps", id: "van", label: van.strapped ? "Release cargo straps" : "Strap down cargo" }, strap.x, strap.z, VAN.INTERACT_RANGE, 0.95);
     }
-    if (!me.carrying && Math.abs(van.speed) <= 0.5) {
+    if (!me.carrying && !me.carryBody && Math.abs(van.speed) <= 0.5) {
       // loading the pack takes priority over boarding at the same spot: the
       // active slot's item reads as the action, empty pack = climb in
       const activeItem = me.slots[me.slotSel] ? st.items.get(me.slots[me.slotSel]!) : undefined;
@@ -1033,7 +1066,7 @@ export class Engine {
         x: cart.x + CART.SEATS[i]!.x * ccos + CART.SEATS[i]!.z * csin,
         z: cart.z - CART.SEATS[i]!.x * csin + CART.SEATS[i]!.z * ccos,
       });
-      if (!me.carrying && Math.abs(cart.speed) <= 0.5) {
+      if (!me.carrying && !me.carryBody && Math.abs(cart.speed) <= 0.5) {
         const passengerTaken = [...st.players.values()].some((p) => p.seat === SEAT.CART_PASSENGER);
         if (!cart.driver) {
           const s = cartSeat(0);
@@ -1065,7 +1098,7 @@ export class Engine {
       const carried = st.items.get(me.carrying);
       if (carried?.defId === "distributor" && !van.partInstalled) {
         const d = dist2d(px, pz, enginePt.x, enginePt.z);
-        if (d < PLAYER.INTERACT_RANGE + 1.2) {
+        if (d < VAN.INSTALL_RANGE && hasLineOfSight(px, pz, enginePt.x, enginePt.z, pickupBlockers)) {
           this.target = { kind: "install", id: me.carrying, label: "Install distributor" };
           this.lastTargetPos = enginePt;
           return;
@@ -1075,7 +1108,7 @@ export class Engine {
 
     // revive prompt
     for (const [sid2, p] of st.players) {
-      if (p.downed && !p.dead && sid2 !== this.net.sid) {
+      if (p.downed && !p.dead && p.connected && sid2 !== this.net.sid && hasLineOfSight(px, pz, p.x, p.z, pickupBlockers)) {
         consider({ kind: "revive", id: sid2, label: `Pick up ${p.nick}` }, p.x, p.z, PLAYER.INTERACT_RANGE, 1.4);
       }
     }
@@ -1131,6 +1164,7 @@ export class Engine {
         this.scanTarget(st, me);
       }
       this.syncEntities(dt, st, t, now);
+      this.world3d.setBlackout((st.phase === "scavenge" || st.phase === "escape") && [...st.modifiers].includes("blackout"));
       this.updateCourseGates(st, t);
       this.world3d.update(dt, t);
       this.world3d.applyGate(dt);
@@ -1143,7 +1177,10 @@ export class Engine {
       this.vanView.update(VAN_START.x, VAN_START.z, VAN_START.yaw, 0, false, false, t, dt);
       this.cartView.update(CART_START.x, CART_START.z, CART_START.yaw, 0, dt);
       this.enemyView.group.visible = false;
+      this.courseGates.visible = false;
+      this.world3d.setBlackout(false);
       this.world3d.update(dt, t);
+      this.world3d.applyGate(dt);
       this.world3d.cullLights(this.camera.position);
     }
 
@@ -1172,6 +1209,13 @@ export class Engine {
 
   private stepSelf(dt: number, st: RoomState, me: PlayerState): void {
     const fi = this.input.frame();
+    const playing = st.phase === "arrive" || st.phase === "scavenge" || st.phase === "escape";
+    if (!fi.interact || !playing || me.seat || me.dead || me.downed || me.hidden) {
+      if (this.heldTarget || this.store.state.progress) {
+        this.heldTarget = null;
+        this.store.set({ progress: 0, progressKind: "" });
+      }
+    }
     if (st.phase === "lobby" || st.phase === "briefing" || st.phase === "results") {
       // lobby/briefing/results: the server teleports the crew at phase flips —
       // keep stepping the predictor here and reconcile slingshots the body
@@ -1224,8 +1268,11 @@ export class Engine {
         yaw: fi.yaw,
         pitch: fi.pitch,
         sprint: fi.sprint,
-        jump: fi.jump,
-        interact: fi.interact,
+        jump: playing && me.seat === 0 && fi.jump,
+        brake: playing && me.seat > 0 && fi.brake,
+        interact: !!this.heldTarget,
+        interactTarget: this.heldTarget?.id ?? "",
+        interactKind: this.heldTarget?.kind ?? "",
         stabilize: fi.stabilize,
         seq: this.sendSeq,
       });
@@ -1251,17 +1298,23 @@ export class Engine {
     for (const [sid, p] of st.players) {
       seen.add(sid);
       let av = this.avatars.get(sid);
-      if (!av) {
-        av = new AvatarView(sid, p.color, p.nick, p.hat);
+      if (!av || av.colorIdx !== p.color || av.hat !== p.hat || av.nick !== p.nick) {
+        if (av) {
+          this.scene.remove(av.group);
+          av.dispose();
+        }
+        av = new AvatarView(sid, p.color, p.nick, p.hat, this.workwear);
         this.avatars.set(sid, av);
         this.scene.add(av.group);
       }
+      const pose = {
+        x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, hidden: p.hidden, dead: p.dead,
+        downed: p.downed, seat: p.seat, carrying: p.carrying, carryBody: p.carryBody, flashlight: p.flashlight,
+      };
       if (sid === this.net.sid) {
         const px = this.predictor.renderX();
         const pz = this.predictor.renderZ();
-        // Colyseus fields are non-enumerable accessors: {...p} is empty.
-        // Keep height, flashlight, hidden/downed and carry state in the pose.
-        av.update(dt, { ...p.toJSON(), x: px, z: pz } as PlayerState, t);
+        av.update(dt, { ...pose, x: px, z: pz, yaw: this.input.yaw, pitch: this.input.pitch }, t);
         av.hideBody();
       } else {
         // buffered interpolation: render the remote player ~120 ms in the past
@@ -1273,7 +1326,7 @@ export class Engine {
         buf.push(this.lastPatchAt || nowMs, p.x, p.z, p.yaw);
         const s = buf.sample(renderAt) ?? { x: p.x, z: p.z, yaw: p.yaw };
         renderedRemote.set(sid, s);
-        av.update(dt, { ...p.toJSON(), x: s.x, z: s.z, yaw: s.yaw } as PlayerState, t);
+        av.update(dt, { ...pose, x: s.x, z: s.z, yaw: s.yaw }, t);
         this.updateRemoteAudio(sid, p, s.x, s.z, cam);
       }
     }
@@ -1624,25 +1677,23 @@ export class Engine {
     }
 
     if (me.seat > 0) {
-      if (SEAT.isCart(me.seat)) {
-        // seated: camera rides the cart bench (a touch lower than the van cab)
-        const seat = CART.SEATS[me.seat - SEAT.CART_DRIVER]!;
-        const v = this.cartBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.cart;
-        const c = Math.cos(v.yaw);
-        const s = Math.sin(v.yaw);
-        cx = v.x + seat.x * c + seat.z * s;
-        cz = v.z - seat.x * s + seat.z * c;
-        cy = 1.5;
+      const cart = SEAT.isCart(me.seat);
+      const seat = cart ? CART.SEATS[me.seat - SEAT.CART_DRIVER]! : VAN.SEATS[me.seat - 1]!;
+      const v = cart
+        ? this.cartBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.cart
+        : this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
+      ({ x: cx, z: cz } = vanLocalToWorld(v, seat.x, seat.z));
+      cy = cart ? 1.48 : 1.85;
+      if (this.cameraSeat !== me.seat) {
+        this.input.yaw = v.yaw;
+        this.input.pitch = 0;
       } else {
-        // seated: camera rides the van
-        const seat = VAN.SEATS[me.seat - 1]!;
-        const v = this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
-        const c = Math.cos(v.yaw);
-        const s = Math.sin(v.yaw);
-        cx = v.x + seat.x * c + seat.z * s;
-        cz = v.z - seat.x * s + seat.z * c;
-        cy = 1.85;
+        // Keep mouse look relative to the turning vehicle.
+        this.input.yaw += Math.atan2(Math.sin(v.yaw - this.vehicleYaw), Math.cos(v.yaw - this.vehicleYaw));
       }
+      this.vehicleYaw = v.yaw;
+      yaw = this.input.yaw;
+      pitch = this.input.pitch;
     } else {
       cy = PLAYER.EYE + this.predictor.body.y;
       if (this.settings.headBob && !me.downed) {
@@ -1656,6 +1707,7 @@ export class Engine {
       if (me.hidden) cy = 1.05; // hunched behind the windshield
     }
 
+    this.cameraSeat = me.seat;
     this.camera.position.set(cx, cy, cz);
     // three.js cameras look along local -Z at yaw 0, but the game's forward
     // convention is (sin yaw, cos yaw) — offset by PI so the camera looks

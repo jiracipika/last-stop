@@ -149,7 +149,7 @@ export class GameRoom extends Room {
       case "start": {
         if (w.phase !== "lobby" || !p.host) return;
         const all = [...w.players.values()];
-        if (!all.every((o) => o.ready)) return;
+        if (!all.every((o) => o.connected && o.ready)) return;
         w.startMission();
         return;
       }

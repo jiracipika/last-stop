@@ -15,7 +15,7 @@ async function enterSoloMission(page: Page): Promise<void> {
     .filter({ hasText: "Torchlight" })
     .getByRole("button", { name: "Buy" })
     .click();
-  await page.locator(".gas-shelf li").filter({ hasText: "Torchlight" }).getByRole("button", { name: "In the truck" }).waitFor({ timeout: 8000 });
+  await page.locator(".gas-shelf li").filter({ hasText: "Torchlight" }).getByRole("button", { name: "Purchased" }).waitFor({ timeout: 8000 });
   await page.getByRole("button", { name: "Ready up" }).click();
   await page.getByRole("button", { name: /Start the shift/ }).click();
   await page.locator(".timer").waitFor({ timeout: 30000 });

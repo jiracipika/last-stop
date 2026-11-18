@@ -298,7 +298,7 @@ export function stepVan(
 }
 
 /** Convert a local-space van offset to world coordinates. */
-export function vanLocalToWorld(v: VanBody, lx: number, lz: number): { x: number; z: number } {
+export function vanLocalToWorld(v: { x: number; z: number; yaw: number; speed?: number }, lx: number, lz: number): { x: number; z: number } {
   const s = Math.sin(v.yaw);
   const c = Math.cos(v.yaw);
   return { x: v.x + lx * c + lz * s, z: v.z - lx * s + lz * c };

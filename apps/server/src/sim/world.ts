@@ -10,7 +10,7 @@ import {
   ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers, stowable,
   STATIC_COLLIDERS, LOS_BLOCKERS, DOORS, DoorDef, doorAabb, PLAYER_SPAWNS, VAN_START, FINISH_X, GATE, COURSE,
   HIDE_SPOTS, HIDE,
-  mulberry32, clamp, dist2d, hasLineOfSight,
+  mulberry32, clamp, dist2d, hasLineOfSight, circleVsAabb,
   PlayerState, ItemState, EnemyState, VanState, CartState, CourseState, MarkerState, DoorState, RoomState,
   ArraySchema, computeAwards, type ItemDef, type MissionAwardRow,
 } from "@last-stop/shared";
@@ -31,7 +31,7 @@ export interface RPlayer {
   body: Body;
   yaw: number;
   pitch: number;
-  input: MoveInput & { interact: boolean };
+  input: MoveInput & { interact: boolean; interactKind?: string; interactTarget?: string };
   lastSeq: number;
   stamina: number;
   sprinting: boolean;
@@ -229,9 +229,9 @@ export class World {
   }
 
   /** LOS ignoring the van — used for grab reachability at the loading zone. */
-  losWallsOnly(x0: number, z0: number, x1: number, z1: number): boolean {
+  losWallsOnly(x0: number, z0: number, x1: number, z1: number, ignoredDoor = ""): boolean {
     const closed: AABB[] = [];
-    for (const d of this.doors.values()) if (!d.open) closed.push(doorAabb(d.def));
+    for (const [id, d] of this.doors) if (!d.open && id !== ignoredDoor) closed.push(doorAabb(d.def));
     return hasLineOfSight(x0, z0, x1, z1, LOS_BLOCKERS.concat(closed));
   }
 
@@ -520,8 +520,17 @@ export class World {
     if (pitch !== undefined) p.pitch = clamp(pitch, -1.45, 1.45);
     if (input.sprint === true) i.sprint = true;
     else if (input.sprint === false) i.sprint = false;
-    if (input.jump === true) i.jump = true;
-    if (typeof input.interact === "boolean") i.interact = input.interact;
+    if (p.seat > 0) {
+      if (typeof input.brake === "boolean") i.jump = input.brake;
+      else if (typeof input.jump === "boolean") i.jump = input.jump;
+    } else if (input.jump === true) {
+      i.jump = true;
+    }
+    if (typeof input.interact === "boolean") {
+      i.interact = input.interact;
+      i.interactKind = typeof input.interactKind === "string" ? input.interactKind : undefined;
+      i.interactTarget = typeof input.interactTarget === "string" ? input.interactTarget : undefined;
+    }
     if (typeof input.stabilize === "boolean") p.stabilize = input.stabilize;
     const seq = num(input.seq);
     if (seq !== undefined && seq > p.lastSeq) p.lastSeq = seq;
@@ -690,7 +699,7 @@ export class World {
   }
 
   selectSlot(p: RPlayer, idx: number): boolean {
-    if (idx < 0 || idx >= SLOTS.COUNT || idx === p.slotSel) return false;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= SLOTS.COUNT || idx === p.slotSel) return false;
     p.slotSel = idx;
     return true;
   }
@@ -1040,7 +1049,9 @@ export class World {
     const nearRear = this.vanDoorsOpen && dist2d(p.body.x, p.body.z, dp.x, dp.z) <= VAN.INTERACT_RANGE;
     const nearCab = dist2d(p.body.x, p.body.z, cab.x, cab.z) <= VAN.INTERACT_RANGE;
     // Explicit driver requests from the open rear remain supported for older clients.
-    if (wantDriver ? !nearCab && !nearRear : !nearRear) return false;
+    const canReach = (point: { x: number; z: number }) => this.losWallsOnly(p.body.x, p.body.z, point.x, point.z);
+    const rearReachable = nearRear && canReach(dp);
+    if (wantDriver ? !(nearCab && canReach(cab)) && !rearReachable : !rearReachable) return false;
     let seat: number;
     if (wantDriver) {
       if (this.vanDriver) return false;
@@ -1050,25 +1061,46 @@ export class World {
       if (!seat) return false;
     }
     p.seat = seat;
+    p.input.jump = false;
     if (seat === 1) this.vanDriver = p.sid;
-    this.emit({ t: "seat", sid: p.sid, seat });
+    this.emit({ t: "seat", sid: p.sid, seat, cabSide: wantDriver && nearCab ? -1 : 0 });
     return true;
   }
 
-  leaveSeat(p: RPlayer): void {
+  private seatExitPoint(seat: number): { x: number; z: number } | undefined {
+    const inCart = SEAT.isCart(seat);
+    const vehicle = inCart ? this.cart : this.van;
+    const size = inCart ? CART : VAN;
+    const seatZ = (inCart ? CART.SEATS[seat - SEAT.CART_DRIVER] : VAN.SEATS[seat - 1])!.z;
+    const sideSign = !inCart && (seat === 2 || seat === 4) ? 1 : -1;
+    const side = sideSign * (size.HALF_W + 0.7);
+    const fore = size.HALF_L + 0.7;
+    const colliders = this.playerColliders();
+    const gate = this.gateCollider();
+    if (gate) colliders.push(gate);
+    for (const [x, z] of [[side, seatZ], [-side, seatZ], [0, -fore], [0, fore], [side * 1.5, seatZ], [-side * 1.5, seatZ]] as const) {
+      const point = vanLocalToWorld(vehicle, x, z);
+      if (point.x < -69 || point.x > 33.5 || Math.abs(point.z) > 25.5) continue;
+      if (colliders.some((box) => circleVsAabb(point.x, point.z, PLAYER.RADIUS, box).hit)) continue;
+      if (this.losWallsOnly(vehicle.x, vehicle.z, point.x, point.z)) return point;
+    }
+    return undefined;
+  }
+
+  leaveSeat(p: RPlayer, side = this.seatExitPoint(p.seat) ?? p.body): void {
     if (p.seat === 1) this.vanDriver = "";
     if (p.seat === SEAT.CART_DRIVER) this.cartDriver = "";
-    const side = SEAT.isCart(p.seat)
-      ? vanLocalToWorld(this.cart, -CART.HALF_W - 0.7, 0)
-      : this.vanPoint({ x: -VAN.HALF_W - 0.7, z: 1.6 });
+    const exitLocal = vanWorldToLocal(this.van, side.x, side.z);
+    const cabSide = SEAT.isVan(p.seat) && Math.abs(exitLocal.x) > VAN.HALF_W && exitLocal.z > 0 ? Math.sign(exitLocal.x) : 0;
     p.seat = 0;
+    p.input.jump = false;
     p.body.x = side.x;
     p.body.z = side.z;
     p.body.y = 0;
     p.body.vx = 0;
     p.body.vz = 0;
     p.body.vy = 0;
-    this.emit({ t: "seat", sid: p.sid, seat: 0 });
+    this.emit({ t: "seat", sid: p.sid, seat: 0, cabSide });
   }
 
   /** Unified exit for the act handler: checks the speed of whichever vehicle
@@ -1076,8 +1108,16 @@ export class World {
   exitSeat(p: RPlayer): boolean {
     if (p.seat === 0) return false;
     const speed = SEAT.isCart(p.seat) ? this.cart.speed : this.van.speed;
-    if (Math.abs(speed) >= 1.5) return false;
-    this.leaveSeat(p);
+    if (Math.abs(speed) >= 1.5) {
+      this.emit({ t: "deny", sid: p.sid, k: "movingExit" });
+      return false;
+    }
+    const side = this.seatExitPoint(p.seat);
+    if (!side) {
+      this.emit({ t: "deny", sid: p.sid, k: "blockedExit" });
+      return false;
+    }
+    this.leaveSeat(p, side);
     return true;
   }
 
@@ -1090,12 +1130,9 @@ export class World {
    *  (nearly) stopped. Hands must be empty — pack slots are fine. */
   tryEnterCart(p: RPlayer, wantDriver: boolean): boolean {
     if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || p.carryBody || Math.abs(this.cart.speed) > 0.5) return false;
-    const nearBody = dist2d(p.body.x, p.body.z, this.cart.x, this.cart.z) <= CART.INTERACT_RANGE;
-    const nearSeat = CART.SEATS.some((s) => {
-      const w = this.cartPoint(s);
-      return dist2d(p.body.x, p.body.z, w.x, w.z) <= CART.INTERACT_RANGE;
-    });
-    if (!nearBody && !nearSeat) return false;
+    const seatPoint = this.cartPoint(CART.SEATS[wantDriver ? 0 : 1]);
+    if (dist2d(p.body.x, p.body.z, seatPoint.x, seatPoint.z) > CART.INTERACT_RANGE ||
+        !this.losWallsOnly(p.body.x, p.body.z, seatPoint.x, seatPoint.z)) return false;
     let seat: number;
     if (wantDriver) {
       if (this.cartDriver) return false;
@@ -1105,6 +1142,7 @@ export class World {
       seat = SEAT.CART_PASSENGER;
     }
     p.seat = seat;
+    p.input.jump = false;
     if (wantDriver) this.cartDriver = p.sid;
     this.emit({ t: "seat", sid: p.sid, seat });
     return true;
@@ -1155,7 +1193,8 @@ export class World {
     const cx = (a.x0 + a.x1) / 2;
     const cz = (a.z0 + a.z1) / 2;
     if (dist2d(p.body.x, p.body.z, cx, cz) > PLAYER.INTERACT_RANGE + 0.4) return false;
-    if (p.downed || p.dead) return false;
+    if (p.downed || p.dead || p.hidden || p.seat) return false;
+    if (!this.losWallsOnly(p.body.x, p.body.z, cx, cz, doorId)) return false;
     d.open = !d.open;
     const ds = this.state.doors.get(doorId);
     if (ds) ds.open = d.open;
@@ -1344,6 +1383,7 @@ export class World {
         p.body.y = 0;
         p.body.vx = 0;
         p.body.vz = 0;
+        p.yaw = p.input.yaw;
         continue;
       }
       if (p.hidden) {
@@ -1421,6 +1461,7 @@ export class World {
   private stepInteract(p: RPlayer, dt: number): void {
     if (!p.input.interact || p.downed || p.dead) {
       if (p.interactKind) {
+        this.emit({ t: "prog", sid: p.sid, k: p.interactKind, v: 0 });
         p.interactKind = "";
         p.interactT = 0;
       }
@@ -1431,17 +1472,23 @@ export class World {
 
     for (const o of this.players.values()) {
       if (o === p || !o.downed || o.dead || !o.connected) continue;
-      if (dist2d(p.body.x, p.body.z, o.body.x, o.body.z) < PLAYER.INTERACT_RANGE) {
+      if (p.input.interactKind !== undefined &&
+          (p.input.interactKind !== "revive" || p.input.interactTarget !== o.sid)) continue;
+      if (dist2d(p.body.x, p.body.z, o.body.x, o.body.z) <= PLAYER.INTERACT_RANGE &&
+          this.losWallsOnly(p.body.x, p.body.z, o.body.x, o.body.z)) {
         kind = "revive";
         target = o.sid;
         break;
       }
     }
-    if (!kind && this.phase !== "results") {
+    if (!kind && (this.phase === "scavenge" || this.phase === "escape")) {
       const it = this.items.get(p.carrying);
       if (it && it.defId === "distributor" && !this.partInstalled) {
         const ep = this.vanPoint(VAN.ENGINE_POINT);
-        if (dist2d(p.body.x, p.body.z, ep.x, ep.z) < PLAYER.INTERACT_RANGE + 0.4) {
+        const requested = p.input.interactKind === undefined ||
+          (p.input.interactKind === "install" && p.input.interactTarget === it.id);
+        if (requested && dist2d(p.body.x, p.body.z, ep.x, ep.z) < VAN.INSTALL_RANGE &&
+            this.losWallsOnly(p.body.x, p.body.z, ep.x, ep.z)) {
           kind = "install";
           target = it.id;
         }
@@ -1449,6 +1496,7 @@ export class World {
     }
 
     if (kind !== p.interactKind || target !== p.interactTarget) {
+      if (p.interactKind) this.emit({ t: "prog", sid: p.sid, k: p.interactKind, v: 0 });
       p.interactKind = kind;
       p.interactTarget = target;
       p.interactT = 0;

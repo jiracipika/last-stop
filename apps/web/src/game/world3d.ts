@@ -30,6 +30,7 @@ interface Flicker {
   seed: number;
   /** original style, kept so a Low -> higher tier switch can restore it */
   style0?: 0 | 1 | 2 | 3;
+  color?: THREE.Color;
 }
 
 /** one merged draw call produced by bakeStatic() */
@@ -67,7 +68,9 @@ export class World3D {
   private flickers: Flicker[] = [];
   private fan: THREE.Group | null = null;
   private dust: THREE.Points[] = [];
-  private blackout: boolean;
+  private blackout = false;
+  private poweredPools: THREE.Mesh[] = [];
+  private signMaterial: THREE.MeshBasicMaterial | null = null;
   private lowQuality = false;
   private cullScale = CULL_SCALE_FULL;
   // storm atmosphere (STORM CELL modifier)
@@ -84,8 +87,7 @@ export class World3D {
   /** static scenery tagged during the build; bakeStatic() merges it per material family */
   private staticParts: THREE.Mesh[] = [];
 
-  constructor(blackout: boolean) {
-    this.blackout = blackout;
+  constructor() {
     this.tex = buildTextures();
     this.buildGround();
     this.buildWalls();
@@ -94,8 +96,8 @@ export class World3D {
     this.buildGate();
     this.buildProps();
     this.buildHideSpotDoors();
-    this.buildLamps(blackout);
-    this.buildInteriorLights(blackout);
+    this.buildLamps();
+    this.buildInteriorLights();
     this.buildRoomDressing();
     this.buildSign();
     this.buildAtmosphere();
@@ -103,6 +105,7 @@ export class World3D {
     this.buildStorm();
     // fold every tagged static mesh into one draw call per material family
     this.bakeStatic();
+    for (const flicker of this.flickers) flicker.color = flicker.mat?.color.clone();
   }
 
   // ------------------------------------------------------------------ helpers
@@ -274,6 +277,40 @@ export class World3D {
     for (const [bx, bz] of [[-8, 6], [4, 6], [16, 6], [-8, 17], [4, 17]] as [number, number][]) {
       this.group.add(this.sbox(2.4, 0.14, 0.5, bump, bx, 0.07, bz));
     }
+    // The wet lot reads in motion through specular patches under the lamps.
+    // Merge the puddles into one draw call and keep them above the asphalt.
+    const puddleMap = this.tex.decal(128, (ctx, size) => {
+      const rnd = mulberry32(0x9add1e);
+      ctx.save();
+      ctx.scale(1, 0.75);
+      for (let i = 0; i < 12; i++) {
+        const x = 28 + rnd() * 71;
+        const y = 51 + rnd() * 63;
+        const radius = 14 + rnd() * 15;
+        const pool = ctx.createRadialGradient(x, y, radius * 0.66, x, y, radius);
+        pool.addColorStop(0, "rgba(52,65,71,0.68)");
+        pool.addColorStop(1, "rgba(30,37,42,0)");
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      }
+      ctx.restore();
+    });
+    const puddleMaterial = new THREE.MeshPhongMaterial({
+      map: puddleMap, color: 0xb2bac1, specular: 0x8c9dba, shininess: 32, transparent: true, depthWrite: false,
+    });
+    const placements = [
+      [-18.7, 3.3, 5.5, 2.6, 0.4], [-10.6, 9.3, 4.6, 2.8, 1.7], [2.6, 16.8, 3.9, 2.7, 0.6],
+      [6.7, -4.6, 3.8, 2.6, 2.3], [19.3, 2.6, 5.1, 3.0, 0.4], [24.4, -2.3, 4.6, 2.4, 1.5],
+      [-25.3, 14.0, 6.4, 3.7, 2.3], [-30.1, 10.9, 4.7, 2.4, 1.4], [5.7, 7.5, 2.7, 1.9, 0.9],
+    ] as const;
+    const planes = placements.map(([x, z, width, depth, angle]) =>
+      new THREE.PlaneGeometry(width, depth).rotateX(-Math.PI / 2).rotateY(angle).translate(x, 0.024, z),
+    );
+    const puddles = mergeGeometries(planes);
+    for (const plane of planes) plane.dispose();
+    this.group.add(new THREE.Mesh(puddles, puddleMaterial));
+    this.disposables.push({ geo: puddles, mat: puddleMaterial, tex: puddleMap });
+
     // oil stains near the dead car + dumpster
     const oil = (x: number, z: number, s: number) =>
       this.decalPlane(this.tex.decal(256, (ctx, sz) => {
@@ -449,10 +486,8 @@ export class World3D {
     this.disposables.push({ mat: lampMat });
     this.group.add(this.sbox(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z0 - 0.4));
     this.group.add(this.sbox(0.3, 0.3, 0.3, lampMat, GATE.x + 0.3, 3.4, GATE.z1 + 0.4));
-    if (!this.blackout) {
-      this.flickers.push({ light: this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z0 - 0.2, true), mat: null, base: 5, style: 3, seed: 7 });
-      this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z1 + 0.2, true);
-    }
+    this.flickers.push({ light: this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z0 - 0.2, true), mat: null, base: 5, style: 3, seed: 7 });
+    this.pointLight(0xb63d35, 5, 9, GATE.x + 0.6, 3.2, GATE.z1 + 0.2, true);
   }
 
   // ------------------------------------------------------------------ props
@@ -787,47 +822,44 @@ export class World3D {
     m.rotation.x = -Math.PI / 2;
     m.position.set(x, 0.032, z);
     this.group.add(m);
+    this.poweredPools.push(m);
     this.disposables.push({ geo: m.geometry, mat, tex });
   }
 
-  private buildLamps(blackout: boolean): void {
+  private buildLamps(): void {
     for (const l of LAMPS) {
       // poles are static scenery and bake; heads stay out — their material is
       // recolored by the flicker loop below
       this.group.add(this.sbox(0.16, 4.6, 0.16, this.solid(0x2e3034), l.x, 2.3, l.z));
-      const headMat = new THREE.MeshBasicMaterial({ color: blackout ? 0x223038 : 0xffd9a0 });
+      const headMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
       this.disposables.push({ mat: headMat });
       const head = this.box(0.6, 0.25, 0.6, headMat, l.x, 4.65, l.z);
       this.group.add(head);
-      const light = new THREE.PointLight(0xffc98a, blackout ? 0 : 26, 18, 1.6);
+      const light = new THREE.PointLight(0xffc98a, 26, 18, 1.6);
       light.position.set(l.x, 4.4, l.z);
       this.group.add(light);
       this.managed.push({ light, range: 18 });
       this.lamps.push({ light, head });
-      if (!blackout) {
-        this.groundPool("rgba(255,190,120,0.5)", 4.4, l.x, l.z);
-        // sodium-arc buzz: the second lamp is dying
-        this.flickers.push({ light, mat: headMat, base: 26, style: l.x === -10 && l.z === 8 ? 2 : 1, seed: l.x });
-      }
+      this.groundPool("rgba(255,190,120,0.5)", 4.4, l.x, l.z);
+      // sodium-arc buzz: the second lamp is dying
+      this.flickers.push({ light, mat: headMat, base: 26, style: l.x === -10 && l.z === 8 ? 2 : 1, seed: l.x });
     }
     // warm porch bulbs over the walkway doors — the facade reads from the lot
     const porch: [number, boolean][] = [[-18.5, true], [-11.5, false], [-4.5, true], [2, true], [7.5, true]];
-    if (!blackout) {
-      for (const [x, works] of porch) {
-        const bulbMat = new THREE.MeshBasicMaterial({ color: works ? PAL.tungsten : 0x2a2318 });
-        this.disposables.push({ mat: bulbMat });
-        this.group.add(this.box(0.22, 0.16, 0.22, bulbMat, x, 2.5, -7.72));
-        if (works) {
-          const l = this.pointLight(0xE6AD61, 5.5, 7, x, 2.45, -7.6);
-          this.flickers.push({ light: l, mat: bulbMat, base: 5.5, style: 0, seed: x });
-          this.groundPool("rgba(230,173,97,0.42)", 1.7, x, -7.2, 0.42);
-        }
+    for (const [x, works] of porch) {
+      const bulbMat = new THREE.MeshBasicMaterial({ color: works ? PAL.tungsten : 0x2a2318 });
+      this.disposables.push({ mat: bulbMat });
+      this.group.add(this.box(0.22, 0.16, 0.22, bulbMat, x, 2.5, -7.72));
+      if (works) {
+        const l = this.pointLight(0xE6AD61, 5.5, 7, x, 2.45, -7.6);
+        this.flickers.push({ light: l, mat: bulbMat, base: 5.5, style: 0, seed: x });
+        this.groundPool("rgba(230,173,97,0.42)", 1.7, x, -7.2, 0.42);
       }
     }
   }
 
   // ---------------------------------------------------------- interior lights
-  private buildInteriorLights(blackout: boolean): void {
+  private buildInteriorLights(): void {
     // Fixtures stay out of the bakeStatic merge: their tube/bulb materials are
     // recolored every frame by the flicker loop and must stay on live meshes.
     // fluorescent fixture: casing + emissive tube + cool point light
@@ -841,31 +873,29 @@ export class World3D {
       return { light, mat: tubeMat, base: intensity, style, seed };
     };
 
-    if (!blackout) {
-      // reception: one steady cool tube + ceiling fan; cold light spills onto the walkway
-      this.flickers.push(fixture(7.5, -11.5, 2.98, 14, 0xcfe0e8, 1, 3));
-      this.groundPool("rgba(170,215,230,0.4)", 2.4, 7.5, -6.8, 0.4);
-      // corridor: two tubes, the east one is failing hard
-      this.flickers.push(fixture(-8, -16.5, 2.98, 12, 0xbfd4dc, 1, 4));
-      this.flickers.push(fixture(2, -16.5, 2.98, 12, 0xbfd4dc, 2, 5));
-      // garage: two hanging tubes, one buzzes
-      this.flickers.push(fixture(23, -8, 3.7, 13, 0xd8e2e6, 1, 6, 1.8));
-      this.flickers.push(fixture(23, -16, 3.7, 13, 0xd8e2e6, 2, 8, 1.8));
-      // laundry: one weak warm bulb
-      const l = this.pointLight(0xE6AD61, 6, 8, -18, 2.6, -21);
-      this.flickers.push({ light: l, mat: null, base: 6, style: 0, seed: 9 });
-      // Room 3 bedside lamp — one warm room among the dark ones
-      const l2 = this.pointLight(0xE6AD61, 5, 6.5, -2.1, 1.1, -14.2);
-      this.flickers.push({ light: l2, mat: null, base: 5, style: 0, seed: 10 });
-      // passage bug-lamp on the garage wall — the only light near the dumpster
-      // hide spot: it helps you find the lid and betrays you while you climb in
-      const bug = this.pointLight(0xE6AD61, 5.5, 7.5, 15.4, 2.3, -19.5);
-      this.flickers.push({ light: bug, mat: null, base: 5.5, style: 1, seed: 13 });
-      const bugBulb = new THREE.MeshBasicMaterial({ color: 0xe6c489 });
-      this.disposables.push({ mat: bugBulb });
-      this.group.add(this.box(0.22, 0.3, 0.22, bugBulb, 15.55, 2.3, -19.5));
-      this.groundPool("rgba(230,173,97,0.35)", 2.2, 14.6, -19.5, 0.45);
-    }
+    // reception: one steady cool tube + ceiling fan; cold light spills onto the walkway
+    this.flickers.push(fixture(7.5, -11.5, 2.98, 14, 0xcfe0e8, 1, 3));
+    this.groundPool("rgba(170,215,230,0.4)", 2.4, 7.5, -6.8, 0.4);
+    // corridor: two tubes, the east one is failing hard
+    this.flickers.push(fixture(-8, -16.5, 2.98, 12, 0xbfd4dc, 1, 4));
+    this.flickers.push(fixture(2, -16.5, 2.98, 12, 0xbfd4dc, 2, 5));
+    // garage: two hanging tubes, one buzzes
+    this.flickers.push(fixture(23, -8, 3.7, 13, 0xd8e2e6, 1, 6, 1.8));
+    this.flickers.push(fixture(23, -16, 3.7, 13, 0xd8e2e6, 2, 8, 1.8));
+    // laundry: one weak warm bulb
+    const l = this.pointLight(0xE6AD61, 6, 8, -18, 2.6, -21);
+    this.flickers.push({ light: l, mat: null, base: 6, style: 0, seed: 9 });
+    // Room 3 bedside lamp — one warm room among the dark ones
+    const l2 = this.pointLight(0xE6AD61, 5, 6.5, -2.1, 1.1, -14.2);
+    this.flickers.push({ light: l2, mat: null, base: 5, style: 0, seed: 10 });
+    // passage bug-lamp on the garage wall — the only light near the dumpster
+    // hide spot: it helps you find the lid and betrays you while you climb in
+    const bug = this.pointLight(0xE6AD61, 5.5, 7.5, 15.4, 2.3, -19.5);
+    this.flickers.push({ light: bug, mat: null, base: 5.5, style: 1, seed: 13 });
+    const bugBulb = new THREE.MeshBasicMaterial({ color: 0xe6c489 });
+    this.disposables.push({ mat: bugBulb });
+    this.group.add(this.box(0.22, 0.3, 0.22, bugBulb, 15.55, 2.3, -19.5));
+    this.groundPool("rgba(230,173,97,0.35)", 2.2, 14.6, -19.5, 0.45);
     // maintenance stays red even in blackout — the emergency circuit
     const red = this.pointLight(0xb63d35, 9, 9, -10, 2.7, -21, true);
     this.flickers.push({ light: red, mat: null, base: 9, style: 3, seed: 11 });
@@ -1046,10 +1076,9 @@ export class World3D {
     g.rotation.z = 0.015; // storm damage lean
     this.group.add(g);
     this.signGroup = g;
-    if (!this.blackout) {
-      const l = this.pointLight(0xE6AD61, 7, 10, -13, 4.8, -2.1);
-      this.flickers.push({ light: l, mat: null, base: 7, style: 1, seed: 13 });
-    }
+    this.signMaterial = signMat;
+    const l = this.pointLight(0xE6AD61, 7, 10, -13, 4.8, -2.1);
+    this.flickers.push({ light: l, mat: null, base: 7, style: 1, seed: 13 });
   }
 
   // ---------------------------------------------------------- atmosphere fx
@@ -1123,6 +1152,14 @@ export class World3D {
   /** Accessibility toggle for the lightning strobe (engine settings). */
   setReduceFlash(on: boolean): void {
     this.reduceFlash = on;
+    if (!on && this.stormLight) this.stormLight.intensity = 0;
+  }
+
+  setBlackout(on: boolean): void {
+    if (this.blackout === on) return;
+    this.blackout = on;
+    for (const pool of this.poweredPools) pool.visible = !on;
+    this.signMaterial?.color.setScalar(on ? 0.18 : 1);
   }
 
   // ------------------------------------------------------------------ update
@@ -1146,7 +1183,7 @@ export class World3D {
         k = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(t * 1.7 + f.seed));
       }
       f.light.intensity = f.base * k;
-      if (f.mat) f.mat.color.setScalar(0.35 + 0.65 * k);
+      if (f.mat && f.color) f.mat.color.copy(f.color).multiplyScalar(this.blackout ? 0.12 : 0.35 + 0.65 * k);
     }
     // ceiling fan
     if (this.fan) this.fan.rotation.y += dt * 1.6;
@@ -1176,6 +1213,7 @@ export class World3D {
         this.stormFramesLeft--;
         this.stormLight.intensity = this.stormFramesLeft > 0 ? STORM_FLASH_PEAK * (0.55 + Math.random() * 0.45) : 0;
       } else if (t >= this.stormFlashAt) {
+        this.stormFlashAt = t + STORM_FLASH_GAP_MIN + Math.random() * (STORM_FLASH_GAP_MAX - STORM_FLASH_GAP_MIN);
         this.stormFramesLeft = 2 + Math.floor(Math.random() * 3);
         this.stormLight.intensity = STORM_FLASH_PEAK * (0.55 + Math.random() * 0.45);
         this.onFlash?.(); // the audio layer schedules the delayed thunder from here
@@ -1190,7 +1228,7 @@ export class World3D {
       if (m.essential) continue;
       const p = m.light.position;
       const d = (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2;
-      m.light.visible = d < (m.range * this.cullScale) ** 2;
+      m.light.visible = !this.blackout && d < (m.range * this.cullScale) ** 2;
     }
   }
 

@@ -70,7 +70,7 @@ export function App(): React.ReactElement {
 
   const savePrefs = useCallback((p: Prefs) => {
     setPrefs(p);
-    localStorage.setItem("laststop.prefs", JSON.stringify(p));
+    try { localStorage.setItem("laststop.prefs", JSON.stringify(p)); } catch { /* session preference only */ }
   }, []);
 
   useEffect(() => {
@@ -150,7 +150,7 @@ export function App(): React.ReactElement {
   // pause when pointer lock is lost mid-mission
   useEffect(() => {
     const onLockChange = () => {
-      const locked = document.pointerLockElement !== null;
+      const locked = document.pointerLockElement === canvasRef.current;
       const phase = net.state?.phase ?? "lobby";
       if (!locked && (phase === "scavenge" || phase === "escape" || phase === "briefing" || phase === "arrive")) {
         setPaused(true);
@@ -159,6 +159,12 @@ export function App(): React.ReactElement {
     document.addEventListener("pointerlockchange", onLockChange);
     return () => document.removeEventListener("pointerlockchange", onLockChange);
   }, [net]);
+
+  useEffect(() => {
+    if (hud.phase !== "lobby" && hud.phase !== "results") return;
+    setPaused(false);
+    if (canvasRef.current && document.pointerLockElement === canvasRef.current) document.exitPointerLock();
+  }, [hud.phase]);
 
   // clicks on canvas re-lock (unless overlays open)
   const onCanvasClick = useCallback(() => {
@@ -190,7 +196,7 @@ export function App(): React.ReactElement {
         store.toast(`Could not join: ${String(e)}`, "warn");
       }
     },
-    [net, prefs.nick, prefs.color, store],
+    [net, prefs.nick, prefs.color, prefs.hat, store],
   );
 
   const leaveRoom = useCallback(() => {
@@ -234,7 +240,7 @@ export function App(): React.ReactElement {
         <TitleScreen prefs={prefs} savePrefs={savePrefs} onEnter={enterRoom} />
       ) : (
         <>
-          {hud.phase === "lobby" && <LobbyOverlay net={net} hud={hud} prefs={prefs} onLeave={leaveRoom} />}
+          {hud.phase === "lobby" && <LobbyOverlay net={net} hud={hud} prefs={prefs} savePrefs={savePrefs} onLeave={leaveRoom} />}
           {hud.phase === "briefing" && <Briefing hud={hud} />}
           {(hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "arrive") && (
             <Hud
@@ -249,9 +255,9 @@ export function App(): React.ReactElement {
             <PauseOverlay prefs={prefs} savePrefs={savePrefs} onResume={resume} onLeave={leaveRoom} engine={engineRef.current} />
           )}
           {!hud.locked && !paused && (hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "briefing" || hud.phase === "arrive") && (
-            <div className="click-catch" onClick={onCanvasClick}>
-              <span>Click to grab the wheel — mouse look needs focus</span>
-            </div>
+            <button className="click-catch" onClick={onCanvasClick}>
+              <span>Click to take control</span>
+            </button>
           )}
         </>
       )}

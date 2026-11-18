@@ -1,6 +1,6 @@
-// Chunky recovery-crew characters with procedural waddle animation.
+// Dustpan Recovery crew. These figures use articulated coat, sleeve and boot pieces.
 import * as THREE from "three";
-import { PLAYER } from "@last-stop/shared";
+import { PLAYER, SEAT } from "@last-stop/shared";
 import type { PlayerState } from "@last-stop/shared";
 import { crewHex } from "./palette.js";
 
@@ -9,130 +9,125 @@ function nameSprite(text: string, color: string): THREE.Sprite {
   canvas.width = 256;
   canvas.height = 64;
   const ctx = canvas.getContext("2d")!;
-  ctx.font = "bold 30px monospace";
+  ctx.font = "bold 27px monospace";
   ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(8,10,14,0.65)";
-  const w = Math.min(250, ctx.measureText(text).width + 22);
+  const w = Math.min(252, ctx.measureText(text).width + 24);
+  ctx.fillStyle = "rgba(8,10,14,0.82)";
   ctx.fillRect(128 - w / 2, 8, w, 44);
   ctx.fillStyle = color;
-  ctx.fillText(text, 128, 40);
+  ctx.fillRect(128 - w / 2, 8, w, 2);
+  ctx.fillText(text, 128, 39, 232);
   const tex = new THREE.CanvasTexture(canvas);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sprite.scale.set(1.7, 0.42, 1);
-  sprite.position.y = 2.15;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.65, 0.41, 1);
+  sprite.position.y = 2.18;
   return sprite;
 }
 
+export type AvatarPose = Pick<PlayerState,
+  "x" | "y" | "z" | "yaw" | "pitch" | "hidden" | "dead" | "downed" | "seat" | "carrying" | "carryBody" | "flashlight"
+>;
+
+const hatColors = [0xd1a044, 0xd0bf8e, 0x42646c, 0x30343a, 0x54372d];
+const skinColors = [0xd7ae89, 0x9e6442, 0xb48066, 0x754b37];
+
+function mesh(parent: THREE.Object3D, geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+  const part = new THREE.Mesh(geometry, material);
+  part.position.set(x, y, z);
+  parent.add(part);
+  return part;
+}
+
+function box(parent: THREE.Object3D, material: THREE.Material, x: number, y: number, z: number, w: number, h: number, d: number): THREE.Mesh {
+  return mesh(parent, new THREE.BoxGeometry(w, h, d), material, x, y, z);
+}
+
 export class AvatarView {
-  group = new THREE.Group();
-  private body: THREE.Mesh;
-  private head: THREE.Group;
-  private armL: THREE.Mesh;
-  private armR: THREE.Mesh;
-  private legL: THREE.Mesh;
-  private legR: THREE.Mesh;
-  private flashlight: THREE.SpotLight;
-  private flashlightTarget = new THREE.Object3D();
-  private name: THREE.Sprite;
+  readonly group = new THREE.Group();
+  private readonly body = new THREE.Group();
+  private readonly head = new THREE.Group();
+  private readonly arms = [new THREE.Group(), new THREE.Group()];
+  private readonly legs = [new THREE.Group(), new THREE.Group()];
+  private readonly flashlight = new THREE.SpotLight(0xfff2cc, 0, 16, 0.42, 0.5, 1.2);
+  private readonly flashlightTarget = new THREE.Object3D();
+  private readonly name: THREE.Sprite;
   private walkPhase = 0;
   private lastX = 0;
   private lastZ = 0;
   private speed = 0;
-  sid: string;
 
-  constructor(sid: string, colorIdx: number, nick: string, hat = 0) {
-    this.sid = sid;
-    const color = new THREE.Color(crewHex(colorIdx));
-    const uniform = new THREE.MeshLambertMaterial({ color: 0x3d4652 });
-    const suit = new THREE.MeshLambertMaterial({ color });
-    const skin = new THREE.MeshLambertMaterial({ color: 0xc9a07a });
+  constructor(readonly sid: string, readonly colorIdx: number, readonly nick: string, readonly hat: number, fabric: THREE.Texture) {
+    const suitColor = new THREE.Color(crewHex(colorIdx));
+    const cloth = (color: number | THREE.Color) => new THREE.MeshLambertMaterial({ color, map: fabric });
+    const suit = cloth(suitColor);
+    const pants = cloth(0x414c58);
+    const trim = new THREE.MeshLambertMaterial({ color: 0x22282d });
+    const skin = new THREE.MeshLambertMaterial({ color: skinColors[colorIdx % skinColors.length] });
+    const strip = new THREE.MeshLambertMaterial({ color: 0xe7d4a5, emissive: 0x554930 });
+    const hatMat = cloth(hatColors[hat] ?? hatColors[0]!);
 
-    // torso: chunky capsule-ish box
-    this.body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.5, 3, 8), suit);
-    this.body.position.y = 1.0;
-    this.group.add(this.body);
-
-    // hi-vis vest: two reflective strips across the jacket
-    const strip = new THREE.MeshBasicMaterial({ color: 0xd8d2b8 });
-    for (const sx of [-0.12, 0.12]) {
-      const s = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.03), strip);
-      s.position.set(sx, 1.0, 0.31);
-      this.group.add(s);
+    this.body.position.y = 1.03;
+    this.group.add(this.body, this.head, ...this.arms, ...this.legs);
+    const torso = mesh(this.body, new THREE.CapsuleGeometry(0.30, 0.31, 3, 8), suit, 0, 0.02, 0);
+    torso.scale.set(1.07, 1, 0.66);
+    mesh(this.body, new THREE.CylinderGeometry(0.23, 0.28, 0.13, 8), trim, 0, 0.37, 0);
+    box(this.body, trim, 0, -0.05, 0.20, 0.025, 0.53, 0.025);
+    for (const side of [-1, 1]) {
+      box(this.body, strip, side * 0.15, 0.02, 0.194, 0.042, 0.5, 0.03).rotation.z = side * 0.2;
+      box(this.body, suit, side * 0.15, -0.16, 0.205, 0.13, 0.11, 0.05);
+      box(this.body, strip, side * 0.14, 0.06, -0.192, 0.042, 0.43, 0.025);
     }
+    box(this.body, trim, -0.16, 0.16, 0.224, 0.13, 0.09, 0.035);
+    box(this.body, strip, -0.16, 0.16, 0.245, 0.085, 0.026, 0.01);
+    box(this.body, trim, 0, -0.29, -0.015, 0.49, 0.07, 0.36);
+    box(this.body, trim, 0.18, -0.27, -0.20, 0.12, 0.24, 0.11);
+    box(this.body, trim, 0.18, -0.08, -0.20, 0.018, 0.2, 0.018);
 
-    // oversized jacket collar
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.18, 8), suit);
-    collar.position.y = 1.35;
-    this.group.add(collar);
-
-    this.head = new THREE.Group();
-    const skull = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.32, 0.34), skin);
-    this.head.add(skull);
-    // headgear: 0 hi-vis cap (default) · 1 hard hat · 2 beanie · 3 headphones · 4 none
-    const hatMat = (c: number): THREE.MeshLambertMaterial => new THREE.MeshLambertMaterial({ color: c });
-    if (hat === 0) {
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.14, 8), hatMat(0xe8d24a));
-      cap.position.y = 0.2;
-      this.head.add(cap);
-      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.18), hatMat(0xe8d24a));
-      brim.position.set(0, 0.15, 0.24);
-      this.head.add(brim);
-    } else if (hat === 1) {
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), hatMat(0xC6B99B));
-      dome.position.y = 0.13;
-      this.head.add(dome);
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.035, 12), hatMat(0xC6B99B));
-      brim.position.y = 0.14;
-      this.head.add(brim);
-      const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.34), hatMat(0xC6B99B));
-      ridge.position.y = 0.3;
-      this.head.add(ridge);
-    } else if (hat === 2) {
-      const beanie = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), hatMat(0x33565a));
-      beanie.position.y = 0.11;
-      this.head.add(beanie);
-      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.225, 0.09, 10), hatMat(0x2a474a));
-      cuff.position.y = 0.1;
-      this.head.add(cuff);
-    } else if (hat === 3) {
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.035, 6, 12, Math.PI), hatMat(0x22262c));
-      band.rotation.y = Math.PI / 2;
-      band.position.y = 0.16;
-      this.head.add(band);
-      for (const ex of [-0.19, 0.19]) {
-        const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.05, 8), hatMat(0x2c3138));
-        pad.rotation.z = Math.PI / 2;
-        pad.position.set(ex, 0.06, 0);
-        this.head.add(pad);
+    const face = mesh(this.head, new THREE.SphereGeometry(0.2, 9, 7), skin, 0, 0, 0);
+    face.scale.set(0.91, 1.03, 0.86);
+    box(this.head, skin, 0, -0.035, 0.166, 0.056, 0.071, 0.058);
+    for (const side of [-1, 1]) {
+      box(this.head, trim, side * 0.07, 0.03, 0.159, 0.032, 0.034, 0.026);
+    }
+    if (hat === 0 || hat === 1 || hat === 2 || hat === 4) {
+      const radius = hat === 1 ? 0.245 : 0.202;
+      mesh(this.head, new THREE.SphereGeometry(radius, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), hatMat, 0, 0.1, -0.015);
+      if (hat === 0) box(this.head, hatMat, 0, 0.112, 0.18, 0.31, 0.033, 0.20);
+      if (hat === 1) {
+        mesh(this.head, new THREE.CylinderGeometry(0.275, 0.275, 0.035, 12), hatMat, 0, 0.11, 0);
+        box(this.head, strip, 0, 0.225, 0.183, 0.095, 0.055, 0.03);
+      }
+      if (hat === 2) mesh(this.head, new THREE.CylinderGeometry(0.208, 0.204, 0.075, 10), hatMat, 0, 0.1, -0.013);
+    } else {
+      mesh(this.head, new THREE.TorusGeometry(0.211, 0.026, 6, 12, Math.PI), hatMat, 0, 0.025, 0).rotation.y = Math.PI / 2;
+      for (const side of [-1, 1]) {
+        mesh(this.head, new THREE.CylinderGeometry(0.075, 0.078, 0.065, 8), hatMat, side * 0.186, 0, 0).rotation.z = Math.PI / 2;
       }
     }
-    this.head.position.y = 1.62;
-    this.group.add(this.head);
 
-    const armGeo = new THREE.CapsuleGeometry(0.09, 0.42, 2, 6);
-    this.armL = new THREE.Mesh(armGeo, suit);
-    this.armR = new THREE.Mesh(armGeo, suit);
-    this.armL.position.set(-0.44, 1.1, 0);
-    this.armR.position.set(0.44, 1.1, 0);
-    this.group.add(this.armL, this.armR);
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      const arm = this.arms[i]!;
+      arm.position.set(side * 0.32, 1.29, 0);
+      mesh(arm, new THREE.CapsuleGeometry(0.105, 0.26, 2, 7), suit, side * 0.035, -0.15, 0);
+      mesh(arm, new THREE.CylinderGeometry(0.087, 0.083, 0.05, 8), strip, side * 0.035, -0.32, 0);
+      box(arm, trim, side * 0.035, -0.39, 0.012, 0.145, 0.15, 0.143);
 
-    const legGeo = new THREE.CapsuleGeometry(0.11, 0.4, 2, 6);
-    this.legL = new THREE.Mesh(legGeo, uniform);
-    this.legR = new THREE.Mesh(legGeo, uniform);
-    this.legL.position.set(-0.16, 0.38, 0);
-    this.legR.position.set(0.16, 0.38, 0);
-    this.group.add(this.legL, this.legR);
+      const leg = this.legs[i]!;
+      leg.position.set(side * 0.145, 0.77, 0);
+      mesh(leg, new THREE.CapsuleGeometry(0.105, 0.40, 2, 7), pants, 0, -0.30, 0);
+      box(leg, trim, 0, -0.39, 0.079, 0.15, 0.169, 0.076);
+      box(leg, trim, 0, -0.665, 0.048, 0.22, 0.205, 0.31);
+      box(leg, pants, 0, -0.746, 0.065, 0.222, 0.046, 0.34);
+    }
 
     this.name = nameSprite(nick, crewHex(colorIdx));
-    this.group.add(this.name);
-
-    this.flashlight = new THREE.SpotLight(0xfff2cc, 0, 16, 0.45, 0.5, 1.2);
     this.flashlight.target = this.flashlightTarget;
-    this.flashlight.position.set(0.2, 1.5, 0);
-    this.group.add(this.flashlight, this.flashlightTarget);
+    this.flashlight.position.set(-0.19, 1.43, 0.15);
+    this.group.add(this.name, this.flashlight, this.flashlightTarget);
   }
 
-  /** Keep the owning flashlight alive while hiding first-person body geometry. */
   hideBody(): void {
     this.group.traverse((o) => {
       if ((o as THREE.Mesh).isMesh || (o as THREE.Sprite).isSprite) o.visible = false;
@@ -140,85 +135,49 @@ export class AvatarView {
   }
 
   dispose(): void {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
     this.group.traverse((o) => {
       const mesh = o as THREE.Mesh;
-      mesh.geometry?.dispose();
-      if (mesh.material) {
-        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        for (const m of materials) {
-          (m as THREE.MeshBasicMaterial).map?.dispose();
-          m.dispose();
-        }
-      }
+      if (mesh.geometry) geometries.add(mesh.geometry);
+      if (mesh.material) materials.add(mesh.material as THREE.Material);
     });
+    geometries.forEach((geo) => geo.dispose());
+    materials.forEach((material) => material.dispose());
+    this.name.material.map?.dispose();
   }
 
-  update(dt: number, p: PlayerState, t: number): void {
-    // tucked inside a junker: avatar + nametag vanish (the open door tells the story)
-    if (p.hidden) {
-      this.group.visible = false;
-      this.lastX = p.x;
-      this.lastZ = p.z;
-      return;
-    }
-    this.group.visible = true;
-    this.group.scale.setScalar(1);
-    // estimate speed for the waddle
-    const dx = p.x - this.lastX;
-    const dz = p.z - this.lastZ;
+  update(dt: number, p: AvatarPose, t: number): void {
+    const moved = Math.hypot(p.x - this.lastX, p.z - this.lastZ);
     this.lastX = p.x;
     this.lastZ = p.z;
-    const distance = Math.hypot(dx, dz);
-    const inst = distance > 1.5 || p.seat > 0 || p.downed || p.dead ? 0 : Math.min(PLAYER.SPRINT, distance / Math.max(dt, 1e-3));
-    this.speed += (inst - this.speed) * Math.min(1, 8 * dt);
+    this.group.visible = !p.hidden;
+    this.flashlight.intensity = p.flashlight && !p.dead && !p.downed && !p.hidden ? 26 : 0;
+    this.flashlightTarget.position.set(-0.19, 1.43 + Math.sin(p.pitch) * 8, 0.15 + Math.cos(p.pitch) * 8);
+    if (p.hidden) return;
 
-    this.group.position.set(p.x, p.y, p.z);
-    this.group.rotation.y = p.yaw;
+    const seated = p.seat > 0;
+    const fallen = p.dead || p.downed;
+    const movingSpeed = moved < 1.3 && !seated && !fallen ? Math.min(PLAYER.SPRINT, moved / Math.max(dt, 1e-3)) : 0;
+    this.speed += (movingSpeed - this.speed) * Math.min(1, 8 * dt);
+    const moving = this.speed > 0.4 && !seated && !fallen;
+    this.walkPhase += moving ? dt * this.speed * 3.2 : 0;
+    const stride = moving ? Math.sin(this.walkPhase) : 0;
+    this.group.position.set(p.x, fallen ? 0.36 : seated ? (SEAT.isCart(p.seat) ? 0.25 : 0.48) : p.y, p.z);
+    this.group.rotation.set(p.dead ? Math.PI / 2 : p.downed ? Math.PI / 2 - 0.15 : 0, p.yaw, 0, "YXZ");
+    this.name.visible = !fallen;
+    this.body.rotation.z = fallen || seated ? 0 : stride * 0.06 + Math.sin(t * 1.8) * 0.012;
+    this.head.position.y = 1.59 + Math.abs(stride) * 0.04 - (seated ? 0.25 : 0);
+    this.head.rotation.set(fallen ? 0 : -p.pitch * 0.35, 0, -stride * 0.06);
+    this.body.position.y = seated ? 0.86 : 1.03;
 
-    if (p.dead) {
-      this.group.rotation.x = Math.PI / 2;
-      this.group.position.y = 0.35;
-      this.name.visible = false;
-      return;
+    const carrying = !!(p.carrying || p.carryBody);
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      this.legs[i]!.position.y = seated ? 0.56 : 0.77;
+      this.legs[i]!.rotation.x = seated ? -1.05 : stride * side * 0.66;
+      this.arms[i]!.position.y = seated ? 1.10 : 1.29;
+      this.arms[i]!.rotation.set(carrying ? -1.23 : seated ? -0.73 : -stride * side * 0.52, 0, carrying ? -side * 0.10 : 0);
     }
-    this.group.rotation.x = 0;
-    this.name.visible = true;
-
-    if (p.downed) {
-      this.group.rotation.x = Math.PI / 2 - 0.15;
-      this.group.position.y = 0.4;
-    } else if (p.seat > 0) {
-      this.group.position.y = 0.25;
-      this.group.scale.setScalar(0.92);
-    } else {
-      this.group.scale.setScalar(1);
-    }
-
-    // procedural waddle: legs scissor, torso leans into motion, head bobs
-    const moving = this.speed > 0.4 && !p.downed;
-    this.walkPhase += dt * (moving ? this.speed * 3.4 : 0);
-    const sw = Math.sin(this.walkPhase);
-    this.legL.rotation.x = sw * (moving ? 0.7 : 0);
-    this.legR.rotation.x = -sw * (moving ? 0.7 : 0);
-    this.body.rotation.z = moving ? sw * 0.08 : Math.sin(t * 1.8) * 0.02;
-    this.head.rotation.z = moving ? -sw * 0.12 : 0;
-    this.head.position.y = 1.62 + (moving ? Math.abs(sw) * 0.05 : 0);
-
-    // arms: forward when carrying, swing otherwise
-    if (p.carrying) {
-      this.armL.rotation.x = -1.25;
-      this.armR.rotation.x = -1.25;
-      this.armL.rotation.z = 0.12;
-      this.armR.rotation.z = -0.12;
-    } else {
-      this.armL.rotation.x = -sw * (moving ? 0.55 : 0);
-      this.armR.rotation.x = sw * (moving ? 0.55 : 0);
-      this.armL.rotation.z = 0;
-      this.armR.rotation.z = 0;
-    }
-
-    // flashlight
-    this.flashlight.intensity = p.flashlight ? 26 : 0;
-    this.flashlightTarget.position.set(0, 1.4 - p.pitch * 3, 6);
   }
 }

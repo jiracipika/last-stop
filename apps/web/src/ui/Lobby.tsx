@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { SHOP } from "@last-stop/shared";
 import { crewHex } from "../game/palette.js";
+import { CrewOptions, HEADGEAR } from "./CrewOptions.js";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
 import type { Prefs } from "../App.js";
@@ -11,20 +12,24 @@ export function LobbyOverlay({
   net,
   hud,
   prefs,
+  savePrefs,
   onLeave,
 }: {
   net: Net;
   hud: HudState;
   prefs: Prefs;
+  savePrefs: (prefs: Prefs) => void;
   onLeave: () => void;
 }): React.ReactElement {
   const [copied, setCopied] = useState(false);
+  const [outfit, setOutfit] = useState<{ color: number; hat: number } | null>(null);
   const st = net.state;
   if (!st) return <div className="lobby" />;
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
   const me = st.players.get(net.sid);
-  const allReady = players.every(({ p }) => p.ready);
-  void hud;
+  const allReady = players.every(({ p }) => p.ready && p.connected);
+  const connected = net.status === "connected";
+  const taken = players.filter(({ sid }) => sid !== net.sid).map(({ p }) => p.color);
 
   // /?code= pre-fills the title screen's join field (Title.inviteCodeFromUrl)
   const inviteLink = `${location.origin}${location.pathname}?code=${hud.roomCode}`;
@@ -34,8 +39,7 @@ export function LobbyOverlay({
       {/* gas-station stop: last chance before the lot. Personal budget; the
           coffee and the flashlight cost 4+7 of a $10 allowance — pick one. */}
       <div className="lobby-panel gas-stop">
-        <div className="panel-kicker">LAST STOP BEFORE THE LOT</div>
-        <h2>PALE LANTERN GAS &amp; SIPS</h2>
+        <h2>Gas &amp; Sips</h2>
         <div className="gas-budget">
           POCKET MONEY <b>${me?.budget ?? SHOP.BUDGET}</b>
         </div>
@@ -51,19 +55,18 @@ export function LobbyOverlay({
                 <p>{item.desc}</p>
                 <button
                   className="btn small"
-                  disabled={!me || owned || (me?.budget ?? 0) < item.price}
+                  disabled={!connected || !me || owned || (me?.budget ?? 0) < item.price}
                   onClick={() => net.act("shop", { item: item.id })}
                 >
-                  {owned ? "In the truck" : "Buy"}
+                  {owned ? "Purchased" : `Buy ${item.name}`}
                 </button>
               </li>
             );
           })}
         </ul>
-        <p className="hint">One of each per stop. Spend it before the van rolls in.</p>
+        <p className="hint">Supplies are optional. Buy them before the crew leaves.</p>
       </div>
       <div className="lobby-panel">
-        <div className="panel-kicker">SHIFT SETUP</div>
         <h2>Crew Room</h2>
         <div className="invite">
           <span>
@@ -88,7 +91,7 @@ export function LobbyOverlay({
           {players.map(({ sid, p }) => (
             <li key={sid} className={p.connected ? "" : "dc"}>
               <span className="dot" style={{ background: crewHex(p.color) }} />
-              <span className="nick">{p.nick}{sid === net.sid ? " (you)" : ""}</span>
+              <span className="nick">{p.nick}{sid === net.sid ? " (you)" : ""}<small>{HEADGEAR[p.hat]}</small></span>
               {p.host && <span className="host-tag">host</span>}
               <span className={`ready ${p.ready ? "on" : ""}`}>{p.ready ? "READY" : "warming up"}</span>
               {!p.connected && <span className="dc-tag">reconnecting…</span>}
@@ -100,12 +103,26 @@ export function LobbyOverlay({
             </li>
           ))}
         </ul>
+        {me && (outfit ? (
+          <div className="lobby-outfit">
+            <CrewOptions color={outfit.color} hat={outfit.hat} taken={taken}
+              onChange={(color, hat) => setOutfit({ color, hat })} />
+            <button className="btn small" disabled={!connected || taken.includes(outfit.color)} onClick={() => {
+              net.act("profile", outfit);
+              savePrefs({ ...prefs, ...outfit });
+              setOutfit(null);
+            }}>Save outfit</button>
+            <button className="btn small ghost" onClick={() => setOutfit(null)}>Cancel</button>
+          </div>
+        ) : (
+          <button className="btn small ghost outfit-button" onClick={() => setOutfit({ color: me.color, hat: me.hat })}>Edit outfit</button>
+        ))}
         <div className="lobby-actions">
-          <button className="btn" disabled={!me || net.status !== "connected"} onClick={() => net.act("ready")}>
+          <button className="btn" disabled={!me || !connected} onClick={() => net.act("ready")}>
             {me?.ready ? "Not ready" : "Ready up"}
           </button>
           {me?.host && (
-            <button className="btn primary" disabled={!allReady || players.length === 0} onClick={() => net.act("start")}>
+            <button className="btn primary" disabled={!connected || !allReady || players.length === 0 || !!outfit} onClick={() => net.act("start")}>
               Start the shift {players.length === 1 ? "(solo practice)" : `(${players.length} crew)`}
             </button>
           )}
@@ -113,7 +130,7 @@ export function LobbyOverlay({
             Leave
           </button>
         </div>
-        {prefs.nick === "" && <p className="hint">Tip: pick a name and color before starting.</p>}
+        {me?.host && !allReady && <p className="hint">Start the shift when everyone is ready.</p>}
       </div>
     </div>
   );

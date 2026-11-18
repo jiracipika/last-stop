@@ -8,6 +8,8 @@ export class VanView {
   group = new THREE.Group();
   private doorL: THREE.Group;
   private doorR: THREE.Group;
+  private cabDoors: { hinge: THREE.Group; side: number; remaining: number }[] = [];
+  private borrowedPaint: THREE.Texture;
   private headL: THREE.SpotLight;
   private headR: THREE.SpotLight;
   private headMat: THREE.MeshBasicMaterial;
@@ -19,6 +21,7 @@ export class VanView {
   private cargoGroup = new THREE.Group();
 
   constructor(tex: Tex) {
+    this.borrowedPaint = tex.vanPaint;
     const paint = new THREE.MeshLambertMaterial({ map: tex.vanPaint });
     const dark = new THREE.MeshLambertMaterial({ color: 0x2a2c30 });
     const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.3 });
@@ -38,8 +41,18 @@ export class VanView {
     box(2.1, 0.12, 4.4, paint, 0, 2.25, -0.2);
     box(2.0, 0.85, 1.45, paint, 0, 0.9, 1.675);
     // Cab lower side panels and seats leave space at the riders' eye height.
-    box(0.1, 0.7, 1.4, paint, -1, 1.15, 1.5);
-    box(0.1, 0.7, 1.4, paint, 1, 1.15, 1.5);
+    const cabHandle = new THREE.MeshLambertMaterial({ color: 0xc9b18c });
+    for (const side of [-1, 1]) {
+      const hinge = new THREE.Group();
+      hinge.name = side < 0 ? "cab-door-driver" : "cab-door-passenger";
+      hinge.position.set(side * 1.0, 0, 2.14);
+      hinge.add(box(0.1, 0.7, 1.29, paint, 0, 1.15, -0.64));
+      hinge.add(box(0.058, 0.42, 0.94, glass, 0, 1.88, -0.65));
+      hinge.add(box(0.06, 0.045, 0.12, cabHandle, side * 0.066, 1.42, -1.07));
+      hinge.add(box(0.058, 0.05, 1.03, dark, 0, 1.64, -0.66));
+      this.cabDoors.push({ hinge, side, remaining: 0 });
+      this.group.add(hinge);
+    }
     for (const seat of VAN.SEATS) {
       box(0.55, 0.14, 0.5, dark, seat.x, 0.75, seat.z);
       box(0.55, 0.6, 0.12, dark, seat.x, 1.0, seat.z - 0.25);
@@ -50,14 +63,20 @@ export class VanView {
     // windshield + side windows
     const shield = box(1.7, 0.5, 0.06, glass, 0, 1.9, 2.14);
     shield.rotation.x = 0.22;
-    box(0.06, 0.42, 0.9, glass, -1.01, 1.88, 1.5);
-    box(0.06, 0.42, 0.9, glass, 1.01, 1.88, 1.5);
+    const bumperTrim = new THREE.MeshLambertMaterial({ color: 0xb8b9a8 });
+    for (let i = 0; i < 4; i++) box(1.06, 0.025, 0.035, bumperTrim, 0, 0.85 + i * 0.067, 2.49);
     // bumper + grille
     box(2.2, 0.35, 0.25, dark, 0, 0.55, 2.45);
     box(1.4, 0.3, 0.08, dark, 0, 0.95, 2.43);
     box(2.2, 0.35, 0.25, dark, 0, 0.55, -2.45);
     // roof rack
     box(1.7, 0.08, 2.6, dark, 0, 2.45, -0.8);
+    // Side mirrors and tie-down rails make the silhouette readable from the lot.
+    for (const side of [-1, 1]) {
+      box(0.25, 0.035, 0.05, dark, side * 1.04, 1.69, 2.04);
+      box(0.13, 0.24, 0.08, dark, side * 1.20, 1.75, 2.04);
+      box(0.096, 0.197, 0.012, bumperTrim, side * 1.20, 1.75, 1.992);
+    }
     // strap rails
     box(0.1, 0.06, 2.2, new THREE.MeshLambertMaterial({ color: 0x8a4a3a }), 0.95, 0.55, -1.0);
     box(0.1, 0.06, 2.2, new THREE.MeshLambertMaterial({ color: 0x8a4a3a }), -0.95, 0.55, -1.0);
@@ -194,6 +213,11 @@ export class VanView {
     this.cargoGroup.position.y = jig;
   }
 
+  swingCabDoor(side: number): void {
+    const door = this.cabDoors.find((d) => d.side === side);
+    if (door) door.remaining = 0.6;
+  }
+
   update(x: number, z: number, yaw: number, speed: number, doorsOpen: boolean, lightsOn: boolean, t: number, dt = 1 / 60): void {
     this.group.position.set(x, 0, z);
     this.group.rotation.y = yaw;
@@ -201,6 +225,11 @@ export class VanView {
     const ease = 1 - Math.exp(-10 * dt);
     this.doorL.rotation.y += (doorTarget - this.doorL.rotation.y) * ease;
     this.doorR.rotation.y += (-doorTarget - this.doorR.rotation.y) * ease;
+    for (const door of this.cabDoors) {
+      door.remaining = Math.max(0, door.remaining - dt);
+      const angle = Math.abs(speed) > 1.5 || door.remaining <= 0 ? 0 : -door.side * 1.15;
+      door.hinge.rotation.y += (angle - door.hinge.rotation.y) * ease;
+    }
     const lights = lightsOn;
     this.headL.intensity = lights ? 38 : 0;
     this.headR.intensity = lights ? 38 : 0;
@@ -221,7 +250,7 @@ export class VanView {
       if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
       else if (mat) {
         const anyMat = mat as THREE.Material & { map?: THREE.Texture };
-        anyMat.map?.dispose();
+        if (anyMat.map && anyMat.map !== this.borrowedPaint) anyMat.map.dispose();
         mat.dispose();
       }
     });

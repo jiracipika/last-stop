@@ -1,4 +1,4 @@
-// Colyseus client wrapper: create/join by code, reconnection, input pump,
+// Colyseus client wrapper: create/join by code, reconnection, input,
 // event fan-out. UI never touches the SDK directly.
 import { Client, type Room } from "@colyseus/sdk";
 import { RoomState } from "@last-stop/shared";
@@ -24,7 +24,7 @@ export class Net {
   private pingTimer: number | null = null;
   private pingSentAt = 0;
   private reconnectionToken = "";
-  private reconnectTries = 0;
+  private connectionGeneration = 0;
 
   constructor(url: string) {
     this.client = new Client(url);
@@ -103,7 +103,6 @@ export class Net {
   private afterConnect(): void {
     const room = this.room!;
     this.reconnectionToken = room.reconnectionToken ?? "";
-    this.reconnectTries = 0;
     // We own reconnection (tryReconnect below). If the SDK's built-in
     // auto-reconnect also fires, the two flows race to consume the
     // reconnection token and this.room can end up pointing at a fresh room
@@ -116,6 +115,7 @@ export class Net {
     this.setStatus("connected");
     activeNet = this;
     room.onMessage("ev", (msg: unknown) => {
+      if (this.room !== room) return;
       const e = msg as Ev;
       // Latency probe echo: the room answers "ping" with ev { t: "pong",
       // c: <the number we sent> }. Only an exact match counts, so a stale
@@ -130,6 +130,9 @@ export class Net {
       this.emit({ t: "roomError", code, msg: message });
     });
     room.onLeave((code) => {
+      if (this.room !== room) return;
+      if (this.pingTimer !== null) clearInterval(this.pingTimer);
+      this.pingTimer = null;
       this.rttMs = -1; // unknown until the next probe lands
       this.pingSentAt = 0;
       if (code === 1000 || code === 1001) {
@@ -145,25 +148,33 @@ export class Net {
 
   /** One latency probe; the echo updates rttMs in the ev handler above. */
   private sendPing(): void {
-    if (!this.room) return;
+    if (!this.room || this.status !== "connected") return;
     this.pingSentAt = performance.now();
     this.room.send("ping", this.pingSentAt);
   }
 
   private async tryReconnect(): Promise<void> {
+    const generation = this.connectionGeneration;
+    const token = this.reconnectionToken;
     this.setStatus("reconnecting");
-    if (!this.reconnectionToken) {
+    if (!token) {
       this.setStatus("error", "connection lost");
       return;
     }
     for (let i = 0; i < 6; i++) {
       await new Promise((r) => setTimeout(r, 1500 + i * 1000));
+      if (generation !== this.connectionGeneration) return;
       try {
-        this.room = (await this.client.reconnect(this.reconnectionToken, RoomState)) as unknown as Room<RoomState>;
+        const room = await this.client.reconnect(token, RoomState) as unknown as Room<RoomState>;
+        if (generation !== this.connectionGeneration) {
+          void room.leave(true);
+          return;
+        }
+        this.room = room;
         this.afterConnect();
         return;
       } catch {
-        /* retry */
+        if (generation !== this.connectionGeneration) return;
       }
     }
     this.setStatus("error", "reconnection failed");
@@ -174,19 +185,24 @@ export class Net {
    *  between fires (dropping inputs and their seqs — lost jumps). The engine
    *  calls this on its own 20 Hz cadence. */
   sendInput(input: Record<string, unknown>): void {
-    this.room?.send("in", input);
+    if (this.status === "connected") this.room?.send("in", input);
   }
 
   act(k: string, extra: Record<string, unknown> = {}): void {
-    this.room?.send("act", { k, ...extra });
+    if (this.status === "connected") this.room?.send("act", { k, ...extra });
   }
 
   leave(): void {
-    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.connectionGeneration++;
+    if (this.pingTimer !== null) clearInterval(this.pingTimer);
+    this.pingTimer = null;
     this.rttMs = -1;
     this.pingSentAt = 0;
-    this.room?.leave(true);
+    this.reconnectionToken = "";
+    const room = this.room;
     this.room = null;
+    if (activeNet === this) activeNet = null;
+    void room?.leave(true);
     this.setStatus("idle");
   }
 }
