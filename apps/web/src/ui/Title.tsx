@@ -88,8 +88,24 @@ export function TitleScreen({
           </div>
         </div>
 
-        <details className="title-controls">
-          <summary>Controls</summary>
+        {/* First visit: the job briefing opens with the controls so nobody
+            joins blind; returning players get the collapsed short form. */}
+        <details
+          className="title-controls"
+          open={!prefs.seenHowto}
+          onToggle={(e) => {
+            if (!(e.currentTarget as HTMLDetailsElement).open && !prefs.seenHowto) {
+              savePrefs({ ...prefs, seenHowto: true });
+            }
+          }}
+        >
+          <summary>{prefs.seenHowto ? "Controls" : "First night? Here's the job"}</summary>
+          <ol className="howto-steps">
+            <li>Crew up (1–4). One of you drives the van in through three gates.</li>
+            <li>Grab salvage from the motel until you hit quota — the van is your stash.</li>
+            <li>Find the distributor cap so the van can start again.</li>
+            <li>All aboard, drive west. The van waits for the exit driver — nobody gets left.</li>
+          </ol>
           <div className="controls-hint">
             <span><b>WASD</b> Move or drive · <b>Mouse</b> Look · <b>Shift</b> Sprint</span>
             <span><b>E</b> Interact or stow · <b>LMB</b> Carry · <b>G</b> Drop</span>

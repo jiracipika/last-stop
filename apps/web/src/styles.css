@@ -1845,3 +1845,51 @@ input:focus-visible {
   .app.attract-live .title-screen,
   .lobby { align-items: flex-start; }
 }
+
+/* ---- first-shift onboarding (title + crew room) ---- */
+/* Progressive disclosure: the how-a-shift-works panels start OPEN for new
+   players (prefs.seenHowto) and remember being closed. */
+.howto-steps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #b6c3cb;
+}
+.howto-steps b {
+  color: var(--amber, #ffbe55);
+}
+.lobby-howto {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid #384b55;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+.lobby-howto summary {
+  cursor: pointer;
+  color: #c6b99b;
+  letter-spacing: 0.6px;
+}
+.lobby-howto summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.outfit-nick input {
+  width: 100%;
+  padding: 8px 10px;
+  background: #0d1219;
+  border: 1px solid #2a3442;
+  border-radius: 6px;
+  color: var(--ink, #cfd8e3);
+  font-family: inherit;
+  font-size: 14px;
+}
+.outfit-nick input:focus {
+  outline: none;
+  border-color: var(--cyan, #78e8ff);
+  box-shadow: var(--focus);
+}

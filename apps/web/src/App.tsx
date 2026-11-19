@@ -26,6 +26,9 @@ export interface Prefs {
   captions: boolean;
   reduceFlash: boolean;
   colorblind: boolean;
+  /** Set once the player has read (or closed) a how-a-shift-works panel —
+   *  drives whether the title + crew room open their beginner briefing. */
+  seenHowto: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -40,6 +43,7 @@ const DEFAULT_PREFS: Prefs = {
   captions: false,
   reduceFlash: false,
   colorblind: false,
+  seenHowto: false,
 };
 
 function loadPrefs(): Prefs {

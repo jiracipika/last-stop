@@ -129,7 +129,9 @@ export class GameRoom extends Room {
     switch (kind) {
       case "profile": {
         if (w.phase !== "lobby" && w.phase !== "results") return;
-        if (!this.rateOk(client, "profile", 0.5)) return;
+        // 0.15s: a wardrobe click-spree (color, then hat, then nick) must
+        // land — each edit is a validated lobby-only schema write
+        if (!this.rateOk(client, "profile", 0.15)) return;
         const nick = typeof data.nick === "string" ? data.nick.slice(0, 16).trim() : p.nick;
         if (nick) p.nick = nick;
         if (typeof data.color === "number" && data.color >= 0 && data.color < 8) {
@@ -138,7 +140,7 @@ export class GameRoom extends Room {
         }
         if (typeof data.hat === "number" && data.hat >= 0 && data.hat <= 4) p.hat = data.hat;
         w.syncPlayerSchema(p, true);
-        this.broadcast("ev", { t: "profile", sid: p.sid, nick: p.nick, color: p.color });
+        this.broadcast("ev", { t: "profile", sid: p.sid, nick: p.nick, color: p.color, hat: p.hat });
         return;
       }
       case "ready": {

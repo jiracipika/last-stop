@@ -86,10 +86,15 @@ shown on touch layouts.
 
 ## The shift (mission loop)
 
-1. Crew room: create/join by code, pick name + uniform color, ready up — and make your stop at the
-   **gas station** (south-west corner): a $10 personal allowance buys a **truck-stop coffee**
-   ($4, faster stamina regen all shift) or the **torchlight flashlight** ($7, arms your F key —
-   it matters on BLACKOUT nights). One of each per stop; the allowance restocks after every shift.
+1. Crew room: create/join by code, ready up — and fix your look with **Edit outfit & name**:
+   nickname, uniform color and headgear are editable right in the lobby and every crew member
+   sees the change land live (roster + the textured 3D avatar rebuild). Colors are unique per
+   crew; the look locks when the shift starts. First-timers get a **how-a-shift-works panel**
+   on the title screen and in the crew room (dismiss once and it stays dismissed). Then make
+   your stop at the **gas station** (south-west corner): a $10 personal allowance buys a
+   **truck-stop coffee** ($4, faster stamina regen all shift) or the **torchlight flashlight**
+   ($7, arms your F key — it matters on BLACKOUT nights). One of each per stop; the allowance
+   restocks after every shift.
 2. Briefing (5 s): three random modifiers are announced — over the van already parked on the old
    road, because the shift now opens with the **drive-in course**.
 3. **Drive-in (~20 s)**: the whole crew rides in the van, **one random member at the wheel**.
@@ -259,7 +264,9 @@ the frontend — the only env var the client takes is the public server URL.
 
 - `pnpm test` — **28/28 passing**: map integrity (every nav edge clear of walls, spawns outside
   colliders, gate lanes drivable); lobby (create/join, 5th player rejected, ready-gating,
-  mid-mission joins rejected, **duplicate room codes rejected**); carrying (simultaneous grab →
+  mid-mission joins rejected, **duplicate room codes rejected**); **wardrobe/profile over the
+  wire** (outfit + nickname land on other clients, taken colors rejected, the look locks once
+  the shift is live); carrying (simultaneous grab →
   exactly one holder, two-handle heavy with independent release, delivery credited exactly once,
   leave-while-carrying drops the item safely, out-of-range and far van interactions rejected);
   mission arcs (**full WIN: deliver → install → gate → drive → results → replay resets all
