@@ -2,6 +2,7 @@
 // through prediction+server, and a forced socket drop heals through the SDK's
 // auto-reconnect without losing the session.
 import { test, expect, type Page } from "@playwright/test";
+import { newLowPowerContext } from "./lowPower.js";
 
 async function enterSoloMission(page: Page): Promise<void> {
   await page.goto("http://127.0.0.1:5173");
@@ -76,7 +77,7 @@ test("keyboard input drives the player through the real client pipeline", async 
 }, 60000);
 
 test("a dropped socket reconnects automatically and keeps the session", async ({ browser }) => {
-  const ctx = await browser.newContext();
+  const ctx = await newLowPowerContext(browser);
   const page = await ctx.newPage();
   await enterSoloMission(page);
   await page.waitForTimeout(600);

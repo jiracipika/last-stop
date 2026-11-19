@@ -3,6 +3,7 @@
 // the 3D avatar mesh (engine rebuilds on color/hat/nick drift). Also pins the
 // text-input key isolation: typing spaces in the outfit name field works.
 import { test, expect, type Page } from "@playwright/test";
+import { newLowPowerContext } from "./lowPower.js";
 
 async function gotoTitle(page: Page, timeoutMs = 20000): Promise<void> {
   await page.goto("http://127.0.0.1:5173");
@@ -22,13 +23,7 @@ async function avatarLook(page: Page, sid: string): Promise<string | null> {
 
 test("wardrobe edits land live for the whole crew", async ({ browser }) => {
   test.setTimeout(150_000);
-  // Two concurrent WebGL contexts rendering the full scene can starve each
-  // other's main threads on integrated GPUs (the click hit-test seizes in the
-  // driver). Seed the app's own low-quality tier — the lobby wardrobe doesn't
-  // need full-fat shadows to prove replication.
-  const lowQuality = () => localStorage.setItem("laststop.prefs", JSON.stringify({ quality: "low" }));
-  const ctxA = await browser.newContext();
-  await ctxA.addInitScript(lowQuality);
+  const ctxA = await newLowPowerContext(browser);
   const pageA = await ctxA.newPage();
   const errors: string[] = [];
   pageA.on("pageerror", (e) => errors.push(String(e)));
@@ -44,8 +39,7 @@ test("wardrobe edits land live for the whole crew", async ({ browser }) => {
   await expect(codeEl).toBeVisible({ timeout: 15000 });
   const code = ((await codeEl.textContent()) ?? "").trim();
 
-  const ctxB = await browser.newContext();
-  await ctxB.addInitScript(lowQuality);
+  const ctxB = await newLowPowerContext(browser);
   const pageB = await ctxB.newPage();
   // A second WebGL context cold-boots behind the host's attract loop: the
   // DOM lands quickly but the main thread can stay busy baking the world for
