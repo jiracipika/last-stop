@@ -258,11 +258,17 @@ export function App(): React.ReactElement {
           {paused && hud.phase !== "lobby" && hud.phase !== "results" && (
             <PauseOverlay prefs={prefs} savePrefs={savePrefs} onResume={resume} onLeave={leaveRoom} engine={engineRef.current} />
           )}
-          {!hud.locked && !paused && (hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "briefing" || hud.phase === "arrive") && (
-            <button className="click-catch" onClick={onCanvasClick}>
-              <span>Click to take control</span>
-            </button>
-          )}
+          {!hud.locked && !paused && (hud.phase === "scavenge" || hud.phase === "escape" || hud.phase === "briefing" || hud.phase === "arrive") &&
+            (hud.lockDenied ? (
+              // the browser refuses pointer lock (headless, sandboxed iframe,
+              // kiosk): don't park a full-screen click target over the game —
+              // keyboard play still works, only mouse look is unavailable
+              <div className="lock-hint">Mouse look unavailable here — keyboard controls still work</div>
+            ) : (
+              <button className="click-catch" onClick={onCanvasClick}>
+                <span>Click to take control</span>
+              </button>
+            ))}
         </>
       )}
       <div className="toasts">

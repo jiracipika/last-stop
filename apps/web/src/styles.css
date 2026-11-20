@@ -1893,3 +1893,21 @@ input:focus-visible {
   border-color: var(--cyan, #78e8ff);
   box-shadow: var(--focus);
 }
+
+/* pointer lock refused (headless/sandboxed/kiosk): a one-line hint replaces
+   the full-screen click target so keyboard play stays unobstructed */
+.lock-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(10, 14, 20, 0.85);
+  border: 1px solid #384b55;
+  border-radius: 6px;
+  color: #a7b7c3;
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  pointer-events: none;
+  z-index: 5;
+}

@@ -39,6 +39,10 @@ export class InputManager {
   locked = false;
   onAction: (a: ActionKind) => void = () => {};
   onClear: () => void = () => {};
+  /** Fired once the browser refuses pointer lock (headless, sandboxed
+   *  iframe, kiosk policy): mouse look is unavailable, keys still work. */
+  onLockDenied: () => void = () => {};
+  lockDenied = false;
   private el: HTMLElement;
   private firstLockedMotion = false;
   private cursorX = 0;
@@ -47,8 +51,21 @@ export class InputManager {
 
   constructor(el: HTMLElement) {
     this.el = el;
+    // Keyboard input works whenever the PAGE has focus (keydown only fires
+    // then) — pointer lock is required for mouse look, not for keys. Requiring
+    // the lock here made the game unplayable wherever the browser denies it
+    // (headless e2e, sandboxed iframes, kiosks): every key died while the
+    // "click to grab the wheel" overlay sat there forever. Typing in overlay
+    // fields (nickname, room code) and browser modifiers still pass through.
+    const editing = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null;
+      return (
+        !!el &&
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)
+      );
+    };
     const kd = (e: KeyboardEvent) => {
-      if (!this.locked || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || editing(e.target)) return;
       const code = e.code;
       this.keys.add(code);
       switch (code) {
@@ -140,7 +157,19 @@ export class InputManager {
   }
 
   requestLock(): void {
-    void this.el.requestPointerLock?.()?.catch?.(() => {});
+    try {
+      const r = this.el.requestPointerLock?.() as unknown as Promise<void> | undefined;
+      if (r && typeof r.catch === "function") {
+        r.catch(() => {
+          if (!this.lockDenied && document.pointerLockElement !== this.el) {
+            this.lockDenied = true;
+            this.onLockDenied();
+          }
+        });
+      }
+    } catch {
+      /* legacy browsers: lock change events carry the state */
+    }
   }
 
   exitLock(): void {

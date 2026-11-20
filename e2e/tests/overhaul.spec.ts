@@ -18,18 +18,22 @@ async function start(page: Page) {
 }
 
 // Walk via the real client input/prediction/server pipeline, sampling truth.
+// The 30s budget (was 18) + 40ms polls absorb slow-box starvation: under load
+// the server's fixed-dt ticks fire late (sim runs slower than wall time) and
+// the client main thread stalls make patches land in bursts — a tight budget
+// read that as "could not walk" even though every patch moved 0.107 m.
 async function walk(page: Page, x: number, z: number) {
   await page.evaluate(async ({ x, z }) => {
     const ls = (window as any).__laststop;
     const e = ls.engine();
-    const until = performance.now() + 18000;
+    const until = performance.now() + 30000;
     try {
       while (performance.now() < until) {
         const p = ls.net.state.players.get(ls.net.sid);
         if (Math.hypot(x - p.x, z - p.z) < 0.35) return;
         e.input.yaw = Math.atan2(x - p.x, z - p.z);
         e.input.keys.add("KeyW");
-        await new Promise((r) => setTimeout(r, 60));
+        await new Promise((r) => setTimeout(r, 40));
       }
       throw new Error(`Could not walk to ${x}, ${z}`);
     } finally { e.input.keys.delete("KeyW"); }

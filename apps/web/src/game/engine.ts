@@ -174,6 +174,7 @@ export class Engine {
       this.inputInstance = new InputManager(this.renderer.domElement);
       this.inputInstance.sensitivity = this.settings.sensitivity;
       this.inputInstance.onAction = (a) => this.onAction(a);
+      this.inputInstance.onLockDenied = () => this.store.set({ lockDenied: true });
       this.inputInstance.onClear = () => {
         this.heldTarget = null;
         this.store.set({ progress: 0, progressKind: "" });
@@ -1890,6 +1891,7 @@ export class Engine {
       exitBlock,
       carryBodyNick: me.carryBody ? st.players.get(me.carryBody)?.nick ?? "" : "",
       locked: this.input.locked,
+      lockDenied: this.input.lockDenied,
       fps: this.fpsN > 0 ? Math.round(this.fpsN / Math.max(0.001, this.fpsAcc)) : 0,
       leaveWarn: this.store.state.leaveWarn,
     });
