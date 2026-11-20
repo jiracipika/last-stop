@@ -22,7 +22,7 @@ export function LobbyOverlay({
   onLeave: () => void;
 }): React.ReactElement {
   const [copied, setCopied] = useState(false);
-  const [outfit, setOutfit] = useState<{ color: number; hat: number } | null>(null);
+  const [outfit, setOutfit] = useState<{ nick: string; color: number; hat: number } | null>(null);
   const st = net.state;
   if (!st) return <div className="lobby" />;
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
@@ -105,18 +105,48 @@ export function LobbyOverlay({
         </ul>
         {me && (outfit ? (
           <div className="lobby-outfit">
+            <label className="field outfit-nick">
+              <span>Crew name</span>
+              <input
+                maxLength={16}
+                value={outfit.nick}
+                placeholder="Rookie"
+                onChange={(e) => setOutfit({ ...outfit, nick: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              />
+            </label>
             <CrewOptions color={outfit.color} hat={outfit.hat} taken={taken}
-              onChange={(color, hat) => setOutfit({ color, hat })} />
-            <button className="btn small" disabled={!connected || taken.includes(outfit.color)} onClick={() => {
-              net.act("profile", outfit);
-              savePrefs({ ...prefs, ...outfit });
+              onChange={(color, hat) => setOutfit({ ...outfit, color, hat })} />
+            <button className="btn small" disabled={!connected || taken.includes(outfit.color) || !outfit.nick.trim()} onClick={() => {
+              net.act("profile", { nick: outfit.nick.trim() || me.nick, color: outfit.color, hat: outfit.hat });
+              savePrefs({ ...prefs, nick: outfit.nick.trim() || prefs.nick, color: outfit.color, hat: outfit.hat });
               setOutfit(null);
             }}>Save outfit</button>
             <button className="btn small ghost" onClick={() => setOutfit(null)}>Cancel</button>
           </div>
         ) : (
-          <button className="btn small ghost outfit-button" onClick={() => setOutfit({ color: me.color, hat: me.hat })}>Edit outfit</button>
+          <button className="btn small ghost outfit-button" onClick={() => setOutfit({ nick: me.nick, color: me.color, hat: me.hat })}>Edit outfit &amp; name</button>
         ))}
+
+        {/* first-shift briefing for the wait: what the night looks like and
+            which keys matter. Dismissing it remembers the choice. */}
+        <details
+          className="lobby-howto"
+          open={!prefs.seenHowto}
+          onToggle={(e) => {
+            if (!(e.currentTarget as HTMLDetailsElement).open && !prefs.seenHowto) {
+              savePrefs({ ...prefs, seenHowto: true });
+            }
+          }}
+        >
+          <summary>New here? How a shift goes</summary>
+          <ol className="howto-steps">
+            <li>Ready up; the host starts the shift. One random driver brings the van in through three gates — that driver is tonight's exit driver.</li>
+            <li>Haul salvage to the van until you hit quota. <b>LMB</b> carries, <b>E</b> stows small loot in your pack, doors bang — stay quiet.</li>
+            <li>The Caretaker walks the lot. The flashlight helps you; sprint noise doesn't. <b>Q</b> pings, <b>Z/X/C</b> quick chat.</li>
+            <li>Find the distributor cap, install it, pile in, drive west. The van won't leave a downed exit driver — stabilize (<b>RMB</b>) or carry the body home (<b>E</b>).</li>
+          </ol>
+        </details>
         <div className="lobby-actions">
           <button className="btn" disabled={!me || !connected} onClick={() => net.act("ready")}>
             {me?.ready ? "Not ready" : "Ready up"}

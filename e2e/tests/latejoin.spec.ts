@@ -7,6 +7,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
+import { newLowPowerContext } from "./lowPower.js";
 
 const SCRATCH_SHOT = join(__dirname, "..", "test-results", "latejoin", "late-joined.png");
 const COMMITTED_SHOT = join(__dirname, "..", "..", "screenshots", "latejoin-e2e.png");
@@ -40,7 +41,7 @@ test("a friend can clock in mid-shift", async ({ browser, request }) => {
   // Reserve a room that starts straight in the escape phase with a 90s clock.
   // Retry on the rare room-code collision.
   // Finish the expensive title startup before reserving a seat.
-  const ctxA = await browser.newContext();
+  const ctxA = await newLowPowerContext(browser);
   const pageA = await ctxA.newPage();
   await gotoTitle(pageA);
   await pageA.locator("input[maxlength='16']").fill("Host");
@@ -64,7 +65,7 @@ test("a friend can clock in mid-shift", async ({ browser, request }) => {
   await expect(pageA.locator(".timer")).toBeVisible({ timeout: 30000 });
 
   // Late joiner: a second browser joins the same code mid-mission.
-  const ctxB = await browser.newContext();
+  const ctxB = await newLowPowerContext(browser);
   const pageB = await ctxB.newPage();
   await gotoTitle(pageB);
   await pageB.locator("input[maxlength='16']").fill("Late");

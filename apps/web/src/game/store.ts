@@ -68,6 +68,9 @@ export interface HudState {
   spectating: string;
   fps: number;
   locked: boolean;
+  // the browser refused pointer lock (headless, sandboxed iframe, kiosk):
+  // mouse look is unavailable — keys still work, the click-catch yields
+  lockDenied: boolean;
   roomCode: string;
   /** accessibility caption: last critical audio cue, shown while fresh */
   caption: { text: string; at: number } | null;
@@ -129,6 +132,7 @@ export const initialHud: HudState = {
   spectating: "",
   fps: 60,
   locked: false,
+  lockDenied: false,
   roomCode: "",
   caption: null,
   floaters: [],

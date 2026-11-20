@@ -1,6 +1,7 @@
 // Browser flow: create a room in one context, join by code in another,
 // ready up, start the mission, and see the in-mission HUD on both clients.
 import { test, expect, type Page } from "@playwright/test";
+import { newLowPowerContext } from "./lowPower.js";
 
 async function gotoTitle(page: Page): Promise<void> {
   await page.goto("http://127.0.0.1:5173");
@@ -21,7 +22,7 @@ test("two browsers join one room by code, ready up, and start the shift", async 
   // boot; the global 90s budget was repeatedly spent before the briefing
   // finished on slow boxes (the same flow passes comfortably in one browser).
   test.setTimeout(150_000);
-  const ctxA = await browser.newContext();
+  const ctxA = await newLowPowerContext(browser);
   const pageA = await ctxA.newPage();
   const pageBErrors: string[] = [];
   pageA.on("pageerror", (e) => pageBErrors.push(String(e)));
@@ -37,7 +38,7 @@ test("two browsers join one room by code, ready up, and start the shift", async 
   expect(code).toMatch(/^[A-Z0-9]{5}$/);
 
   // second browser joins with the code
-  const ctxB = await browser.newContext();
+  const ctxB = await newLowPowerContext(browser);
   const pageB = await ctxB.newPage();
   await gotoTitle(pageB);
   await pageB.locator("input[maxlength='16']").fill("Bob");
@@ -94,7 +95,7 @@ test("two browsers join one room by code, ready up, and start the shift", async 
 });
 
 test("joining a bogus code fails with feedback, not a crash", async ({ browser }) => {
-  const ctx = await browser.newContext();
+  const ctx = await newLowPowerContext(browser);
   const page = await ctx.newPage();
   await gotoTitle(page);
   await page.locator(".join-row input").fill("ZZZZZ");
