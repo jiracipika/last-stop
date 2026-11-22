@@ -197,8 +197,13 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
           {shiftLen && <> · SHIFT LENGTH {shiftLen}</>} · SITE CONDITIONS: {conditions}
         </div>
 
-        <span className={`report-stamp ${outcomeClass}`}>{stamp}</span>
-        <h1 className={outcomeClass}>{outcomeTitle}</h1>
+        {/* stamp anchors to the verdict title (not a fixed page offset), so a
+            long SITE CONDITIONS line can never run underneath it; on narrow
+            screens it drops into the flow below the title */}
+        <div className="report-verdict">
+          <h1 className={outcomeClass}>{outcomeTitle}</h1>
+          <span className={`report-stamp ${outcomeClass}`}>{stamp}</span>
+        </div>
         <p className="report-line">{outcomeLine}</p>
 
         {results && crewSize > 0 && (
@@ -219,40 +224,42 @@ export function ResultsOverlay({ hud, net }: { hud: HudState; net: Net }): React
             </div>
 
             <div className="report-sec">CREW LEDGER</div>
-            <table className="results-table">
-              <thead>
-                <tr>
-                  <th />
-                  <th>delivered</th>
-                  <th>items</th>
-                  <th>noise</th>
-                  <th>rescues</th>
-                  <th>biggest loss</th>
-                  <th>times down</th>
-                  <th>status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.rows.map((r, i) => {
-                  const st = rowStatus(outcome, r);
-                  return (
-                    <tr key={i}>
-                      <td className="row-nick">
-                        <span className="dot" style={{ background: crewHex(r.color) }} />
-                        {r.nick}
-                      </td>
-                      <td>{money(r.delivered)}</td>
-                      <td>{r.items}</td>
-                      <td>{Math.round(r.noise)}</td>
-                      <td>{r.rescues}</td>
-                      <td>{r.biggestLoss > 0 ? `${money(r.biggestLoss)} (${r.lossItem})` : "—"}</td>
-                      <td>{r.downed}</td>
-                      <td className={st.left ? "st-left" : "st-out"}>{st.label}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="results-table">
+                <thead>
+                  <tr>
+                    <th />
+                    <th>delivered</th>
+                    <th>items</th>
+                    <th>noise</th>
+                    <th>rescues</th>
+                    <th>biggest loss</th>
+                    <th>times down</th>
+                    <th>status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.rows.map((r, i) => {
+                    const st = rowStatus(outcome, r);
+                    return (
+                      <tr key={i}>
+                        <td className="row-nick">
+                          <span className="dot" style={{ background: crewHex(r.color) }} />
+                          {r.nick}
+                        </td>
+                        <td>{money(r.delivered)}</td>
+                        <td>{r.items}</td>
+                        <td>{Math.round(r.noise)}</td>
+                        <td>{r.rescues}</td>
+                        <td>{r.biggestLoss > 0 ? `${money(r.biggestLoss)} (${r.lossItem})` : "—"}</td>
+                        <td>{r.downed}</td>
+                        <td className={st.left ? "st-left" : "st-out"}>{st.label}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
             {awardsCount > 0 && (
               <>

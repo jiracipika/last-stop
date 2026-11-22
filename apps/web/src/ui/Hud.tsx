@@ -3,6 +3,7 @@ import React from "react";
 import { crewHex } from "../game/palette.js";
 import type { HudState } from "../game/store.js";
 import { activeNet } from "../net.js";
+import { AlertIcon, CoffeeIcon, VanIcon } from "./icons.js";
 
 const fmtTime = (s: number): string => {
   const m = Math.floor(s / 60);
@@ -131,8 +132,8 @@ export function Hud({
       {hud.phase === "escape" && hud.exitBlock && (
         <div className="exit-block" role="alert">
           {hud.exitBlock === "down"
-            ? `⚠ ${hud.exitDriverNick} (exit driver) is DOWN — stabilize them before leaving`
-            : `⚠ ${hud.exitDriverNick}'s body is still on the lot — bring it back to the van`}
+            ? <><AlertIcon /> {hud.exitDriverNick} (exit driver) is DOWN — stabilize them before leaving</>
+            : <><AlertIcon /> {hud.exitDriverNick}'s body is still on the lot — bring it back to the van</>}
         </div>
       )}
       {threat && <div className={`threat-cue ${hud.enemyAi === 3 ? "strike" : ""}`} role="status">{threat}</div>}
@@ -322,7 +323,7 @@ export function Hud({
               <b>PASSENGER</b> · E to hop out (when stopped)
             </>
           )}
-          {hud.leaveWarn > 0 && <span className="leave-warn">⚠ {hud.leaveWarn} left behind — press W again to abandon them</span>}
+          {hud.leaveWarn > 0 && <span className="leave-warn"><AlertIcon /> {hud.leaveWarn} left behind — press W again to abandon them</span>}
         </div>
       )}
 
@@ -365,7 +366,7 @@ export function Hud({
           <div key={t.sid} className={`mate ${t.dead ? "dead" : t.downed ? "downed" : ""} ${t.connected ? "" : "dc"}`}>
             <span className="dot" style={{ background: crewHex(t.color) }} />
             <span className="m-nick">{t.nick}</span>
-            {t.seat > 0 && <span className="m-seat">🚐</span>}
+            {t.seat > 0 && <span className="m-seat"><VanIcon size={11} /></span>}
             {!t.connected && <span className="dc-tag">dc</span>}
             <div className="m-hp"><div style={{ width: `${t.hp}%` }} /></div>
             {t.sid === hud.exitDriver && !t.dead && <span className="m-flag drive">DRIVE</span>}
@@ -380,7 +381,7 @@ export function Hud({
       <div className="corner-meta">
         <span>{hud.fps} fps</span>
         <span>Z HELP CARRY · X ENEMY HERE · C BACK TO VAN</span>
-        {hud.caffeinated && <span className="caffe-tag">☕ CAFFEINATED</span>}
+        {hud.caffeinated && <span className="caffe-tag"><CoffeeIcon /> CAFFEINATED</span>}
       </div>
 
       {paused && <div className="pause-note" />}

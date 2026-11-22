@@ -1,6 +1,7 @@
 /* LAST STOP — underpaid night-shift aesthetic */
 :root {
   /* design tokens (v2): one place for the palette the whole UI agrees on */
+  color-scheme: dark; /* native scrollbars, checkboxes and selects join the night */
   --bg: #07090d;
   --panel: rgba(10, 14, 20, 0.88);
   --panel-solid: #0c1119;
@@ -8,7 +9,7 @@
   --line-soft: #1d2530;
   --ink: #cfd8e3;
   --ink-dim: #8a99ac;
-  --ink-faint: #5f6f81;
+  --ink-faint: #7b8ba1; /* 5.4:1 on the panel — faint print still legible at 2 a.m. */
   --paper: #c6b99b; /* receipt-tint form labels */
   --amber: #ffbe55;
   --amber-deep: #b8792f;
@@ -147,6 +148,27 @@ body,
 .join-row input:focus {
   outline: 1px solid #78e8ff;
 }
+/* placeholders legible but clearly unfilled; the CODE field keeps its amber */
+.field input::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
+}
+.join-row input::placeholder {
+  color: rgba(255, 210, 104, 0.7);
+  opacity: 1;
+}
+input[type="range"],
+input[type="checkbox"],
+select {
+  accent-color: var(--amber);
+}
+input {
+  caret-color: var(--amber);
+}
+::selection {
+  background: rgba(230, 173, 97, 0.35);
+  color: #f2ead9;
+}
 .colors {
   display: flex;
   gap: 8px;
@@ -240,7 +262,7 @@ input:focus-visible {
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid #1d2530;
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 11.5px;
   line-height: 1.7;
 }
@@ -260,6 +282,24 @@ input:focus-visible {
   background: rgba(9, 13, 19, 0.92);
   border: 1px solid #2a3442;
   border-radius: 10px;
+}
+/* the room exists on the wire before its first full state lands: name the
+   wait in the receipt voice instead of showing a bare overlay */
+.lobby-wait {
+  width: min(520px, 92vw);
+  padding: 26px 28px;
+  background: rgba(9, 13, 19, 0.92);
+  border: 1px solid #2a3442;
+  border-top: 3px solid #d7b77b;
+  border-radius: 4px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.lobby-wait b {
+  color: var(--paper);
+  font-weight: 600;
+  letter-spacing: 2px;
 }
 .lobby-panel h2 {
   margin: 0 0 12px;
@@ -295,7 +335,7 @@ input:focus-visible {
   font-size: 14px;
 }
 .roster li.empty {
-  color: #46545f;
+  color: var(--ink-faint);
   font-size: 12.5px;
   font-style: italic;
 }
@@ -327,7 +367,7 @@ input:focus-visible {
 .ready {
   font-size: 11px;
   letter-spacing: 1px;
-  color: #5f6f81;
+  color: var(--ink-faint);
 }
 .ready.on {
   color: #9dff8f;
@@ -341,7 +381,7 @@ input:focus-visible {
   flex-wrap: wrap;
 }
 .hint {
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 12px;
   margin: 10px 0 0;
 }
@@ -445,14 +485,14 @@ input:focus-visible {
 .q-label {
   font-size: 10px;
   letter-spacing: 3px;
-  color: #6d7d90;
+  color: var(--ink-faint);
 }
 .q-value {
   font-size: 16px;
   color: #ffd268;
 }
 .q-value em {
-  color: #6d7d90;
+  color: var(--ink-faint);
   font-style: normal;
   font-size: 12px;
 }
@@ -665,7 +705,7 @@ input:focus-visible {
   background: #ff6e5e;
 }
 .m-dist {
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 11px;
 }
 .m-flag {
@@ -681,7 +721,7 @@ input:focus-visible {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  color: #46545f;
+  color: var(--ink-faint);
   font-size: 11px;
 }
 .lat-chip {
@@ -866,7 +906,7 @@ input:focus-visible {
 }
 .briefing-meta {
   margin: 6px 0 2px;
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 10.5px;
   letter-spacing: 1px;
 }
@@ -956,7 +996,7 @@ input:focus-visible {
   letter-spacing: 3px;
 }
 .report-motto {
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 10px;
   letter-spacing: 2px;
 }
@@ -969,7 +1009,7 @@ input:focus-visible {
 }
 .report-meta {
   margin-top: 3px;
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-size: 10.5px;
   letter-spacing: 1px;
   text-align: center;
@@ -987,6 +1027,42 @@ input:focus-visible {
   letter-spacing: 3px;
   opacity: 0.8;
   pointer-events: none;
+}
+/* the verdict block owns the stamp: it anchors to the outcome title instead
+   of a fixed page offset, and the title centers inside the space left of the
+   stamp, so neither the site-conditions line nor the h1 can run under it */
+.report-verdict {
+  position: relative;
+  padding-right: 204px;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.report-verdict h1 {
+  margin-top: 18px;
+}
+.report-verdict .report-stamp {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%) rotate(7deg);
+}
+@media (max-width: 620px) {
+  .report-verdict {
+    display: block;
+    padding-right: 0;
+    min-height: 0;
+    text-align: center;
+  }
+  .report-verdict h1 {
+    margin-top: 18px;
+  }
+  .report-verdict .report-stamp {
+    position: static;
+    display: inline-block;
+    transform: rotate(-2deg);
+    margin: 4px 0 12px;
+  }
 }
 .report-stamp.loss {
   border-color: #B63D35;
@@ -1023,11 +1099,20 @@ input:focus-visible {
 .results-summary {
   display: flex;
   justify-content: space-around;
+  gap: 12px;
   margin-bottom: 4px;
   padding: 10px 0;
   background: rgba(13, 18, 25, 0.6);
   border: 1px solid #1d2530;
   border-radius: 4px;
+}
+/* the three tallies collide at phone widths — stack them instead */
+@media (max-width: 560px) {
+  .results-summary {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
 }
 .results-summary > div {
   display: flex;
@@ -1041,7 +1126,7 @@ input:focus-visible {
 }
 .results-summary span {
   font-size: 11px;
-  color: #6d7d90;
+  color: var(--ink-faint);
   letter-spacing: 1px;
 }
 .awards {
@@ -1071,8 +1156,13 @@ input:focus-visible {
   font-size: 12.5px;
   margin-bottom: 4px;
 }
+/* the 8-column ledger scrolls on its own at phone widths instead of tearing
+   the sheet open */
+.table-scroll {
+  overflow-x: auto;
+}
 .results-table th {
-  color: #5f6f81;
+  color: var(--ink-faint);
   font-weight: normal;
   font-size: 10.5px;
   letter-spacing: 1px;
@@ -1163,6 +1253,31 @@ input:focus-visible {
   .briefing-sheet,
   .downed-banner {
     animation: none;
+  }
+  /* the chasePulse family is information, not flavor: freeze each at full
+     legibility instead of letting it strobe */
+  .timer.danger,
+  .esc-banner,
+  .esc-banner.hot,
+  .scanner-led,
+  .objectives .done.escape,
+  .lat-chip.red,
+  .downed,
+  .leave-warn {
+    animation: none;
+  }
+  .chase-vignette {
+    animation: none;
+    opacity: 0.8; /* danger stays present, it just stops breathing */
+  }
+  .toast,
+  .caption-bar {
+    animation: none;
+  }
+  /* floaters are engine-pruned after 1.5s, so a static render is safe */
+  .floater {
+    animation: none;
+    opacity: 0.9;
   }
 }
 
@@ -1472,7 +1587,7 @@ input:focus-visible {
   left: 7px;
   top: 4px;
   font-size: 10px;
-  color: #5c6f84;
+  color: var(--ink-faint);
 }
 .pack-slot.active .pk-key {
   color: #ffb347;
@@ -1496,7 +1611,7 @@ input:focus-visible {
 }
 .pk-empty {
   font-size: 11px;
-  color: #44546a;
+  color: var(--ink-faint);
 }
 .caffe-tag {
   color: #ffe66d;
@@ -1525,18 +1640,6 @@ input:focus-visible {
 .title-actions .btn.primary {
   flex: 1;
   min-width: 200px;
-}
-
-/* ---- shared panel chrome ---- */
-.panel-kicker {
-  font-size: 9.5px;
-  letter-spacing: 3px;
-  color: #55697f;
-  margin-bottom: 4px;
-}
-.panel-kicker::before {
-  content: "▪ ";
-  color: var(--amber-deep);
 }
 
 /* ---- lobby: two-panel stand-up ---- */
@@ -1750,8 +1853,11 @@ input:focus-visible {
 
 .title-panel .game-title {
   text-align: left;
-  font: 900 clamp(43px, 6vw, 76px)/0.93 "Arial Black", system-ui, sans-serif;
-  letter-spacing: -0.048em;
+  /* one voice for the whole sheet: the night shift types everything on the
+     same machine — display included. Heavy mono reads as the receipt world,
+     not as a system face doing an impression of one. */
+  font: 800 clamp(41px, 5.6vw, 72px)/0.98 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  letter-spacing: -0.02em;
   color: #f2ead9;
   text-shadow: none;
   margin: 0 0 18px;
@@ -1764,8 +1870,8 @@ input:focus-visible {
 
 .title-panel .tagline {
   margin: 0 0 22px;
-  max-width: 39ch;
-  font: 400 15px/1.6 system-ui, sans-serif;
+  max-width: 44ch;
+  font: 400 13.5px/1.65 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   color: #b5c1c8;
   text-align: left;
 }
@@ -1826,7 +1932,7 @@ input:focus-visible {
 }
 
 .lobby-panel.gas-stop { border-top-color: #91c7ab; }
-.lobby-panel h2 { font: 750 24px/1.15 system-ui, sans-serif; letter-spacing: 0; color: #f2ead9; }
+.lobby-panel h2 { font: 700 19px/1.25 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; letter-spacing: 2px; color: #f2ead9; }
 .roster .nick small { display: block; margin-top: 2px; color: #899fae; font-size: 10px; }
 .lobby-outfit { padding: 10px; margin-bottom: 12px; border: 1px solid #384b55; }
 .outfit-button { margin-bottom: 12px; }
@@ -1844,4 +1950,14 @@ input:focus-visible {
   .title-screen,
   .app.attract-live .title-screen,
   .lobby { align-items: flex-start; }
+}
+
+/* small screens: the report keeps its margins humane when the viewport
+   shrinks under it */
+@media (max-width: 560px) {
+  .results-panel,
+  .briefing-sheet {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
 }

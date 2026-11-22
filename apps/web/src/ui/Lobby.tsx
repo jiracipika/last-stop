@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { SHOP } from "@last-stop/shared";
 import { crewHex } from "../game/palette.js";
 import { CrewOptions, HEADGEAR } from "./CrewOptions.js";
+import { CoffeeIcon, FlashlightIcon } from "./icons.js";
 import type { Net } from "../net.js";
 import type { HudState } from "../game/store.js";
 import type { Prefs } from "../App.js";
@@ -24,7 +25,17 @@ export function LobbyOverlay({
   const [copied, setCopied] = useState(false);
   const [outfit, setOutfit] = useState<{ color: number; hat: number } | null>(null);
   const st = net.state;
-  if (!st) return <div className="lobby" />;
+  // First full state hasn't landed yet (the SDK resolves joining before its
+  // initial schema sync): name the wait instead of showing a bare overlay.
+  if (!st) {
+    return (
+      <div className="lobby">
+        <div className="lobby-wait" role="status">
+          <b>CLOCKING IN</b> — finding your seat in the crew room…
+        </div>
+      </div>
+    );
+  }
   const players = [...st.players.entries()].map(([sid, p]) => ({ sid, p }));
   const me = st.players.get(net.sid);
   const allReady = players.every(({ p }) => p.ready && p.connected);
@@ -49,7 +60,9 @@ export function LobbyOverlay({
             return (
               <li key={item.id} className={owned ? "owned" : ""}>
                 <div className="gas-item">
-                  <span className="gas-name">{item.id === "coffee" ? "☕" : "🔦"} {item.name}</span>
+                  <span className="gas-name">
+                    {item.id === "coffee" ? <CoffeeIcon /> : <FlashlightIcon />} {item.name}
+                  </span>
                   <span className="gas-price">${item.price}</span>
                 </div>
                 <p>{item.desc}</p>
