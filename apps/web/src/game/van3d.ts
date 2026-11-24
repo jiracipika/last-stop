@@ -16,6 +16,7 @@ export class VanView {
   private tailMat: THREE.MeshBasicMaterial;
   private beaconMat: THREE.MeshBasicMaterial;
   private interiorLight: THREE.PointLight;
+  private cabLight: THREE.PointLight;
   private pools: THREE.Mesh[] = [];
   private wheels: THREE.Mesh[] = [];
   private cargoGroup = new THREE.Group();
@@ -24,7 +25,7 @@ export class VanView {
     this.borrowedPaint = tex.vanPaint;
     const paint = new THREE.MeshLambertMaterial({ map: tex.vanPaint });
     const dark = new THREE.MeshLambertMaterial({ color: 0x2a2c30 });
-    const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.3 });
+    const glass = new THREE.MeshLambertMaterial({ color: 0x16222e, transparent: true, opacity: 0.24, depthWrite: false });
 
     const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -40,7 +41,7 @@ export class VanView {
     box(0.1, 1.75, 3.25, paint, 1, 1.35, -0.775);
     box(2.1, 0.12, 4.4, paint, 0, 2.25, -0.2);
     box(2.0, 0.85, 1.45, paint, 0, 0.9, 1.675);
-    // Cab lower side panels and seats leave space at the riders' eye height.
+    // Door skins, window frames and inner trim all move with the hinge.
     const cabHandle = new THREE.MeshLambertMaterial({ color: 0xc9b18c });
     for (const side of [-1, 1]) {
       const hinge = new THREE.Group();
@@ -50,13 +51,55 @@ export class VanView {
       hinge.add(box(0.058, 0.42, 0.94, glass, 0, 1.88, -0.65));
       hinge.add(box(0.06, 0.045, 0.12, cabHandle, side * 0.066, 1.42, -1.07));
       hinge.add(box(0.058, 0.05, 1.03, dark, 0, 1.64, -0.66));
+      hinge.add(box(0.055, 0.045, 1.03, dark, 0, 2.10, -0.66));
+      for (const edge of [-0.16, -1.16]) hinge.add(box(0.055, 0.50, 0.045, dark, 0, 1.87, edge));
+      hinge.add(box(0.045, 0.29, 1.16, dark, -side * 0.065, 1.27, -0.63));
+      hinge.add(box(0.085, 0.045, 0.34, cabHandle, -side * 0.09, 1.39, -0.69));
       this.cabDoors.push({ hinge, side, remaining: 0 });
       this.group.add(hinge);
     }
-    for (const seat of VAN.SEATS) {
-      box(0.55, 0.14, 0.5, dark, seat.x, 0.75, seat.z);
-      box(0.55, 0.6, 0.12, dark, seat.x, 1.0, seat.z - 0.25);
+    const vinyl = new THREE.MeshLambertMaterial({ color: 0x765842, emissive: 0x18100b });
+    const seam = new THREE.MeshLambertMaterial({ color: 0xb18c62 });
+    for (const [i, seat] of VAN.SEATS.entries()) {
+      box(0.42, 0.20, 0.38, dark, seat.x, 0.70, seat.z);
+      box(0.54, 0.15, 0.48, vinyl, seat.x, 0.86, seat.z);
+      box(0.54, 0.49, 0.12, vinyl, seat.x, 1.13, seat.z - 0.24);
+      box(0.45, 0.025, 0.035, seam, seat.x, 0.94, seat.z + 0.18);
+      if (i < 2) box(0.26, 0.17, 0.13, vinyl, seat.x, 1.44, seat.z - 0.26);
     }
+
+    const dash = new THREE.MeshLambertMaterial({ color: 0x3e4440, emissive: 0x111410 });
+    const chrome = new THREE.MeshLambertMaterial({ color: 0xb4a587, emissive: 0x1d160e });
+    const gauges = new THREE.MeshBasicMaterial({ color: 0xc9a66c });
+    const driverX = VAN.SEATS[0].x;
+    box(1.84, 0.21, 0.30, dash, 0, 1.43, 2.00);
+    box(0.54, 0.12, 0.16, dark, driverX, 1.58, 1.94);
+    for (const dx of [-0.14, 0.01, 0.15]) {
+      const dial = new THREE.Mesh(new THREE.CircleGeometry(dx === 0.01 ? 0.043 : 0.032, 12), gauges);
+      dial.position.set(driverX + dx, 1.58, 1.858);
+      dial.rotation.y = Math.PI;
+      this.group.add(dial);
+    }
+    box(0.08, 0.08, 0.32, dark, driverX, 1.36, 1.65);
+    const wheel = new THREE.Group();
+    wheel.name = "van-steering-wheel";
+    wheel.position.set(driverX, 1.44, 1.59);
+    wheel.rotation.x = -0.42;
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.033, 8, 24), vinyl));
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.045), chrome);
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.06), dark);
+    wheel.add(spoke, hub);
+    this.group.add(wheel);
+
+    box(0.23, 0.34, 0.48, dash, 0, 0.93, 1.45);
+    box(0.15, 0.05, 0.15, dark, 0, 1.13, 1.52);
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.025, 0.17, 8), chrome);
+    lever.position.set(0, 1.23, 1.52);
+    this.group.add(lever);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), vinyl);
+    knob.name = "van-shift-knob";
+    knob.position.set(0, 1.33, 1.52);
+    this.group.add(knob);
     // cab
     for (const side of [-1, 1]) box(0.1, 0.65, 0.1, paint, side, 1.88, 2.1);
     box(2.0, 0.1, 1.15, paint, 0, 2.22, 1.55);
@@ -118,14 +161,14 @@ export class VanView {
     this.doorL = new THREE.Group();
     this.doorR = new THREE.Group();
     const doorMat = new THREE.MeshLambertMaterial({ map: tex.vanPaint, color: 0xcfc4a8 });
-    const dl = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.7, 0.08), doorMat);
-    dl.position.x = 0.48;
+    const dl = new THREE.Mesh(new THREE.BoxGeometry(1.01, 1.7, 0.08), doorMat);
+    dl.position.x = 0.505;
     this.doorL.add(dl);
-    const dr = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.7, 0.08), doorMat);
-    dr.position.x = -0.48;
+    const dr = new THREE.Mesh(new THREE.BoxGeometry(1.01, 1.7, 0.08), doorMat);
+    dr.position.x = -0.505;
     this.doorR.add(dr);
-    this.doorL.position.set(-1.02, 1.15, -2.4);
-    this.doorR.position.set(1.02, 1.15, -2.4);
+    this.doorL.position.set(-VAN.REAR_HINGE.x, 1.15, VAN.REAR_HINGE.z);
+    this.doorR.position.set(VAN.REAR_HINGE.x, 1.15, VAN.REAR_HINGE.z);
     this.doorL.name = "rear-door-left";
     this.doorR.name = "rear-door-right";
     spare.position.set(-0.48, -0.05, -0.12);
@@ -133,7 +176,7 @@ export class VanView {
     const handleMat = new THREE.MeshLambertMaterial({ color: 0x252b2e });
     for (const [door, sign] of [[this.doorL, 1], [this.doorR, -1]] as const) {
       const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.25, 0.1), handleMat);
-      handle.position.set(sign * 0.78, 0, -0.08);
+      handle.position.set(sign * VAN.REAR_HANDLE_OFFSET, 0, -0.08);
       door.add(handle);
     }
     this.group.add(this.doorL, this.doorR);
@@ -186,6 +229,9 @@ export class VanView {
     this.interiorLight = new THREE.PointLight(0xffc37a, 0, 4.5, 1.8);
     this.interiorLight.position.set(0, 1.6, -1.0);
     this.group.add(this.interiorLight);
+    this.cabLight = new THREE.PointLight(0xffc68d, 2, 2.6);
+    this.cabLight.position.set(0, 2.08, 1.15);
+    this.group.add(this.cabLight);
 
     this.group.add(this.cargoGroup);
   }
@@ -215,13 +261,13 @@ export class VanView {
 
   swingCabDoor(side: number): void {
     const door = this.cabDoors.find((d) => d.side === side);
-    if (door) door.remaining = 0.6;
+    if (door) door.remaining = 0.85;
   }
 
-  update(x: number, z: number, yaw: number, speed: number, doorsOpen: boolean, lightsOn: boolean, t: number, dt = 1 / 60): void {
+  update(x: number, z: number, yaw: number, speed: number, doorsOpen: boolean, lightsOn: boolean, t: number, dt = 1 / 60, seated = false): void {
     this.group.position.set(x, 0, z);
     this.group.rotation.y = yaw;
-    const doorTarget = doorsOpen ? 1.9 : 0;
+    const doorTarget = doorsOpen ? VAN.REAR_SWING : 0;
     const ease = 1 - Math.exp(-10 * dt);
     this.doorL.rotation.y += (doorTarget - this.doorL.rotation.y) * ease;
     this.doorR.rotation.y += (-doorTarget - this.doorR.rotation.y) * ease;
@@ -235,7 +281,9 @@ export class VanView {
     this.headR.intensity = lights ? 38 : 0;
     this.headMat.color.setHex(lights ? 0xffeeaa : 0x2e2a20);
     this.tailMat.color.setHex(lights ? 0xff4433 : 0x3a1414);
-    this.interiorLight.intensity = doorsOpen ? 8 : 0;
+    this.interiorLight.intensity += ((doorsOpen ? 8 : 0) - this.interiorLight.intensity) * ease;
+    const cabOpen = this.cabDoors.some((door) => Math.abs(door.hinge.rotation.y) > 0.1);
+    this.cabLight.intensity += ((seated || cabOpen ? 3.5 : 0.6) - this.cabLight.intensity) * ease;
     for (const p of this.pools) p.visible = lights;
     this.beaconMat.color.set(lights ? PAL.tungsten : "#4a3418");
     // wheel spin

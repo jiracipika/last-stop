@@ -36,13 +36,18 @@ export class CartView {
     // cowl + steering column (driver bench is the +z seat)
     box(1.0, 0.34, 0.3, body, 0, 0.52, 0.72);
     const column = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 6), frame);
-    column.position.set(0, 0.72, 0.66);
+    column.position.set(0, 0.85, 0.66);
     column.rotation.x = 0.5;
     this.group.add(column);
     const wheelRing = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 14), frame);
-    wheelRing.position.set(0, 0.86, 0.58);
-    wheelRing.rotation.x = 1.05;
+    wheelRing.position.set(0, 1.04, 0.61);
+    wheelRing.rotation.x = -0.66;
     this.group.add(wheelRing);
+    const trim = new THREE.MeshLambertMaterial({ color: 0xbbab83, emissive: 0x272216 });
+    box(0.27, 0.026, 0.025, trim, 0, 1.04, 0.61);
+    box(0.06, 0.08, 0.045, frame, 0, 1.04, 0.61);
+    box(0.025, 0.14, 0.025, trim, 0.30, 0.79, 0.74);
+    box(0.07, 0.05, 0.06, frame, 0.30, 0.88, 0.74);
     // benches (both seats face forward)
     for (const s of CART.SEATS) {
       box(0.98, 0.1, 0.62, seatMat, 0, 0.46, s.z);

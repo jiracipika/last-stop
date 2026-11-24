@@ -99,7 +99,7 @@ test("rear doors open outwards, reveal a bay, and allow passenger boarding", asy
   expect(errors).toEqual([]);
 });
 
-test("driver boards at cab while cargo doors are closed", async ({ page }) => {
+test("driver boards with cargo doors closed and can see the cab controls", async ({ page }, testInfo) => {
   await start(page);
   await walk(page, 4.3, 9.4);
   await walk(page, 4.3, 11.9);
@@ -109,4 +109,13 @@ test("driver boards at cab while cargo doors are closed", async ({ page }) => {
   await expect.poll(() => own(page).then(p => p.seat)).toBe(1);
   expect((await own(page)).doors).toBe(false);
   await expect(page.locator(".drive-strip")).toContainText("DRIVING");
+  await expect.poll(() => page.evaluate(() => {
+    const engine = (window as any).__laststop.engine();
+    return ["van-steering-wheel", "van-shift-knob"].every((name) => {
+      const mesh = engine.vanView.group.getObjectByName(name);
+      const projected = mesh.getWorldPosition(mesh.position.clone()).project(engine.camera);
+      return Math.abs(projected.x) < 1 && Math.abs(projected.y) < 1 && Math.abs(projected.z) < 1;
+    });
+  })).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("van-cab.png") });
 });

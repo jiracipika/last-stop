@@ -1,6 +1,7 @@
 // Title screen: neon sign vibes, nickname + color + headgear, create/join.
 import React, { useEffect, useRef, useState } from "react";
 import { CrewOptions } from "./CrewOptions.js";
+import { matchmakingMessage } from "../net.js";
 import type { Prefs } from "../App.js";
 
 // Invite links land here as /?code=CODE (legacy links used ?room=). Sanitize
@@ -21,10 +22,11 @@ export function TitleScreen({
   onEnter: (mode: "create" | "join", code: string) => Promise<void>;
 }): React.ReactElement {
   const [code, setCode] = useState(inviteCodeFromUrl);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"create" | "join" | null>(null);
+  const [error, setError] = useState("");
   const joinInputRef = useRef<HTMLInputElement | null>(null);
   const prefilled = code !== "";
-  const createLabel = busy ? "Connecting…" : "Start a new shift";
+  const createLabel = busy === "create" ? "Connecting…" : "Start a new shift";
 
   // An invite-link code focuses the join field so the friend only adds a name.
   useEffect(() => {
@@ -36,11 +38,14 @@ export function TitleScreen({
   const go = async (mode: "create" | "join") => {
     if (busy) return;
     if (mode === "join" && !/^[A-Z0-9]{5}$/.test(code)) return;
-    setBusy(true);
+    setError("");
+    setBusy(mode);
     try {
       await onEnter(mode, code);
+    } catch (error) {
+      setError(matchmakingMessage(error, mode));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -69,7 +74,7 @@ export function TitleScreen({
           onChange={(color, hat) => savePrefs({ ...prefs, color, hat })} />
 
         <div className="title-actions">
-          <button className="btn primary" disabled={busy} onClick={() => void go("create")}>
+          <button className="btn primary" disabled={busy !== null} onClick={() => void go("create")}>
             {createLabel}
           </button>
           <div className="join-row">
@@ -82,10 +87,11 @@ export function TitleScreen({
               onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
               onKeyDown={(e) => e.key === "Enter" && void go("join")}
             />
-            <button className="btn" disabled={busy || !/^[A-Z0-9]{5}$/.test(code)} onClick={() => void go("join")}>
-              Join crew
+            <button className="btn" disabled={busy !== null || !/^[A-Z0-9]{5}$/.test(code)} onClick={() => void go("join")}>
+              {busy === "join" ? "Connecting…" : "Join crew"}
             </button>
           </div>
+          {error && <p role="alert" className="title-connect-error">{error}</p>}
         </div>
 
         <details className="title-controls">

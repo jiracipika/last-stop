@@ -93,14 +93,18 @@ test("two browsers join one room by code, ready up, and start the shift", async 
   await ctxB.close();
 });
 
-test("joining a bogus code fails with feedback, not a crash", async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+test("matchmaking explains a missing room and lets the player retry after a gateway error", async ({ page }) => {
   await gotoTitle(page);
-  await page.locator(".join-row input").fill("ZZZZZ");
+  const alert = page.getByRole("alert");
+  await page.getByRole("textbox", { name: "Room code" }).fill("ZZZZZ");
   await page.getByRole("button", { name: "Join crew" }).click();
-  await expect(page.locator(".toast").first()).toBeVisible({ timeout: 15000 });
-  // still on the title screen
-  await expect(page.locator(".game-title")).toBeVisible();
-  await ctx.close();
+  await expect(alert).toContainText("Room not found");
+
+  await page.route("**/matchmake/create/game", (route) => route.fulfill({ status: 502, body: "Bad gateway" }), { times: 1 });
+  const start = page.getByRole("button", { name: "Start a new shift" });
+  await start.click();
+  await expect(alert).toContainText("Could not connect to the game server");
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.locator(".invite .code")).toBeVisible({ timeout: 15000 });
 });

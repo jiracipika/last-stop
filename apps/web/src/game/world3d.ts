@@ -430,7 +430,7 @@ export class World3D {
         g.rotation.y = 0;
       } else {
         g.position.set(def.cx, 1.08, a.z0);
-        g.rotation.y = Math.PI / 2;
+        g.rotation.y = -Math.PI / 2;
       }
       this.group.add(g);
       this.doorViews.push({ def, group: g, open: def.startOpen });
@@ -465,8 +465,9 @@ export class World3D {
     const dv = this.doorViews[idx]!;
     dv.open = open;
     const target = open ? -1.9 : 0;
-    if (instant) dv.group.rotation.y = (dv.def.axis === "x" ? 0 : Math.PI / 2) + target;
-    dv.group.userData.targetRot = (dv.def.axis === "x" ? 0 : Math.PI / 2) + target;
+    const closedYaw = dv.def.axis === "x" ? 0 : -Math.PI / 2;
+    if (instant) dv.group.rotation.y = closedYaw + target;
+    dv.group.userData.targetRot = closedYaw + target;
   }
 
   // ------------------------------------------------------------------ gate
@@ -619,19 +620,19 @@ export class World3D {
     const dash = this.solid(0x22262a);
     const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.35 });
     this.disposables.push({ mat: glass });
-    // lower hull, split around the door throat (south flank local x 0.85..1.78)
-    this.group.add(this.sbox(2.89, 0.28, 1.9, paint, X - 0.595, 0.54, Z));
-    this.group.add(this.sbox(0.93, 0.28, 1.65, paint, X + 1.315, 0.54, Z - 0.125));
-    this.group.add(this.sbox(0.93, 0.05, 0.25, paint, X + 1.315, 0.425, Z + 0.825));
-    this.group.add(this.sbox(0.26, 0.28, 1.9, paint, X + 1.91, 0.54, Z));
+    // The south sill stays under the front door opening (local x -0.70..0.45).
+    this.group.add(this.sbox(1.50, 0.28, 1.9, paint, X - 1.45, 0.54, Z));
+    this.group.add(this.sbox(1.15, 0.28, 1.65, paint, X - 0.125, 0.54, Z - 0.125));
+    this.group.add(this.sbox(1.15, 0.05, 0.25, paint, X - 0.125, 0.425, Z + 0.825));
+    this.group.add(this.sbox(1.75, 0.28, 1.9, paint, X + 1.325, 0.54, Z));
     // beltline: hood / cabin walls / trunk deck, inset for a bevel
     this.group.add(this.sbox(1.34, 0.36, 1.84, paint, X - 1.37, 0.86, Z));
     this.group.add(this.sbox(2.5, 0.36, 0.4, paint, X + 0.55, 0.86, Z - 0.75));
-    this.group.add(this.sbox(1.55, 0.36, 0.34, paint, X + 0.075, 0.86, Z + 0.78));
+    this.group.add(this.sbox(1.33, 0.36, 0.34, paint, X + 1.115, 0.86, Z + 0.78));
     this.group.add(this.sbox(0.26, 0.36, 1.84, paint, X + 1.91, 0.86, Z));
     // greenhouse: glass bands, pillars, roof (glass stays unbaked: transparent,
     // so its blend order must not get frozen by the merge)
-    this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z + 0.7));
+    this.group.add(this.box(1.33, 0.38, 0.04, glass, X + 1.115, 1.23, Z + 0.78));
     this.group.add(this.box(2.5, 0.38, 0.04, glass, X + 0.55, 1.23, Z - 0.7));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X - 0.675, 1.23, Z));
     this.group.add(this.box(0.05, 0.38, 1.36, glass, X + 1.775, 1.23, Z));
@@ -644,10 +645,11 @@ export class World3D {
     this.group.add(this.sbox(2.5, 0.05, 1.86, dark, X + 0.55, 0.685, Z));
     this.group.add(this.sbox(0.14, 0.22, 1.36, dash, X - 0.6, 0.91, Z));
     for (const sz of [-0.48, 0.48]) {
-      this.group.add(this.sbox(0.14, 0.55, 0.4, seat, X - 0.35, 0.955, Z + sz));
-      this.group.add(this.sbox(0.42, 0.12, 0.4, seat, X - 0.52, 0.74, Z + sz));
+      this.group.add(this.sbox(0.14, 0.49, 0.4, seat, X + 0.25, 0.93, Z + sz));
+      this.group.add(this.sbox(0.47, 0.12, 0.4, seat, X + 0.06, 0.74, Z + sz));
     }
     this.group.add(this.sbox(0.14, 0.52, 1.3, seat, X + 1.45, 0.94, Z));
+    this.buildSedanControls(X - 0.39, Z, -1, seat, trim);
     // wheels: axis rotated to z so they actually roll, plus light hubs
     const tire = this.solid(0x14161a);
     const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
@@ -663,8 +665,6 @@ export class World3D {
       this.disposables.push({ geo: cap.geometry });
       this.group.add(this.smesh(cap));
     }
-    // wheel well lining the throat where the rear tire would show through
-    this.group.add(this.sbox(0.26, 0.23, 0.25, dark, X + 1.4, 0.565, Z + 0.825));
     // bumpers as light metal end caps, flush with the footprint
     this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X - 2.12, 0.54, Z));
     this.group.add(this.sbox(0.16, 0.28, 1.72, trim, X + 2.12, 0.54, Z));
@@ -713,6 +713,11 @@ export class World3D {
     this.group.add(this.sbox(1.8, 0.04, 1.44, dark, X, 0.685, Z));
     this.group.add(this.sbox(0.14, 0.22, 1.36, dash, X + 0.72, 0.91, Z));
     this.group.add(this.sbox(0.14, 0.5, 1.3, seat, X - 0.62, 0.95, Z));
+    for (const sz of [-0.43, 0.43]) {
+      this.group.add(this.sbox(0.13, 0.45, 0.39, seat, X - 0.08, 0.91, Z + sz));
+      this.group.add(this.sbox(0.42, 0.12, 0.39, seat, X + 0.06, 0.74, Z + sz));
+    }
+    this.buildSedanControls(X + 0.50, Z, 1, seat, trim);
     // wheels: rear-south tire is flat, rear-north hubcap is gone
     const tire = this.solid(0x14161a);
     const hub = this.mat(this.tex.metalWorn, 0xb0aa9c);
@@ -740,6 +745,18 @@ export class World3D {
     this.group.add(this.sbox(0.015, 0.16, 0.5, this.solid(0xc6b99b), X - 2.0475, 0.8, Z - 0.2));
   }
 
+  private buildSedanControls(x: number, z: number, forward: number, rubber: THREE.Material, trim: THREE.Material): void {
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.023, 6, 16), rubber);
+    wheel.position.set(x, 1.02, z - forward * 0.43);
+    wheel.rotation.y = Math.PI / 2;
+    this.disposables.push({ geo: wheel.geometry });
+    this.group.add(this.smesh(wheel));
+    this.group.add(this.sbox(0.04, 0.035, 0.27, trim, x, 1.02, wheel.position.z));
+    this.group.add(this.sbox(0.27, 0.16, 0.17, rubber, x - forward * 0.22, 0.76, z));
+    this.group.add(this.sbox(0.026, 0.13, 0.026, trim, x - forward * 0.22, 0.89, z));
+    this.group.add(this.sbox(0.07, 0.06, 0.065, rubber, x - forward * 0.22, 0.97, z));
+  }
+
   // -------------------------------------------------------- hide-spot doors
   private hideDoors = new Map<string, { group: THREE.Group; open: boolean; kind: string; baseYaw: number; dome: THREE.PointLight | null }>();
 
@@ -754,9 +771,15 @@ export class World3D {
         // driver door, hinged at its front edge, swings out; wears the
         // junker's body paint (see the sedan builders)
         const paint = this.mat(s.id === "carA" ? this.tex.junkerTeal : this.tex.primerCar);
-        g.add(this.box(0.95, 0.8, 0.06, paint, 0.48, 0, 0));
-        g.add(this.box(0.05, 0.05, 0.1, this.solid(0x14161a), 0.8, 0, 0.05));
-        g.position.set(s.doorX, 0.85, s.doorZ);
+        const trim = this.solid(0x242827);
+        const glass = new THREE.MeshLambertMaterial({ color: 0x26323e, transparent: true, opacity: 0.26, depthWrite: false });
+        this.disposables.push({ mat: glass });
+        g.add(this.box(1.14, 0.57, 0.07, paint, 0.57, -0.14, 0));
+        g.add(this.box(1.08, 0.33, 0.035, glass, 0.57, 0.27, 0));
+        g.add(this.box(1.14, 0.035, 0.055, trim, 0.57, 0.45, 0));
+        for (const edge of [0.03, 1.11]) g.add(this.box(0.04, 0.34, 0.065, trim, edge, 0.28, 0));
+        g.add(this.box(0.15, 0.038, 0.065, trim, 0.98, 0.035, 0.055));
+        g.position.set(s.doorX, 0.95, s.doorZ);
         dome = new THREE.PointLight(s.id === "carA" ? 0xE6AD61 : 0x9fc4d8, 0, 4.5, 1.6);
         dome.position.set(s.x, 1.3, s.z);
         this.group.add(dome);
@@ -766,11 +789,11 @@ export class World3D {
         const lidW = s.lidW ?? 1.5;
         const lidD = s.lidD ?? 0.75;
         const lidY = s.lidY ?? 0.95;
-        const paint = s.lidY !== undefined ? this.mat(this.tex.metalWorn, 0x2f4636) : this.mat(this.tex.primerCar);
+        const paint = s.id === "carB" ? this.mat(this.tex.primerCar) : this.mat(this.tex.metalWorn, 0x2f4636);
         g.add(this.box(lidW, 0.08, lidD, paint, 0, 0, lidD / 2 + 0.005));
         g.add(this.box(0.5, 0.05, 0.06, this.solid(0x14161a), 0, 0.03, lidD / 2 - 0.15));
         g.position.set(s.doorX, lidY, s.doorZ);
-        if (s.lidY === undefined) {
+        if (s.id === "carB") {
           // carB's trunk tub is pitch black from inside — a cold trunk light
           // (the dumpster stays dark; the passage bug-lamp already marks it)
           dome = new THREE.PointLight(0x9fc4d8, 0, 3.5, 1.6);

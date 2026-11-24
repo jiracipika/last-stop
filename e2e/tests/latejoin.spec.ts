@@ -71,7 +71,7 @@ test("a friend can clock in mid-shift", async ({ browser, request }) => {
   await pageB.locator(".join-row input").fill(code);
   await pageB.getByRole("button", { name: "Join crew" }).click();
 
-  // Inverse of lobby.spec's bogus-code case (there: a "Could not join" toast
+  // Inverse of lobby.spec's bogus-code case (there: a room-code error
   // and the title screen staying up): a successful late join drops B straight
   // into the mission HUD, title screen gone.
   await expect(pageB.locator(".game-title")).toHaveCount(0, { timeout: 20000 });

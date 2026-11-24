@@ -5,7 +5,7 @@
 // camera from the attract path to the gameplay path (see setAttract).
 import * as THREE from "three";
 import {
-  vanLocalToWorld, AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
+  vanLocalToWorld, vanWorldToLocal, vanRearHandles, AABB, HIDE, DOORS, doorAabb, STATIC_COLLIDERS, ITEM_DEFS, PLAYER, VAN, VAN_START, CARRY, HIDE_SPOTS, dist2d, clamp,
   CART, CART_START, SEAT, stowable, COURSE, missionSeconds,
   SnapBuf, LOS_BLOCKERS, hasLineOfSight,
   type RoomState, type PlayerState, QUICK_MESSAGES,
@@ -625,9 +625,11 @@ export class Engine {
         audio.glass();
         if (Number(e.lost) > 0) this.store.toast(`-${Math.round(Number(e.lost))} ${e.cause === "bump" ? "(cargo banged up)" : "(broke something)"}`, "warn");
         break;
-      case "door":
-        audio.playEventAt("door", Number(e.x ?? 0), Number(e.z ?? 0), cam);
+      case "door": {
+        const door = DOORS.find((def) => def.id === e.id);
+        if (door) audio.playEventAt("door", door.cx, door.cz, cam);
         break;
+      }
       case "vanDoors":
         audio.vanDoor();
         break;
@@ -790,7 +792,14 @@ export class Engine {
         break;
       }
       case "seat":
-        if (e.cabSide === -1 || e.cabSide === 1) this.vanView.swingCabDoor(e.cabSide);
+        if (e.cabSide === -1 || e.cabSide === 1) {
+          this.vanView.swingCabDoor(e.cabSide);
+          if (st) {
+            const point = e.cabSide === -1 ? VAN.DRIVER_POINT : VAN.PASSENGER_POINT;
+            const door = vanLocalToWorld(st.van, point.x, point.z);
+            audio.playEventAt("door", door.x, door.z, cam);
+          }
+        }
         break;
       case "hide": {
         const dragged = !e.on && e.dragged === true;
@@ -1024,7 +1033,7 @@ export class Engine {
     // (open doors / board / load) used to fight over the same target slot, so
     // E flipped doors when you meant to climb in. Split: while the doors are
     // closed the rear point is the door toggle; once open it belongs to
-    // boarding/loading and closing the doors means facing the left door leaf.
+    // boarding/loading and either swung-out handle closes the doors.
     const van = st.van;
     const vcos = Math.cos(van.yaw);
     const vsin = Math.sin(van.yaw);
@@ -1032,11 +1041,11 @@ export class Engine {
     const rear = toWorld(VAN.DOOR_POINT.x, VAN.DOOR_POINT.z);
     const strap = toWorld(VAN.STRAP_POINT.x, VAN.STRAP_POINT.z);
     const enginePt = toWorld(VAN.ENGINE_POINT.x, VAN.ENGINE_POINT.z);
-    const driverDoor = toWorld(VAN.DRIVER_POINT.x, VAN.DRIVER_POINT.z);
+    const cabSide = vanWorldToLocal(van, px, pz).x;
     if (Math.abs(van.speed) <= 0.5 && van.doorsOpen) {
-      // door leaf toggle: only when actually facing the leaf (minDot gate)
-      const doorLatch = toWorld(-1.02, -2.4);
-      consider({ kind: "vanDoors", id: "van", label: "Close van doors" }, doorLatch.x, doorLatch.z, VAN.INTERACT_RANGE, 0.9, 0.78);
+      for (const handle of vanRearHandles(van)) {
+        consider({ kind: "vanDoors", id: "van", label: "Close van doors" }, handle.x, handle.z, VAN.INTERACT_RANGE, 0.92, 0.78);
+      }
     } else if (Math.abs(van.speed) <= 0.5) {
       consider({ kind: "vanDoors", id: "van", label: "Open van doors" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
     }
@@ -1052,9 +1061,18 @@ export class Engine {
         const def = ITEM_DEFS[activeItem.defId];
         if (def) consider({ kind: "storeSlot", id: "van", label: `Load ${def.name} into the van` }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.15);
       }
-      if (!van.driver) consider({ kind: "seatDriver", id: "van", label: "Take the wheel" }, driverDoor.x, driverDoor.z, VAN.INTERACT_RANGE, 1.05);
+      if (!van.driver && cabSide < 0) {
+        const driverDoor = toWorld(VAN.DRIVER_POINT.x, VAN.DRIVER_POINT.z);
+        consider({ kind: "seatDriver", id: "van", label: "Take the wheel" }, driverDoor.x, driverDoor.z, VAN.INTERACT_RANGE, 1.05);
+      }
       const passengers = [...st.players.values()].filter((p) => SEAT.isVan(p.seat) && p.seat > 1).length;
-      if (van.doorsOpen && passengers < 3) consider({ kind: "seat", id: "van", label: "Board van — passenger" }, rear.x, rear.z, VAN.INTERACT_RANGE, 1.0);
+      if (passengers < 3) {
+        if (cabSide > 0) {
+          const passengerDoor = toWorld(VAN.PASSENGER_POINT.x, VAN.PASSENGER_POINT.z);
+          consider({ kind: "seat", id: "van", label: "Board van — passenger" }, passengerDoor.x, passengerDoor.z, VAN.INTERACT_RANGE);
+        }
+        if (van.doorsOpen) consider({ kind: "seat", id: "van", label: "Board van — passenger" }, rear.x, rear.z, VAN.INTERACT_RANGE);
+      }
     }
 
     // golf cart: open buggy, step up from either side while stopped
@@ -1435,7 +1453,7 @@ export class Engine {
     const v = st.van;
     this.vanBuf.push(this.lastPatchAt || nowMs, v.x, v.z, v.yaw);
     const vs = this.vanBuf.sample(renderAt) ?? { x: v.x, z: v.z, yaw: v.yaw };
-    this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t, dt);
+    this.vanView.update(vs.x, vs.z, vs.yaw, v.speed, v.doorsOpen, v.lightsOn, t, dt, SEAT.isVan(me?.seat ?? 0));
     this.vanView.syncCargo(v.cargo.length, v.strapped, t, v.speed);
     const c = st.cart;
     this.cartBuf.push(this.lastPatchAt || nowMs, c.x, c.z, c.yaw);
@@ -1684,10 +1702,10 @@ export class Engine {
         ? this.cartBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.cart
         : this.vanBuf.sample(nowMs - INTERP_DELAY_MS) ?? st.van;
       ({ x: cx, z: cz } = vanLocalToWorld(v, seat.x, seat.z));
-      cy = cart ? 1.48 : 1.85;
+      cy = cart ? 1.39 : 1.77;
       if (this.cameraSeat !== me.seat) {
         this.input.yaw = v.yaw;
-        this.input.pitch = 0;
+        this.input.pitch = -0.14;
       } else {
         // Keep mouse look relative to the turning vehicle.
         this.input.yaw += Math.atan2(Math.sin(v.yaw - this.vehicleYaw), Math.cos(v.yaw - this.vehicleYaw));

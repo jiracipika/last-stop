@@ -24,10 +24,19 @@ export class GameRoom extends Room {
   inputFlood = new Map<string, { windowStart: number; count: number }>();
 
   override async onCreate(_options: Record<string, unknown>): Promise<void> {
+    // Resolve code collisions before allocating the world or using a room slot.
+    const code = _options.code;
+    if (typeof code === "string" && /^[A-Z0-9]{5}$/.test(code)) {
+      const roomId = `LS${code}`;
+      const taken = await matchMaker.driver.findByIds([roomId]);
+      if (taken.size > 0 || [...liveRooms].some((room) => room.roomId === roomId)) {
+        throw new Error(`Room code ${code} already exists`);
+      }
+      this.roomId = roomId;
+    }
     if (liveRooms.size >= maxRooms()) {
       throw new Error("Server is at capacity — try again in a few minutes");
     }
-    liveRooms.add(this);
     this.world = new World();
     // Production rooms always run the drive-in course (crew boards the van on
     // the old road, one random driver threads three gates in). The vitest
@@ -59,18 +68,6 @@ export class GameRoom extends Room {
     this.setSimulationInterval(() => this.tick(), Math.round(1000 / TICK_HZ));
     this.setPatchRate(PATCH_MS);
     this.autoDispose = true;
-    // join-by-code: host picks a short code, the room id becomes LS<CODE>.
-    // A taken code rejects the create; the client retries with a fresh code.
-    const code = _options?.code;
-    if (typeof code === "string" && /^[A-Z0-9]{5}$/.test(code)) {
-      const roomId = `LS${code}`;
-      const taken = await matchMaker.driver.findByIds([roomId]);
-      if (taken && taken.size > 0) {
-        throw new Error(`Room code ${code} already exists`);
-      }
-      this.roomId = roomId;
-    }
-
     this.onMessage("in", (client, data) => {
       const p = this.world.players.get(client.sessionId);
       if (!p || !p.connected) return;
@@ -104,6 +101,7 @@ export class GameRoom extends Room {
     this.onMessage("ping", (client, data) => {
       client.send("ev", { t: "pong", c: typeof data === "number" ? data : 0 });
     });
+    liveRooms.add(this);
   }
 
   private rateOk(client: Client, kind: string, minGap: number): boolean {

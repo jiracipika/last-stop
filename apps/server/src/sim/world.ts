@@ -4,7 +4,7 @@
 
 import { randomInt } from "node:crypto";
 import {
-  AABB, Body, MoveInput, stepPlayer, stepFreeItem, stepVan, carrySpeedFactor, vanLocalToWorld, vanWorldToLocal,
+  AABB, Body, MoveInput, stepPlayer, stepFreeItem, stepVan, carrySpeedFactor, vanLocalToWorld, vanWorldToLocal, vanRearHandles,
   stepVehicle, VAN_CFG, CART_CFG, CART, CART_START, SEAT, SLOTS, SHOP,
   PLAYER, CARRY, NOISE, VAN, MISSION, FRAGILE_IMPACT_V, FRAGILE_DPS, WRECKED_AT, WRECKED_VALUE_FACTOR,
   ITEM_DEFS, planSpawns, planValue, quotaFor, missionSeconds, pickModifiers, stowable,
@@ -1044,14 +1044,14 @@ export class World {
 
   tryEnterVan(p: RPlayer, wantDriver: boolean): boolean {
     if (p.downed || p.dead || p.hidden || p.seat > 0 || p.carrying || p.carryBody || Math.abs(this.van.speed) > 0.5) return false;
-    const dp = this.vanPoint(VAN.DOOR_POINT);
-    const cab = this.vanPoint(VAN.DRIVER_POINT);
-    const nearRear = this.vanDoorsOpen && dist2d(p.body.x, p.body.z, dp.x, dp.z) <= VAN.INTERACT_RANGE;
-    const nearCab = dist2d(p.body.x, p.body.z, cab.x, cab.z) <= VAN.INTERACT_RANGE;
-    // Explicit driver requests from the open rear remain supported for older clients.
-    const canReach = (point: { x: number; z: number }) => this.losWallsOnly(p.body.x, p.body.z, point.x, point.z);
-    const rearReachable = nearRear && canReach(dp);
-    if (wantDriver ? !(nearCab && canReach(cab)) && !rearReachable : !rearReachable) return false;
+    const rear = this.vanPoint(VAN.DOOR_POINT);
+    const cab = this.vanPoint(wantDriver ? VAN.DRIVER_POINT : VAN.PASSENGER_POINT);
+    const canReach = (point: { x: number; z: number }) =>
+      dist2d(p.body.x, p.body.z, point.x, point.z) <= VAN.INTERACT_RANGE &&
+      this.losWallsOnly(p.body.x, p.body.z, point.x, point.z);
+    const side = vanWorldToLocal(this.van, p.body.x, p.body.z).x;
+    const cabReachable = side * (wantDriver ? -1 : 1) > 0 && canReach(cab);
+    if (!cabReachable && !(this.vanDoorsOpen && canReach(rear))) return false;
     let seat: number;
     if (wantDriver) {
       if (this.vanDriver) return false;
@@ -1063,7 +1063,7 @@ export class World {
     p.seat = seat;
     p.input.jump = false;
     if (seat === 1) this.vanDriver = p.sid;
-    this.emit({ t: "seat", sid: p.sid, seat, cabSide: wantDriver && nearCab ? -1 : 0 });
+    this.emit({ t: "seat", sid: p.sid, seat, cabSide: cabReachable ? (wantDriver ? -1 : 1) : 0 });
     return true;
   }
 
@@ -1071,14 +1071,14 @@ export class World {
     const inCart = SEAT.isCart(seat);
     const vehicle = inCart ? this.cart : this.van;
     const size = inCart ? CART : VAN;
-    const seatZ = (inCart ? CART.SEATS[seat - SEAT.CART_DRIVER] : VAN.SEATS[seat - 1])!.z;
+    const doorZ = inCart ? CART.SEATS[seat - SEAT.CART_DRIVER]!.z : VAN.DRIVER_POINT.z;
     const sideSign = !inCart && (seat === 2 || seat === 4) ? 1 : -1;
     const side = sideSign * (size.HALF_W + 0.7);
     const fore = size.HALF_L + 0.7;
     const colliders = this.playerColliders();
     const gate = this.gateCollider();
     if (gate) colliders.push(gate);
-    for (const [x, z] of [[side, seatZ], [-side, seatZ], [0, -fore], [0, fore], [side * 1.5, seatZ], [-side * 1.5, seatZ]] as const) {
+    for (const [x, z] of [[side, doorZ], [-side, doorZ], [0, -fore], [0, fore], [side * 1.5, doorZ], [-side * 1.5, doorZ]] as const) {
       const point = vanLocalToWorld(vehicle, x, z);
       if (point.x < -69 || point.x > 33.5 || Math.abs(point.z) > 25.5) continue;
       if (colliders.some((box) => circleVsAabb(point.x, point.z, PLAYER.RADIUS, box).hit)) continue;
@@ -1150,8 +1150,10 @@ export class World {
 
   toggleVanDoors(p: RPlayer): boolean {
     if (p.downed || p.dead || p.hidden || p.seat > 0 || Math.abs(this.van.speed) > 0.5) return false;
-    const dp = this.vanPoint(VAN.DOOR_POINT);
-    if (dist2d(p.body.x, p.body.z, dp.x, dp.z) > PLAYER.INTERACT_RANGE + 0.7) return false;
+    const rear = this.vanPoint(VAN.DOOR_POINT);
+    const points = this.vanDoorsOpen ? [rear, ...vanRearHandles(this.van)] : [rear];
+    if (!points.some((point) => dist2d(p.body.x, p.body.z, point.x, point.z) <= VAN.INTERACT_RANGE &&
+        this.losWallsOnly(p.body.x, p.body.z, point.x, point.z))) return false;
     this.vanDoorsOpen = !this.vanDoorsOpen;
     this.emit({ t: "vanDoors", open: this.vanDoorsOpen });
     this.noise(this.van.x, this.van.z, NOISE.DOOR, "door", p.sid);

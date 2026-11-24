@@ -49,7 +49,11 @@ stop() {
 status() {
   if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     echo "[last-stop] supervisor up (pid $(cat "$PIDFILE"))"
-    curl -s -m 2 "http://127.0.0.1:$PORT/health" && echo
+    if ! curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health"; then
+      echo "[last-stop] health check failed; see $LOG" >&2
+      return 1
+    fi
+    echo
   else
     echo "[last-stop] down"
     exit 1

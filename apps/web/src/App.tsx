@@ -193,7 +193,7 @@ export function App(): React.ReactElement {
         engine?.start(); // the same loop resumes as the game loop
       } catch (e) {
         engine?.setAttract(true); // join failed: settle back into the cinematic
-        store.toast(`Could not join: ${String(e)}`, "warn");
+        throw e;
       }
     },
     [net, prefs.nick, prefs.color, prefs.hat, store],

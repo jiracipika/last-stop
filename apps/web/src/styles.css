@@ -1907,6 +1907,7 @@ input:focus-visible {
 }
 
 .title-panel .title-actions { display: grid; gap: 10px; }
+.title-connect-error { margin: 0; color: var(--danger); font-size: 0.875rem; line-height: 1.45; }
 .title-panel .join-row { width: 100%; min-width: 0; }
 .title-panel .join-row input { flex: 1; width: min(100%, 130px); min-width: 0; }
 .title-panel .join-row .btn { flex: 1; }
