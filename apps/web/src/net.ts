@@ -1,6 +1,6 @@
 // Colyseus client wrapper: create/join by code, reconnection, input,
 // event fan-out. UI never touches the SDK directly.
-import { Client, type Room } from "@colyseus/sdk";
+import { Client, MatchMakeError, type Room } from "@colyseus/sdk";
 import { RoomState } from "@last-stop/shared";
 
 export type Ev = { t: string; [k: string]: unknown };
@@ -27,7 +27,9 @@ export class Net {
   private connectionGeneration = 0;
 
   constructor(url: string) {
-    this.client = new Client(url);
+    this.client = new Client(url, {
+      fetchFn: (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(12_000) }),
+    });
   }
 
   private setStatus(s: ConnStatus, detail = ""): void {
@@ -81,7 +83,7 @@ export class Net {
         return code;
       } catch (e) {
         const msg = String(e);
-        if (attempt < 2 && /exists|duplicate/i.test(msg)) continue;
+        if (attempt < 2 && /room code .* already exists/i.test(msg)) continue;
         this.setStatus("error", msg);
         throw e;
       }
@@ -208,9 +210,29 @@ export class Net {
 }
 
 export function serverUrlFromEnv(): string {
-  const fromEnv = import.meta.env.VITE_GAME_SERVER_URL as string | undefined;
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const fromEnv = (import.meta.env.VITE_GAME_SERVER_URL as string | undefined)?.trim();
+  if (fromEnv) return fromEnv;
   if (import.meta.env.DEV) return "ws://localhost:2567";
-  // Production default: same host, standard port (see README deployment notes)
-  return `wss://${location.hostname}`;
+  if (/^laststop(game|staging|beta)(?:-[a-z0-9-]+)?\.vercel\.app$/.test(location.hostname)) {
+    return "wss://rs-server.tail617f4d.ts.net";
+  }
+  return location.origin;
+}
+
+export function matchmakingMessage(error: unknown, mode: "create" | "join"): string {
+  const message = error instanceof Error ? error.message : "";
+  const code = error instanceof MatchMakeError ? error.code : undefined;
+  if (mode === "join" && /room .* is locked|room is full|seat reservation failed/i.test(message)) {
+    return "That crew room is full or closed. Ask the host for a fresh invite.";
+  }
+  if (mode === "join" && /room .* (?:not found|has been disposed)/i.test(message)) {
+    return "Room not found. Check the code or ask the host for a new one.";
+  }
+  if (/server is at capacity/i.test(message)) {
+    return "All crew rooms are in use. Try again in a few minutes.";
+  }
+  if (!code || code < 400 || code >= 500 || code === 404) {
+    return "Could not connect to the game server. Try again in a moment.";
+  }
+  return mode === "create" ? "Could not start a new shift. Try again." : "Could not join that crew room. Try again.";
 }

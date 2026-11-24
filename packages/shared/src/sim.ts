@@ -304,6 +304,13 @@ export function vanLocalToWorld(v: { x: number; z: number; yaw: number; speed?: 
   return { x: v.x + lx * c + lz * s, z: v.z - lx * s + lz * c };
 }
 
+/** Where a player can reach either rear-door handle with the leaves swung out. */
+export function vanRearHandles(v: VanBody): { x: number; z: number }[] {
+  const x = VAN.REAR_HINGE.x - VAN.REAR_HANDLE_OFFSET * Math.cos(VAN.REAR_SWING);
+  const z = VAN.REAR_HINGE.z - VAN.REAR_HANDLE_OFFSET * Math.sin(VAN.REAR_SWING);
+  return [vanLocalToWorld(v, -x, z), vanLocalToWorld(v, x, z)];
+}
+
 export function vanWorldToLocal(v: VanBody, wx: number, wz: number): { x: number; z: number } {
   const s = Math.sin(v.yaw);
   const c = Math.cos(v.yaw);

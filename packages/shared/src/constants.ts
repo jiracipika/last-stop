@@ -118,8 +118,8 @@ export const VAN = {
   SEATS: [
     { x: -0.42, z: 0.95 },
     { x: 0.42, z: 0.95 },
-    { x: -0.42, z: 0.45 },
-    { x: 0.42, z: 0.45 },
+    { x: -0.42, z: 0.20 },
+    { x: 0.42, z: 0.20 },
   ],
   // where recovered bodies lie inside the cargo bay (local frame, up to 3)
   BODY_SPOTS: [
@@ -130,8 +130,12 @@ export const VAN = {
   INSTALL_RANGE: PLAYER.INTERACT_RANGE + 0.4,
   ENGINE_POINT: { x: 0, z: 2.55 }, // local; install interaction (front)
   DRIVER_POINT: { x: -1.35, z: 1.6 }, // cab entry, independent of cargo doors
+  PASSENGER_POINT: { x: 1.35, z: 1.6 },
   INTERACT_RANGE: PLAYER.INTERACT_RANGE + 0.7,
   DOOR_POINT: { x: 0, z: -2.45 }, // local; rear doors interaction
+  REAR_HINGE: { x: 1.02, z: -2.4 },
+  REAR_SWING: 1.9,
+  REAR_HANDLE_OFFSET: 0.78,
   STRAP_POINT: { x: 1.15, z: -2.2 },
   BUMP_CARGO_DAMAGE: 14, // damage to unsecured cargo per significant bump
 } as const;

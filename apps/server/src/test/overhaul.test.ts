@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOORS, ENEMY, HIDE_SPOTS, TICK_DT, VAN, doorAabb, moveToward, mulberry32 } from "@last-stop/shared";
+import { DOORS, ENEMY, HIDE_SPOTS, TICK_DT, VAN, doorAabb, moveToward, mulberry32, vanRearHandles } from "@last-stop/shared";
 import { World } from "../sim/world.js";
 
 function scene() {
@@ -44,6 +44,33 @@ describe("vehicle and entity regression cases", () => {
     expect(w.tryEnterVan(p, false)).toBe(true);
     expect(p.seat).toBe(2);
     expect(w.vanDriver).toBe("");
+  });
+
+  it("boards from the passenger cab with the rear doors closed", () => {
+    const { w, p } = scene();
+    expect(w.vanDoorsOpen).toBe(false);
+    Object.assign(p.body, w.vanPoint(VAN.DRIVER_POINT));
+    expect(w.tryEnterVan(p, false)).toBe(false);
+    Object.assign(p.body, w.vanPoint(VAN.PASSENGER_POINT));
+    expect(w.tryEnterVan(p, false)).toBe(true);
+    expect(p.seat).toBe(2);
+    expect(w.events.at(-1)).toMatchObject({ t: "seat", cabSide: 1 });
+    expect(w.exitSeat(p)).toBe(true);
+    expect(w.events.at(-1)).toMatchObject({ t: "seat", cabSide: 1 });
+  });
+
+  it("closes the van from either open door handle", () => {
+    const { w, p } = scene();
+    const center = w.vanPoint(VAN.DOOR_POINT);
+    for (const handle of vanRearHandles(w.van)) {
+      const dx = handle.x - center.x;
+      const dz = handle.z - center.z;
+      const beyondCenter = (VAN.INTERACT_RANGE + 0.2) / Math.hypot(dx, dz);
+      Object.assign(p.body, { x: center.x + dx * beyondCenter, z: center.z + dz * beyondCenter });
+      w.vanDoorsOpen = true;
+      expect(w.toggleVanDoors(p)).toBe(true);
+      expect(w.vanDoorsOpen).toBe(false);
+    }
   });
 
   it("rejects boarding from outside interaction range", () => {

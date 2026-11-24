@@ -23,6 +23,8 @@ describe("room capacity", () => {
     const b = new Client(h.url);
     const c = new Client(h.url);
     const r1 = await a.create("game", { nick: "A", code: "AAAAA" }, RoomState);
+    // A rejected duplicate must not count against the remaining slot.
+    await expect(b.create("game", { nick: "B", code: "AAAAA" }, RoomState)).rejects.toThrow(/already exists/);
     const r2 = await b.create("game", { nick: "B", code: "BBBBB" }, RoomState);
     expect(r1.roomId).toBe("LSAAAAA");
     expect(r2.roomId).toBe("LSBBBBB");

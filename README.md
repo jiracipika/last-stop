@@ -37,10 +37,9 @@ preview deployments (SSO protection is disabled on this project so previews are 
 Deployments are CLI-driven (`vercel deploy --project laststopgame --prod`); pushing to GitHub
 does not auto-deploy.
 
-> ⚠️ **The deployed frontend is not yet playable online.** Vercel hosts the client only — the
-> authoritative game server must run on a persistent Node host (see *Hosting* below). Until that
-> server exists and `VITE_GAME_SERVER_URL` is set to its `wss://` address, room creation on the
-> deployed site will fail gracefully. Everything works locally with the two commands above.
+The deployed client needs the separate game server to create or join a crew. The standard
+Vercel game domains use the public Funnel endpoint by default. See *Hosting* to check the
+server or configure a different endpoint.
 
 Open <http://localhost:5173>. One player picks a name/color and **Start a new shift**; the others
 enter the 5-letter code (or the invite link `?room=CODE`). Ready up, host starts. Solo practice
@@ -181,7 +180,7 @@ e2e/           Playwright browser tests
 
 ## Hosting
 
-### Live links (as of 2026-11-06 — **fully playable online**)
+### Public endpoints
 
 - **Play:** <https://laststopgame.vercel.app> — frontend on Vercel, authoritative game server
   running on the home box (`rs-server`) behind **Tailscale Funnel**
@@ -194,11 +193,17 @@ e2e/           Playwright browser tests
 
 ### Operating the public server (on `rs-server`)
 
+Check the local game server and the public Funnel separately when matchmaking fails.
+If the local health check fails, check `/tmp/last-stop-server.log` and restart the supervisor.
+If local health passes and the public endpoint fails, check that Funnel is active and targets
+`http://127.0.0.1:2567`.
+
 ```bash
 scripts/serve.sh start    # tsx + restart loop on 127.0.0.1:2567
-scripts/serve.sh status   # supervisor + /health
+scripts/serve.sh status   # supervisor + local /health
 scripts/serve.sh stop
-tailscale funnel status   # public path check
+tailscale funnel status
+curl -fsS --max-time 10 https://rs-server.tail617f4d.ts.net/health
 # capacity: LS_MAX_ROOMS (default 4 rooms x 4 players); ~8 players ~= 1.3 Mbps
 ```
 
