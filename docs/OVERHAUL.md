@@ -35,3 +35,17 @@ Animation timing follows the elapsed-time approach documented in the current [Th
 Automated coverage includes targeted server regressions and browser tests that walk to the van using the normal client/server input pipeline, open its doors, check that the bay is unobstructed, board as passenger, and board at the cab with cargo doors closed. Existing mission, multiplayer, carrying, reconnect and anti-cheat tests remain part of validation.
 
 Human playtesting should still cover four players under real network latency, audio balance, and performance on integrated graphics. These changes do not deploy either the frontend or the authoritative server.
+
+## Reach and legibility pass (2026-11-26)
+
+Menu and overlay work only; the renderer, the mission loop and the receipt voice are unchanged. The last block of `apps/web/src/styles.css` holds the rules.
+
+- Nothing a player must read is under 12px. The title sheet had 22 text runs below that, the in-game HUD 49, and the briefing, pause and results sheets their form labels.
+- On 1280x720 the title's Controls line opened past the bottom of the screen; at 1280x630 it was cut off entirely. The sheet now compacts below 760px tall so it ends at y=655 and y=618, and Controls opens inside a 720px screen. At 630px the opened hint still scrolls.
+- The pause sheet is 673px tall and had no scroll; its overlay now scrolls at any height.
+- "Click to take control" painted over the briefing sheet's site conditions. The briefing now sits above it.
+- Touch-only devices showed the sign-in form overflowing under a notice saying the form was useless. They get one screen instead, which names the room when an invite link is opened.
+- Headgear is a row of drawn marks (cap, hard hat, beanie, headphones, none) instead of the platform's select menu. Colour swatches grew from 26px to 32px, buttons and inputs to 44px.
+- The one primary action is amber on an opaque sheet. The lobby's three actions sit in a single row. The first-shift quick reference is a key column beside a label column, one line per row.
+
+Not verified: real phones and tablets (Chromium device emulation only), audio, and four players on a real network.

@@ -236,6 +236,21 @@ export function App(): React.ReactElement {
           <h2>LAST STOP can't start here</h2>
           <p>{fatal}</p>
         </div>
+      ) : mobile ? (
+        // Touch-only devices cannot play: one honest screen, not a sign-in
+        // form under a notice saying the form is useless.
+        <div className="desktop-only">
+          <div className="desktop-only-card">
+            <h1 className="game-title">LAST<span>STOP</span></h1>
+            <p>
+              The night shift runs on a laptop or PC with a keyboard and mouse.
+              {new URLSearchParams(location.search).get("code") || new URLSearchParams(location.search).get("room")
+                ? " Your crew is already waiting — open the invite link there."
+                : " Open this page on one and clock in."}
+            </p>
+            <p className="desktop-only-meta">1–4 players online · headphones recommended</p>
+          </div>
+        </div>
       ) : screen === "title" ? (
         <TitleScreen prefs={prefs} savePrefs={savePrefs} onEnter={enterRoom} />
       ) : (
@@ -266,11 +281,6 @@ export function App(): React.ReactElement {
           <div key={t.id} className={`toast ${t.kind}`}>{t.msg}</div>
         ))}
       </div>
-      {mobile && (
-        <div className="mobile-notice">
-          LAST STOP needs a desktop keyboard &amp; mouse. Come back on a laptop or PC — the night shift isn't touch-friendly.
-        </div>
-      )}
     </div>
   );
 }

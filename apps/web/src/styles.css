@@ -1436,19 +1436,6 @@ input:focus-visible {
   color: #8a99ac;
   line-height: 1.6;
 }
-.mobile-notice {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  right: 12px;
-  padding: 10px 14px;
-  background: rgba(30, 12, 8, 0.92);
-  border: 1px solid #6e4030;
-  border-radius: 8px;
-  color: #ffb39c;
-  font-size: 12.5px;
-  z-index: 40;
-}
 .pause-note {
   display: none;
 }
@@ -1961,4 +1948,150 @@ input:focus-visible {
     padding-left: 18px;
     padding-right: 18px;
   }
+}
+
+/* ---------- reach and legibility ----------
+   Nothing a player must read sits under 12px, every control is a real
+   target, and no sheet is taller than the screen it opens on. This block
+   comes last and overrides the sections above. */
+.field > span { font-size: 12px; letter-spacing: 1.4px; }
+.host-tag,
+.dc-tag,
+.ready,
+.roster .nick small { font-size: 12px; }
+
+/* title: one opaque sheet, the one action in amber */
+.title-panel { background: #0c151c; }
+.title-panel .btn { min-height: 44px; }
+.title-panel input { min-height: 44px; }
+.title-panel .btn.primary {
+  background: var(--amber);
+  border-color: #f0a83a;
+  color: #1a1206;
+  font-weight: 700;
+  box-shadow: 3px 4px 0 #4a3410;
+}
+.title-panel .btn.primary:hover:not(:disabled) {
+  background: #ffd27e;
+  transform: none;
+  box-shadow: 3px 4px 0 #4a3410;
+}
+.title-panel .btn.primary:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 2px 0 #4a3410;
+}
+.title-controls,
+.title-controls .controls-hint { font-size: 12.5px; }
+.title-panel .form-head { font-size: 12px; }
+
+.swatch { width: 32px; height: 32px; }
+
+/* headgear: drawn marks instead of the platform's select menu */
+.headgear { display: flex; flex-wrap: wrap; gap: 6px; }
+.hat {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #384b55;
+  border-radius: 4px;
+  background: #101b23;
+  color: #9fb0bd;
+  cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease, background-color 0.14s ease;
+}
+.hat:hover { border-color: #d7b77b; color: #e6e0cf; }
+.hat.sel { border-color: var(--amber); background: #1d1a12; color: var(--amber); }
+.hat:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* 13-inch laptops (1280x630 / 1280x720): the whole sheet, Controls line
+   included, ends inside the first screen */
+@media (max-height: 760px) {
+  .title-panel { padding: 22px 28px 18px; }
+  .title-panel .game-title { font-size: 48px; margin-bottom: 12px; }
+  .title-panel .tagline { font-size: 13px; line-height: 1.5; margin-bottom: 14px; }
+  .title-panel .form-head { margin-bottom: 8px; }
+  .title-panel .field { margin: 10px 0; }
+  .title-panel .title-actions { padding-top: 14px; }
+  .title-panel .title-controls { margin-top: 10px; }
+}
+
+/* touch-only devices get one screen, not a form under a notice */
+.desktop-only {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(180deg, #070a0ef2, #0b1016e6);
+}
+.desktop-only-card {
+  width: min(100%, 420px);
+  padding: 28px 24px;
+  background: #0c151c;
+  border: 1px solid #405058;
+  border-top: 3px solid var(--amber);
+  box-shadow: 16px 22px 66px #0007;
+}
+.desktop-only-card .game-title {
+  margin: 0 0 14px;
+  font: 800 56px/0.98 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  letter-spacing: -0.02em;
+  color: #f2ead9;
+  text-align: left;
+  text-shadow: none;
+}
+.desktop-only-card .game-title span { margin-left: 0.14em; color: var(--amber); }
+.desktop-only-card p { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #c4ced6; }
+.desktop-only-meta { color: #8a99ac; font-size: 12px; }
+
+/* lobby: three actions in one row, the start button taking the middle */
+.lobby-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex-wrap: nowrap;
+}
+.lobby-actions .btn { min-height: 44px; }
+
+/* the briefing sheet owns the screen: "Click to take control" waits under it */
+.briefing { z-index: 6; }
+
+/* the pause sheet scrolls inside its overlay instead of running off a short screen */
+.pause { align-items: safe center; overflow: auto; padding: 16px; }
+@media (max-height: 720px) {
+  .pause-panel { padding: 16px 22px; }
+}
+
+/* first-shift quick reference: key column + label column, one line per row */
+.controls-card { width: 340px; }
+.cc-head { font-size: 11px; letter-spacing: 1.5px; }
+.cc-grid { grid-template-columns: max-content 1fr max-content 1fr; gap: 1px 10px; font-size: 12px; }
+.cc-grid > span { display: contents; }
+.cc-grid b { white-space: nowrap; }
+.cc-head { font-size: 12px; letter-spacing: 1.2px; }
+
+/* in-game readouts and the receipt sheets' form labels join the 12px floor */
+.shift-directive > span,
+.shift-directive > small,
+.lat-chip,
+.q-label,
+.objectives span,
+.scanner-head,
+.scanner-row,
+.pk-key,
+.pk-empty,
+.corner-meta,
+.pause-panel .report-sec,
+.pause-panel .access-note,
+.briefing-sheet .report-motto,
+.briefing-sheet .briefing-meta,
+.briefing-sheet .report-sec,
+.briefing-sheet .cond-tag,
+.results-panel .report-motto,
+.results-panel .report-meta,
+.results-panel .report-sec,
+.results-panel .results-summary span,
+.results-panel .results-table th,
+.results-panel .results-table td {
+  font-size: 12px;
 }
