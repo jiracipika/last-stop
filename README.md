@@ -199,20 +199,29 @@ If local health passes and the public endpoint fails, check that Funnel is activ
 `http://127.0.0.1:2567`.
 
 ```bash
-scripts/serve.sh start    # tsx + restart loop on 127.0.0.1:2567
-scripts/serve.sh status   # supervisor + local /health
-scripts/serve.sh stop
+systemctl --user status last-stop-server   # supervised, restarts, starts on boot
+journalctl --user -u last-stop-server -n 50
 tailscale funnel status
 curl -fsS --max-time 10 https://rs-server.tail617f4d.ts.net/health
 # capacity: LS_MAX_ROOMS (default 4 rooms x 4 players); ~8 players ~= 1.3 Mbps
 ```
 
-Ops notes: the supervisor survives crashes but not reboots (boot persistence needs systemd/sudo);
-the game server is unaudited code behind mitigations (loopback bind, room cap, rate limits,
-flood kicks); Funnel adds modest latency — fine for co-op. Two host-level gotchas are baked into
-the runbook: the esbuild bundle breaks Colyseus's matchmake routes (run via tsx), and an express
-`cors()` middleware duplicates Colyseus's CORS headers (removed — Colyseus reflects Origin
-itself).
+The server runs as a systemd **user** service (`~/.config/systemd/user/last-stop-server.service`,
+`Restart=always`, enabled; boot start needs `loginctl enable-linger`, which is on). Before
+2026-11-26 it ran under `scripts/serve.sh`, a plain restart loop that did not come back after a
+reboot — that outage is why matchmaking failed on the public build. `serve.sh` is kept for ad-hoc
+runs only (stop the service first; both bind 127.0.0.1:2567).
+
+Ops notes: the game server is unaudited code behind mitigations (loopback bind, room cap, rate
+limits, flood kicks); Funnel adds modest latency — fine for co-op. One host-level gotcha is baked
+into the runbook: the esbuild bundle breaks Colyseus's matchmake routes (run via tsx). Colyseus
+reflects the request Origin on every route (`access-control-allow-origin`), so no `cors()`
+middleware is needed — adding one duplicates the headers.
+
+Checking from a machine that is itself on the tailnet: Chrome classifies the Funnel hostname as
+a *local* address space there and blocks the fetch ("Permission was denied … `local` address
+space"). That is the test machine, not the deployment; grant the browser tab local-network
+access or test from off-network (`e2e/tests/prod-check.ts`).
 
 ### Frontend → Vercel (done)
 
